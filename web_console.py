@@ -276,7 +276,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -294,6 +294,15 @@ class WebConsole:
                             return self.output(200, {'items': list_repositories(param('provider'), param('owner'))})
                         if path == '/api/pipelines':
                             return self.output(200, {'items': list_pipelines(param('provider'), param('repo'))})
+                        if path == '/api/machines':
+                            from machines import inventory
+                            return self.output(200, inventory())
+                        if path == '/api/machines/probe':
+                            from machines import read, probe, hostname
+                            host=hostname(param('host'))
+                            if host not in [x['host'] for x in read()]:
+                                return self.output(403, {'error':'Machine not enrolled.'})
+                            return self.output(200, probe(host))
                         if path == '/api/execution-evidence':
                             from execution_proof import inspect
                             return self.output(200, inspect(param('provider'), param('repo'), param('run')))
@@ -415,6 +424,17 @@ class WebConsole:
                         if action['op'] == 'execute':
                             console.audit.add(actor, 'host.' + action['kind'], action['target'], 'success')
                         return self.output(200, result)
+                    if path in ('/api/machines/add','/api/machines/remove'):
+                        if not console.local(self) or console.role(self) != 'owner':
+                            return self.output(403, {'error':'New machine trust must be approved from the owner desktop.'})
+                        if data.get('confirm') is not True:
+                            return self.output(400, {'error':'Explicit machine trust confirmation required.'})
+                        from machines import add, remove
+                        result=(add(data.get('name'),data.get('host'),confirm=True)
+                                if path.endswith('add')
+                                else remove(data.get('host'),confirm=True))
+                        console.audit.add('local-owner',path.rsplit('/',1)[-1],str(data.get('host'))[:100],'success')
+                        return self.output(200,result)
                     if path == '/api/pipeline':
                         if console.role(self) not in ('owner', 'editor'):
                             return self.output(403, {'error': 'Management permission required.'})
