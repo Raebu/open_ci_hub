@@ -13,7 +13,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -59,6 +59,24 @@
             <div class="wide"><button id="browse-pipelines" type="button" class="btn secondary">Load recent pipelines</button></div></div>
           <div id="pipeline-items" class="results" aria-live="polite"></div>
           <div id="job-details" class="results" aria-live="polite"></div>
+        </section>
+        <section id="terminal">
+          <div class="section-head"><div><h2>Host terminal</h2>
+            <p>New interactive desktop-user terminal session, accessible on the phone only when specifically authorised on the PC.</p></div>
+          </div>
+          <div class="device-panel"><div>
+            <p class="small">This is not the actual visible KDE Konsole window. It is an interactive PTY running on the PC. No root permissions are granted by Open CI Hub; your user account still determines what the shell can do. Sessions close automatically.</p>
+            <div class="controls" id="terminal-actions">
+              <button class="btn primary" id="terminal-open" type="button">Start approved terminal</button>
+              <button class="btn secondary" id="terminal-interrupt" type="button" disabled>Ctrl+C</button>
+              <button class="btn secondary" id="terminal-close" type="button" disabled>Close</button>
+            </div>
+            <p id="terminal-status" class="small" role="status">Host agent and owner permission required.</p>
+          </div></div>
+          <pre id="terminal-output" class="job-log terminal-output" aria-label="Remote terminal output" tabindex="0"></pre>
+          <form id="terminal-form" class="form-grid"><label class="wide">Send a command to the open session
+            <input id="terminal-input" autocomplete="off" spellcheck="false" placeholder="Enter a shell command" disabled maxlength="450"/>
+          </label><div class="wide"><button type="submit" class="btn primary" id="terminal-send" disabled>Send command</button></div></form>
         </section>
         <section id="host">
           <div class="section-head"><div><h2>My PC · secure host agent</h2>
