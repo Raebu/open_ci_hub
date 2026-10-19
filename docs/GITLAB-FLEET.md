@@ -73,3 +73,13 @@ systemctl --user enable --now open-ci-hub-gitlab-personal@Theraeburngroup.timer
 ~~~
 
 Do not enable this until account sign-in, safety review and cost implications of existing other CI workflows are confirmed. It does not establish real GitLab job execution.
+
+## Repositories without CI
+
+The fleet now checks the complete root directory before calling a missing GitLab CI configuration `onboard-ready`. If the file exists but cannot be read, or the directory cannot be fully checked, that project is marked `blocked` and **no file is changed**.
+
+`onboard-ready` means a safe **create-only** `.gitlab-ci.yml` native `local-ci` smoke-test merge request can be proposed. The proposal is restricted to pushes to the configured default branch, needs a protected branch and accessible online runner, and is never merged automatically.
+
+**Smoke-only is not full project CI.** The generated job verifies that the native runner accepted a job and executes `uname`; it does not automatically run the application's unit tests, build steps, deployments, or dependency audits. Existing workflows with sophisticated Docker images, scheduled refreshes, merge-request rules, or manual jobs remain untouched and must be reviewed individually.
+
+A missing workflow is safe to initialise, but a missing *eligible* runner must still be registered or made accessible, and an MR that has not been merged does not execute CI on the default branch. The GitLab-native runner decides execution; Open CI Hub does not dispatch those jobs through a hidden hosted backend.
