@@ -27,6 +27,10 @@ class MachineInventoryTests(unittest.TestCase):
             self.assertEqual(len(machines.inventory()['machines']),1)
             with self.assertRaises(RuntimeError):
                 machines.add('Second machine','theraeburngroup.tail8450a3.ts.net',confirm=True)
+            with self.assertRaises(RuntimeError):
+                machines.add('garuda linux','second.tail8450a3.ts.net',confirm=True)
+            with self.assertRaises(ValueError):
+                machines.add('Trailing space ','second.tail8450a3.ts.net',confirm=True)
             with self.assertRaises(PermissionError):
                 machines.remove('theraeburngroup.tail8450a3.ts.net')
             machines.remove('theraeburngroup.tail8450a3.ts.net',confirm=True)
