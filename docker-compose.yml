@@ -1,0 +1,47 @@
+name: open-ci-hub
+services:
+  github:
+    profiles: [github]
+    image: ghcr.io/actions/actions-runner:2.338.0
+    container_name: open-ci-github-runner
+    working_dir: /home/runner
+    command: ["./run.sh"]
+    restart: unless-stopped
+    volumes:
+      - github-runner-state:/home/runner
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 2g
+
+  gitlab:
+    profiles: [gitlab]
+    build:
+      context: .
+      dockerfile: containers/gitlab/Dockerfile
+    container_name: open-ci-gitlab-runner
+    restart: unless-stopped
+    volumes:
+      - gitlab-runner-config:/etc/gitlab-runner
+      - gitlab-runner-builds:/home/gitlab-runner
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 2g
+
+  circleci:
+    profiles: [circleci]
+    image: circleci/runner-agent:machine-3
+    container_name: open-ci-circleci-runner
+    restart: unless-stopped
+    env_file:
+      - .local/circleci.env
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 2g
+
+volumes:
+  github-runner-state:
+  gitlab-runner-config:
+  gitlab-runner-builds:

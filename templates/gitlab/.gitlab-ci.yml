@@ -1,0 +1,11 @@
+stages:
+  - test
+selfhosted-smoke-test:
+  stage: test
+  tags: [local-ci]
+  timeout: 15m
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - echo "Running on a local GitLab runner"
+    - python3 --version

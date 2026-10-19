@@ -1,0 +1,12 @@
+version: 2.1
+jobs:
+  smoke-test:
+    machine: true
+    resource_class: REPLACE_WITH_NAMESPACE/REPLACE_WITH_CLASS
+    steps:
+      - checkout
+      - run: echo "Running on a local CircleCI machine runner"
+workflows:
+  build:
+    jobs:
+      - smoke-test

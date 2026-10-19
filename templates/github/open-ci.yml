@@ -1,0 +1,17 @@
+name: Open CI (self-hosted)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: [self-hosted, linux, local-ci]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm own runner
+        run: |
+          echo "Running on a self-hosted CI runner"
+          python3 --version || true

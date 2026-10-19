@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0a1020">
+  <meta name="description" content="Open-source, provider-neutral CI/CD runner management">
+  <title>Open CI Hub</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="rail" aria-label="Navigation">
+      <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#health">✦ <span>Health</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
+    </aside>
+    <main>
+      <header><div><div class="eyebrow">CI/CD CONTROL CENTRE</div><h1>Your workflows, one workspace.</h1><p class="sub">Connect providers, create repositories and manage self-hosted runners. Your builds stay on your machine.</p></div><div class="header-actions"><span id="mode" class="pill">Loading…</span><button type="button" id="signout" class="btn secondary hidden">Sign out</button></div></header>
+      <div role="status" aria-live="polite" id="notice" class="notice hidden"></div>
+      <section id="access" class="access hidden" aria-live="polite">
+        <h2 id="access-title">Sign in to Open CI Hub</h2>
+        <p id="access-detail">Use the private session link opened by the local application, or approve this device from your desktop.</p>
+        <button id="pair" class="btn primary hidden" type="button">Request device approval</button>
+      </section>
+      <div id="workspace" class="hidden">
+        <section id="providers"><div class="section-head"><div><h2>Connected platforms</h2><p>Use your provider’s official browser sign-in. No API key pasting.</p></div><button class="btn secondary" type="button" id="refresh">↻ Refresh</button></div><div class="cards" id="cards"></div></section>
+        <section id="repositories"><div class="section-head"><div><h2>Create repository</h2><p>Create a new GitHub or GitLab repository directly from here. Private by default.</p></div></div>
+          <form id="new-repo" class="form-grid">
+            <label>Provider<select id="repo-provider"><option value="github">GitHub</option><option value="gitlab">GitLab</option></select></label>
+            <label>Repository name<input id="repo-name" placeholder="my-project or org/my-project" required maxlength="201" pattern="[A-Za-z0-9_.\/-]+"></label>
+            <label>Visibility<select id="repo-visibility"><option value="private">Private</option><option value="public">Public</option></select></label>
+            <label class="wide">Description (optional)<input id="repo-desc" maxlength="250" placeholder="What will this project do?"></label>
+            <label id="public-warning" class="checkbox hidden wide"><input type="checkbox" id="confirm-public"> I understand this repository will be publicly accessible.</label>
+            <div class="wide"><button type="submit" id="create-repo" class="btn primary">+ Create repository</button></div>
+          </form>
+        </section>
+        <section id="inventory"><div class="section-head"><div><h2>Repository explorer</h2><p>Browse repositories accessible to your provider CLI. Selection fills the pipeline explorer automatically.</p></div></div>
+          <div class="form-grid"><label>Provider<select id="browse-provider"><option value="github">GitHub</option><option value="gitlab">GitLab</option></select></label>
+            <label>GitHub owner (optional)<input id="browse-owner" placeholder="Your username or organisation"></label>
+            <div class="wide"><button id="browse-repos" type="button" class="btn secondary">Browse repositories</button></div></div>
+          <div id="repository-items" class="results" aria-live="polite"></div>
+        </section>
+        <section id="pipelines"><div class="section-head"><div><h2>Pipeline cockpit</h2><p>Inspect recent runs and explicitly retry or cancel. All operations happen on the provider.</p></div></div>
+          <div class="form-grid"><label>Provider<select id="pipeline-provider"><option value="github">GitHub</option><option value="gitlab">GitLab</option></select></label>
+            <label>Repository path<input id="pipeline-repo" placeholder="owner/repository or group/project" maxlength="300"></label>
+            <div class="wide"><button id="browse-pipelines" type="button" class="btn secondary">Load recent pipelines</button></div></div>
+          <div id="pipeline-items" class="results" aria-live="polite"></div>
+        </section>
+        <section id="health"><div class="section-head"><div><h2>Diagnostics and activity</h2><p>Local runner readiness and a protected audit history of management actions.</p></div></div>
+          <div id="health-panel" class="stats" aria-live="polite"></div>
+          <div id="audit-panel" class="results"></div>
+        </section>
+        <section id="devices"><div class="section-head"><div><h2>Mobile & other devices</h2><p>Open the same workspace on your phone through a private Tailscale connection.</p></div></div>
+          <div class="device-panel"><div><h3>Unified device sign-in</h3><p>Sign into Tailscale with a supported identity provider, then open your PC's private HTTPS address. New users require approval from the PC.</p><p class="small">On your PC: <code>python hub.py mobile on</code> · Check link: <code>tailscale serve status</code></p></div><div id="device-users"></div></div>
+        </section>
+      </div>
+      <footer>Open CI Hub · MIT License · Jobs execute on your configured self-hosted runners.</footer>
+    </main>
+  </div>
+</body>
+</html>
