@@ -132,9 +132,12 @@ def migrate(content, branch):
         raise RuntimeError('Container/service/reusable jobs require manual toolchain review.')
     if re.search(r'(?m)^\s*-\s*run:\s*(?:sudo|apt-get|docker)\b', content):
         raise RuntimeError('Privileged build steps require manual review.')
-    if 'matrix.' in content and 'runs-on:' in content:
+    if re.search(r'(?m)^\s*matrix:', content) or 'matrix.' in content:
         raise RuntimeError('Matrix runtime needs a compatible worker review.')
-    return RUNS_ON.subn(lambda m: m.group(1) + '[self-hosted, linux, local-ci]' + m.group(3), content)
+    modified, count = RUNS_ON.subn(lambda m: m.group(1) + '[self-hosted, linux, local-ci]' + m.group(3), content)
+    if count and re.search(r'(?m)^ {4}runs-on:\s*(?:ubuntu-|windows-|macos-)', modified):
+        raise RuntimeError('Other hosted runner jobs would remain; review the whole workflow together.')
+    return modified, count
 
 def _file(repo, branch, path):
     item = _json_object(['gh', 'api', f'repos/{repo}/contents/{path}?ref={quote(branch,safe="")}'])
