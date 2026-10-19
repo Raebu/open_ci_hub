@@ -197,7 +197,10 @@ def _create_gitlab_mr(plan: NativePlan) -> dict:
 def create_review_request(plan: NativePlan, *, approved: bool = False) -> dict:
     if not approved:
         raise PermissionError('Approval is required to create a branch and open a review request.')
-    check_readiness(plan.provider, plan.repo, plan.branch)
+    readiness = check_readiness(plan.provider, plan.repo, plan.branch)
+    if not isinstance(readiness, dict) or readiness.get('verified') is not True:
+        raise RuntimeError('Native runner readiness is unverified. No repository changes were made. '
+                           'Register and validate an eligible native worker before activating CI.')
     if plan.provider in ('github','circleci'):
         return _create_github_pr(plan)
     if plan.provider == 'gitlab':
