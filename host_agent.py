@@ -81,7 +81,7 @@ def allow(kind: str, value: str, *, confirm: bool = False):
     return data
 
 def _check_action(kind, target):
-    if kind not in KINDS:
+    if not isinstance(kind, str) or kind not in KINDS:
         raise ValueError('Host action not supported.')
     if not isinstance(target, str):
         raise ValueError('Host action target is invalid.')
@@ -153,6 +153,21 @@ class HostController:
     def __init__(self):
         self.lock = threading.RLock()
         self.pending = {}
+        self.jobs = {}
+
+    def _run_job(self, job_id, actor, kind, target):
+        try:
+            _exec(kind, target)
+            _append_audit(actor, kind, target, 'success')
+            state = {'status':'success','message':'Host operation completed successfully.'}
+        except (RuntimeError, PermissionError, ValueError, OSError) as exc:
+            try:
+                _append_audit(actor, kind, target, 'failed')
+            except OSError:
+                pass
+            state = {'status':'failed','message':str(exc)[:250]}
+        with self.lock:
+            self.jobs[job_id].update(state)
 
     def process(self, req):
         if not isinstance(req, dict):
@@ -164,13 +179,23 @@ class HostController:
                     'allowed_flatpaks': policy['flatpaks'],
                     'allowed_services': policy['services'],
                     'note': 'Non-root host user. No arbitrary commands or package-manager privileges.'}
-        if op not in ('preview', 'execute'):
+        if op not in ('preview', 'execute', 'job'):
             raise ValueError('Unsupported host agent operation.')
         actor = req.get('actor')
         kind, target = req.get('kind'), req.get('target')
         if not isinstance(actor, str) or not 1 <= len(actor) <= 200 or not (
                 actor == 'local-owner' or IDENTITY.fullmatch(actor)):
             raise ValueError('Invalid actor identity.')
+        if op == 'job':
+            if actor != 'local-owner' and actor not in policy_data()['mobile_admins']:
+                raise PermissionError('Mobile host permission has been revoked.')
+            job_id = req.get('job_id')
+            with self.lock:
+                job = self.jobs.get(job_id) if isinstance(job_id, str) else None
+                if not job or job['actor'] != actor:
+                    raise PermissionError('Host job not found or actor mismatch.')
+                return {'job_id': job_id, 'status': job['status'],
+                        'message': job.get('message', '')}
         _check_action(kind, target)
         if actor != 'local-owner' and actor not in policy_data()['mobile_admins']:
             raise PermissionError('This mobile identity has not been approved for host changes.')
@@ -192,13 +217,27 @@ class HostController:
             item = self.pending.pop(token, None)
             if not item or item[0] < time.monotonic() or item[1:] != (actor, kind, target):
                 raise PermissionError('Preview approval expired, mismatched or already used.')
+        with self.lock:
+            # Finished jobs may be forgotten after reaching the bounded history cap.
+            for key in list(self.jobs):
+                if len(self.jobs) < MAX_PENDING:
+                    break
+                if self.jobs[key]['status'] != 'running':
+                    del self.jobs[key]
+            if len(self.jobs) >= MAX_PENDING:
+                raise RuntimeError('Too many unfinished host jobs.')
+            job_id = secrets.token_urlsafe(24)
+            self.jobs[job_id] = {'actor':actor, 'status':'running'}
         try:
-            result = _exec(kind, target)
-        except (RuntimeError, PermissionError, ValueError):
-            _append_audit(actor, kind, target, 'failed')
-            raise
-        _append_audit(actor, kind, target, 'success')
-        return result
+            _append_audit(actor, kind, target, 'requested')
+        except OSError:
+            with self.lock:
+                del self.jobs[job_id]
+            raise RuntimeError('Host audit log unavailable; no action executed.') from None
+        threading.Thread(target=self._run_job, args=(job_id,actor,kind,target),
+                         daemon=True, name='open-ci-host-' + kind).start()
+        return {'job_id':job_id, 'status':'running',
+                'message':'Host request accepted; check job status for the actual result.'}
 
 class _Handler(socketserver.StreamRequestHandler):
     def handle(self):
@@ -214,7 +253,7 @@ class _Handler(socketserver.StreamRequestHandler):
                 raise ValueError('Invalid host-agent request framing or size.')
             request = json.loads(raw.decode('utf-8'))
             response = {'ok': True, 'data': self.server.controller.process(request)}
-        except (ValueError, RuntimeError, PermissionError, OSError, UnicodeError) as exc:
+        except (ValueError, RuntimeError, PermissionError, TypeError, OSError, UnicodeError) as exc:
             response = {'ok': False, 'error': str(exc)[:250]}
         self.wfile.write((json.dumps(response) + '\n').encode('utf-8'))
 
