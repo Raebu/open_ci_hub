@@ -9,3 +9,22 @@
 .workflow-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;background:#081525;border:1px solid #294054;border-radius:8px;padding:1rem;font-size:0.8rem;}
 
 .job-card{border:1px solid #2b3850;border-radius:12px;padding:18px;background:#121e31;min-width:0}.job-log{white-space:pre-wrap;overflow-wrap:anywhere;max-height:30rem;overflow:auto;padding:16px;background:#061322;border-radius:8px;font-size:.8rem}.job-card p{font-size:.8rem;margin:8px 0}
+
+/* Phone-first controls for multi-PC inventory and the opt-in terminal. */
+.terminal-output{height:clamp(220px,42vh,520px);overflow:auto;background:#071322;border:1px solid #34506c;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.82rem;line-height:1.55;}
+#terminal-actions{margin:10px 0 14px;}
+#machine-items .result-row{gap:16px;}
+#machine-items .controls{align-self:center;}
+:focus-visible{outline:2px solid #8de0c7;outline-offset:3px;}
+@media(max-width:860px){
+  .nav{overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:6px;scrollbar-width:thin;}
+  .nav a{min-width:38px;display:inline-flex;align-items:center;justify-content:center;}
+  .btn{min-height:44px;}
+}
+@media(max-width:520px){
+  #terminal-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;}
+  #terminal-actions .btn{min-width:0;padding:9px 5px;font-size:.77rem;}
+  #machine-items .controls{align-self:stretch;width:100%;justify-content:flex-start;}
+  #machine-items .result-row{overflow-wrap:anywhere;}
+  input{font-size:16px!important;}
+}
