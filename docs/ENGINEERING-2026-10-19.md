@@ -14,7 +14,7 @@ native onboarding and recovery; it does not complete the entire product mandate.
   or group runner with `local-ci`. Query scopes separately so shared runners cannot
   hide the native workers. Shared/instance runners never qualify.
 - Recheck readiness on apply; a preview alone cannot authorize or bypass the gate.
-- Report CircleCI readiness as UNVERIFIED. Login alone is not a runner or push test.
+- Report CircleCI readiness as UNVERIFIED and block workflow application until verified. Login alone is not a runner or push test.
 - Cross-process setup lock protects native config and local metadata from concurrent
   registrations. OS releases the lock on process death; preserve its inode.
 - Validate GitLab metadata before minting a credential or registering a worker.
@@ -135,10 +135,4 @@ execution guarantee. GitHub checks the first 100 runners; GitLab checks the firs
 ## GitHub delivery and merge gate
 
 Implementation commit: `22d8510`. Review: [PR #4](https://github.com/Raebu/open_ci_hub/pull/4).
-The externally reported `Raeburn Local CI` status failed with **“No allow-listed CI
-workflow detected”**, with no diagnostic URL. This is separate from the passing
-local Python/Compose/container checks. Its workflow allowlist could not be located
-in the repository or the inspected local orchestration source. The status was not
-overridden, and no checks were disabled or hosted workflows dispatched. PR #4 is
-left open and unmerged pending a compatible, approved local-CI configuration and
-review. This external failure must not be presented as a passing CI gate.
+The earlier external `Raeburn Local CI` status failed with `No allow-listed CI workflow detected`. A subsequent exact-head status **passed** and the native self-hosted GitHub Actions PR test also **passed** on runner `open-ci-hub-garuda` (run 39294659429). This is not a hosted paid runner. The updated CircleCI readiness guard needs its own subsequent green checks and code review. GitLab/CircleCI real push-to-run evidence and independent security review remain outstanding.
