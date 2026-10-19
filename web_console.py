@@ -355,6 +355,16 @@ class WebConsole:
                         return self.output(202, {'message': 'Approval requested. Open the desktop dashboard to approve this identity.'})
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Sign in or request mobile approval first.'})
+                    if path == '/api/host/job':
+                        from host_agent import client_request
+                        role = console.role(self)
+                        if role not in ('owner', 'editor'):
+                            return self.output(403, {'error':'Host job details require management permission.'})
+                        actor = 'local-owner' if role == 'owner' else console.remote_identity(self)
+                        if not actor:
+                            return self.output(403, {'error':'Host identity unavailable.'})
+                        return self.output(200, client_request({
+                            'op':'job', 'actor': actor, 'job_id':data.get('job_id')}))
                     if path in ('/api/host/preview', '/api/host/execute'):
                         from host_agent import client_request
                         role = console.role(self)
