@@ -134,3 +134,9 @@ It caps simultaneous worker processes, looks for queued provider jobs, and can r
 ### CircleCI existing workflow migration
 
 For GitHub-backed CircleCI projects with an authorised native machine resource class, the [CircleCI fleet guide](docs/CIRCLECI-FLEET.md) documents a disabled-by-default migration controller. It preserves conventional existing machine-job build steps, proposes resource-class changes as GitHub PRs, and refuses unsafe or ambiguous configurations. Unlike the verified GitHub native push runner, real CircleCI self-hosted execution remains unverified until an eligible CircleCI instance and live job are available.
+
+## Secure Garuda Linux host agent (optional)
+
+The [host agent guide](docs/HOST-AGENT.md) describes a separate, **non-root** local management service for your Linux PC. It can show host status, install explicitly approved Flatpak desktop apps for your desktop user, and start/stop explicitly approved systemd user services. An owner session or separately authorised Tailscale mobile editor uses the existing dashboard's **My PC** section, two-step confirmation and asynchronous job outcome polling.
+
+**No CI/CD job is given direct administrator access or a host-agent socket.** The agent never listens on a TCP port or runs arbitrary shell commands and does not perform root-level pacman installs. This is opt-in and requires one-time installation on the actual PC; a successful CI test does not activate it.
