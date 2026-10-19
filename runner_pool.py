@@ -212,8 +212,19 @@ def queued(repo,status):
 def schedule():
     rows=_state()
     running=_active()
-    pending=[]
+    trusted={}
     for repo,info in rows.items():
+        try:
+            safe = _trusted_workflow(repo,info['branch'])
+        except (RuntimeError,ValueError):
+            safe = False
+        if safe:
+            trusted[repo]=info
+        elif info['container'] in running:
+            stop(repo)  # Fail closed when a registered repo becomes untrusted.
+            running.discard(info['container'])
+    pending=[]
+    for repo,info in trusted.items():
         try:
             if queued(repo,'queued'):
                 pending.append(repo)
@@ -222,10 +233,10 @@ def schedule():
     # Prefer queued jobs. Never interrupt a repo that has in-progress runs or
     # whose activity cannot be verified safely.
     for repo in pending:
-        if rows[repo]['container'] in running:
+        if trusted[repo]['container'] in running:
             continue
         if len(running) >= MAX_ACTIVE:
-            for victim,info in rows.items():
+            for victim,info in trusted.items():
                 if info['container'] not in running or victim in pending:
                     continue
                 try:
@@ -238,7 +249,7 @@ def schedule():
         if len(running) < MAX_ACTIVE:
             try:
                 start(repo)
-                running.add(rows[repo]['container'])
+                running.add(trusted[repo]['container'])
             except RuntimeError:
                 pass
     return {'registered':len(rows),'active':len(running),'queued_repositories':len(pending)}
@@ -250,11 +261,22 @@ def sync(owner,apply=False,limit=MAX_NEW):
     if not 1<=limit<=MAX_NEW:
         raise ValueError('At most four new runner registrations per pass.')
     output, count=[],0
-    for repo,branch in fleet.discover(owner):
+    visible=fleet.discover(owner)
+    known={repo for repo,branch in visible}
+    existing=_state()
+    if apply:
+        for repo in existing:
+            if repo.split('/')[0].casefold()==owner.casefold() and repo not in known:
+                stop(repo)
+                output.append({'repo':repo,'status':'paused-out-of-scope'})
+    for repo,branch in visible:
         try:
-            if not _trusted_workflow(repo,branch):
-                continue
             rows=_state()
+            if not _trusted_workflow(repo,branch) or (repo in rows and rows[repo]['branch']!=branch):
+                if apply and repo in rows:
+                    stop(repo)  # Policy drift must not expose personal hosts to PR jobs.
+                output.append({'repo':repo,'status':'paused-unsafe' if repo in rows else 'manual'})
+                continue
             if repo in rows:
                 status='registered'
             elif apply and count<limit:
