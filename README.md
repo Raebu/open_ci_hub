@@ -2,7 +2,7 @@
 
 An **open-source, provider-neutral, local-first CI/CD control centre** for GitHub Actions, GitLab CI/CD and CircleCI. Use the providers' native self-hosted runners to build on a computer you control instead of purchasing hosted runner minutes.
 
-**Release: v4.0 community preview — 57 automated tests passing.** This release has not been validated with live provider accounts or Docker in the build environment. Do **not** treat it as a security-audited or production-certified service.
+**Release: v4 community preview; native onboarding is implemented in source and requires live verification.** This release has not been validated with live provider accounts or Docker in the build environment. Do **not** treat it as a security-audited or production-certified service.
 
 ## Highlights
 
@@ -65,7 +65,7 @@ The UI launches interactive CLI setup in a visible terminal on **the owner PC**.
 
 Open CI Hub is **MIT licensed** and its core is neutral: no account, organisation, company or domain is hard-coded. Contributions for Azure DevOps, Forgejo, Gitea, Jenkins, Buildkite and other providers are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md), [ROADMAP.md](docs/ROADMAP.md), and [SECURITY.md](docs/SECURITY.md).
 
-This ZIP is a Git-ready project, **not a published GitHub repository**. To publish it, create your own repository then upload/push the extracted files; never add `.local/`.
+The public source repository is [Raebu/open_ci_hub](https://github.com/Raebu/open_ci_hub). Never commit `.local/` or provider credentials.
 
 ### What remains before a verified production release
 
@@ -73,3 +73,24 @@ This ZIP is a Git-ready project, **not a published GitHub repository**. To publi
 - Complete at least one native build for GitHub, GitLab and CircleCI; verify job tags, protected refs, artifact behavior and teardown/deregistration.
 - Obtain a security review, particularly of native runner isolation, reverse-proxy identity, token storage, updates, logs and device permissions.
 - Optional true cloud-synced multi-computer identities require a **separately deployed control plane** and OIDC/OAuth infrastructure. Do not confuse the shipped Tailscale private workspace with an always-on cloud account.
+
+## Runner storage and safety
+
+The GitHub runner image includes a bootstrap that restores missing `config.sh` and `run.sh` into the persistent runner volume before registration or startup. Docker normally seeds **new named volumes** from existing image content; this bootstrap also protects against partially initialised volumes and avoids depending on Docker's one-time copy behaviour. Runner registration is then retained across container restarts. Updating the image does **not** update an already-populated volume's runner binaries; plan a controlled runner upgrade and re-registration rather than deleting live volumes without first deregistering them.
+
+**Untrusted code warning:** self-hosted runner jobs run code on your computer. Do not attach this runner to public-repository pull requests from unknown contributors. GitHub and GitLab platform permissions, protected branches and operator approval are required; the project does not provide a general-purpose sandbox. Never mount the host Docker socket into the runner container to make builds work.
+
+## Native push-to-run workflows (new)
+
+Open CI Hub has a **Native CI onboarding** screen. Select an existing repository,
+preview a new push-triggered workflow configured for your native GitHub Actions,
+GitLab CI/CD, or CircleCI runner, and explicitly approve the creation of a
+provider pull/merge request. Existing workflow files are never overwritten.
+GitLab also supports project **and group** runner registration, including adding
+another runner to the existing GitLab runner container. See
+[Native CI setup](docs/NATIVE-CI.md) before enabling it on a public repository.
+
+**This does not silently migrate existing paid hosted CI jobs.** Existing
+workflows must be reviewed and redirected to eligible self-hosted runners to
+avoid their hosted minutes. Live provider jobs and safe execution of untrusted
+code remain release requirements; the project is still a community preview.

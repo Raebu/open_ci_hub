@@ -74,7 +74,7 @@ def create_repo(provider: str, name: str, visibility: str, description: str = ''
     return {'message': 'Repository created. View it on your signed-in GitLab instance.', 'url': ''}
 
 
-def launch_signin(provider: str, setup: bool = False) -> str:
+def launch_signin(provider: str, setup: bool = False, group: bool = False, add: bool = False) -> str:
     """Open interactive official CLI sign-in in a *visible local terminal*.
 
     The CLI remains the OAuth client. No tokens are returned to the web server.
@@ -86,10 +86,10 @@ def launch_signin(provider: str, setup: bool = False) -> str:
     }
     if provider not in commands:
         raise ValueError('Unsupported provider')
-    args = ([sys.executable, str(Path(__file__).resolve().parent / 'hub.py'), 'setup', provider]
-            if setup else commands[provider])
-    if not shutil.which(args[0]):
-        raise RuntimeError(f'Install the {args[0]} CLI first (see INSTALL.md).')
+    # Open sign-in/setup in a separate interactive wrapper that holds its terminal
+    # open after failure or success, so users can inspect the final result.
+    args = [sys.executable, str(Path(__file__).resolve().parent / 'terminal_session.py'),
+            provider, ('add-group' if group else 'add-project') if add else ('group' if group else ('setup' if setup else 'login'))]
     if os.name == 'nt':
         # Use a visible PowerShell window for CLIs that require interactive prompts.
         # All arguments are static and never come from incoming HTTP requests.
@@ -118,7 +118,7 @@ def launch_signin(provider: str, setup: bool = False) -> str:
                 break
         else:
             raise RuntimeError('No desktop terminal was found. Run the provider sign-in from hub.py menu.')
-    label = 'runner setup' if setup else 'sign-in'
+    label = 'additional runner setup' if add else ('group runner setup' if group else ('runner setup' if setup else 'sign-in'))
     return f'{provider.title()} {label} opened in a terminal on your PC. Complete the guided authorisation there.'
 
 
@@ -358,6 +358,34 @@ class WebConsole:
                             raise
                         console.audit.add(actor, 'pipeline.' + action, provider + ':' + repo + '#' + str(run_id), 'requested')
                         return self.output(200, {'message': 'Provider accepted the ' + action + ' request.'})
+                    if path in ('/api/onboarding/plan', '/api/onboarding/apply'):
+                        from onboarding import make_plan, create_review_request
+                        if console.role(self) not in ('owner', 'editor'):
+                            return self.output(403, {'error': 'Management permission required.'})
+                        plan = make_plan(data.get('provider'), data.get('repo'),
+                                         branch=data.get('branch', 'main'),
+                                         resource_class=data.get('resource_class', ''))
+                        if path.endswith('plan'):
+                            return self.output(200, plan.as_dict())
+                        if data.get('confirm') is not True:
+                            return self.output(400, {'error': 'Explicit approval required to modify a provider repository.'})
+                        result = create_review_request(plan, approved=True)
+                        console.audit.add(console.remote_identity(self) or 'local-owner',
+                                          'onboarding.review', plan.provider + ':' + plan.repo,
+                                          'requested')
+                        return self.output(201, result)
+                    if path == '/api/runner/add-gitlab':
+                        if not console.local(self) or console.role(self) != 'owner':
+                            return self.output(403, {'error': 'Runner setup must begin on the owner PC.'})
+                        scope = data.get('scope')
+                        if scope not in ('project', 'group'):
+                            raise ValueError('Choose a GitLab project or group scope.')
+                        return self.output(202, {'message': launch_signin('gitlab', setup=True,
+                                                   group=scope == 'group', add=True)})
+                    if path == '/api/runner/group-setup':
+                        if not console.local(self) or console.role(self) != 'owner':
+                            return self.output(403, {'error': 'Runner setup must begin on the owner PC.'})
+                        return self.output(202, {'message': launch_signin('gitlab', setup=True, group=True)})
                     if path == '/api/runner/setup':
                         if not console.local(self) or console.role(self) != 'owner':
                             return self.output(403, {'error':'Runner setup must begin on the owner PC.'})

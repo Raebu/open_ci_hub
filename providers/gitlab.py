@@ -57,3 +57,31 @@ def prepare() -> Registration:
     return Registration(name=name, target=origin, token=token,
                         metadata={'url': origin, 'project': target, 'name': name,
                                   'runner_id': str(created.get('id', ''))})
+
+def prepare_group() -> Registration:
+    """Create a protected group-level runner for multiple authorised projects."""
+    target = input('GitLab group URL: ').strip().rstrip('/')
+    uri = urlsplit(target)
+    group = uri.path.strip('/')
+    if uri.scheme != 'https' or not uri.hostname or uri.username or uri.password or uri.query or uri.fragment:
+        raise ValueError('Enter a full HTTPS GitLab group URL.')
+    if uri.port is not None and uri.port not in (443, 8443):
+        raise ValueError('Unsupported GitLab HTTPS port.')
+    if not group or not all(re.fullmatch(r'[A-Za-z0-9_.-]+', segment) for segment in group.split('/')):
+        raise ValueError('Enter a valid GitLab group path (subgroups supported).')
+    host = uri.hostname
+    origin = f'https://{uri.netloc}'
+    name = input_name()
+    if not authenticated(host):
+        login(host)
+    details = response_object(['glab', 'api', f'groups/{quote(group, safe="")}', '--hostname', host])
+    group_id = details.get('id')
+    if not isinstance(group_id,int) or isinstance(group_id,bool):
+        raise RuntimeError('Could not resolve GitLab group ID. Check group access.')
+    created = response_object(['glab', 'api', '--hostname', host, '-X', 'POST', 'user/runners',
+                               '-f', 'runner_type=group_type', '-f', f'group_id={group_id}',
+                               '-f', f'description={name}', '-f', f'tag_list={RUNNER_TAG}',
+                               '-f', 'run_untagged=false', '-f', 'access_level=ref_protected'])
+    return Registration(name=name, target=origin, token=secret_from(created),
+                        metadata={'url': origin, 'group': target, 'scope': 'group',
+                                  'name': name, 'runner_id': str(created.get('id',''))})

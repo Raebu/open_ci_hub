@@ -7,6 +7,13 @@
 - Tailscale Serve access to the same instance, identity approval/revocation, viewer/editor and desktop-owner boundaries.
 - 57 automated Python tests with negative API/CLI input tests, and JavaScript syntax validation.
 
+## Native push-to-run feature (code delivered; live provider evidence pending)
+
+- Dashboard generates a native push-triggered self-hosted smoke workflow and creates an approved PR/MR.
+- GitLab group-scoped runner setup and additional registrations share its native runner configuration.
+- Existing workflows are **not** silently migrated or overwritten; old hosted jobs still consume hosted minutes until reviewed.
+- Demonstrate real native jobs on each provider before claiming production-ready support.
+
 ## Production release blockers (highest priority)
 
 1. **Real-machine three-provider end-to-end suite:** native runner registration, successful trusted CI job, restart, cancellation, retry, and provider deregistration.

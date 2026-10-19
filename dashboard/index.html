@@ -13,7 +13,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#health">✦ <span>Health</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#health">✦ <span>Health</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -41,6 +41,17 @@
             <label>GitHub owner (optional)<input id="browse-owner" placeholder="Your username or organisation"></label>
             <div class="wide"><button id="browse-repos" type="button" class="btn secondary">Browse repositories</button></div></div>
           <div id="repository-items" class="results" aria-live="polite"></div>
+        </section>
+        <section id="onboarding"><div class="section-head"><div><h2>Native CI onboarding</h2><p>Prepare a push-triggered self-hosted workflow and open a provider review request. No hosted build minutes.</p></div></div>
+          <form id="onboard-form" class="form-grid">
+            <label>CI provider<select id="onboard-provider"><option value="github">GitHub Actions</option><option value="gitlab">GitLab CI/CD</option><option value="circleci">CircleCI (GitHub repository)</option></select></label>
+            <label>Repository<input id="onboard-repo" placeholder="owner/repo or group/project" required maxlength="300"></label>
+            <label>Target push branch<input id="onboard-branch" value="main" required maxlength="150"></label>
+            <label id="circleci-class-label" class="hidden">CircleCI resource class<input id="onboard-class" placeholder="namespace/local-ci" maxlength="201"></label>
+            <div class="wide"><button id="onboard-preview" type="submit" class="btn secondary">Preview native workflow</button></div>
+          </form>
+          <div id="onboard-result" class="results" aria-live="polite"></div>
+          <p class="small">Important: onboarding adds a smoke workflow; it does not silently migrate existing jobs. Existing hosted workflows can still consume paid minutes until reviewed and changed. Never run untrusted PR code on a persistent worker.</p>
         </section>
         <section id="pipelines"><div class="section-head"><div><h2>Pipeline cockpit</h2><p>Inspect recent runs and explicitly retry or cancel. All operations happen on the provider.</p></div></div>
           <div class="form-grid"><label>Provider<select id="pipeline-provider"><option value="github">GitHub</option><option value="gitlab">GitLab</option></select></label>
