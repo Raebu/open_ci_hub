@@ -168,8 +168,18 @@ async function requestHostAction(){
   if(!confirm('Host operation: '+preview.description+'\n\n'+preview.warning+'\n\nThis changes your PC. Continue?'))return;
   const results=$('host-results');results.replaceChildren(el('p','Waiting for the host agent to finish…'));
   try{
-    const done=await api('/api/host/execute',{kind,target,preview_token:preview.preview_token,confirm:true});
-    results.replaceChildren(el('p',done.message));
+    const accepted=await api('/api/host/execute',{kind,target,preview_token:preview.preview_token,confirm:true});
+    results.replaceChildren(el('p','Host task accepted. Tracking the actual outcome…'));
+    if(!accepted.job_id)throw new Error('Host returned no job reference.');
+    let done=null;
+    for(let i=0;i<90;i++){
+      await new Promise(resolve=>setTimeout(resolve,2000));
+      done=await api('/api/host/job',{job_id:accepted.job_id});
+      if(done.status!=='running')break;
+    }
+    if(!done||done.status==='running')throw new Error('Host action is still running. Inspect agent audit before retrying.');
+    results.replaceChildren(el('p',done.message||done.status));
+    if(done.status!=='success')throw new Error(done.message||'Host operation failed.');
     notice('Approved host operation completed.');
     await loadHost();
     await loadDiagnostics();
