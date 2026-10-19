@@ -26,6 +26,15 @@ class TerminalManager:
     def __init__(self):
         self.lock = threading.RLock()
         self.sessions = {}
+        self._stop_reaper = threading.Event()
+        self._reaper = threading.Thread(target=self._reap_loop,
+                                        name='open-ci-pty-expiry',daemon=True)
+        self._reaper.start()
+
+    def _reap_loop(self):
+        while not self._stop_reaper.wait(5):
+            with self.lock:
+                self._expire()
 
     def _stop(self, item):
         process=item['process']
@@ -113,7 +122,7 @@ class TerminalManager:
         if not isinstance(data,str) or len(data)>1500:
             raise ValueError('Invalid PTY input.')
         try: payload=base64.b64decode(data,validate=True)
-        except (ValueError,Exception):
+        except Exception:
             raise ValueError('Invalid base64 PTY input.') from None
         if not payload or len(payload)>MAX_WRITE:
             raise ValueError('Terminal write must be 1-512 bytes.')
@@ -132,6 +141,7 @@ class TerminalManager:
             return {'closed':True}
 
     def shutdown(self):
+        self._stop_reaper.set()
         with self.lock:
             for item in self.sessions.values():
                 self._stop(item)
