@@ -165,6 +165,24 @@ def discover(group):
             return sorted(seen.items(), key=lambda x: x[0].casefold())
     raise RuntimeError('GitLab project pagination limit reached; no automatic partial application.')
 
+def _root_has_ci(project, branch):
+    """Confirm absence using an accessible complete root tree; never infer from API failure."""
+    encoded = quote(project, safe='')
+    total = 0
+    for page in range(1, 11):
+        rows = invoke_json(['glab', 'api', f'projects/{encoded}/repository/tree?'
+                            f'ref={quote(branch,safe="")}&per_page=100&page={page}'])
+        if not isinstance(rows, list):
+            raise RuntimeError('Cannot inspect complete GitLab project root tree.')
+        total += len(rows)
+        if any(isinstance(row, dict) and row.get('path') == '.gitlab-ci.yml'
+               for row in rows):
+            return True
+        if len(rows) < 100:
+            return False
+    raise RuntimeError('Project root tree exceeds safe pagination limit; cannot confirm missing CI.')
+
+
 def _get_config(project, branch):
     encoded = quote(project, safe='')
     path = quote('.gitlab-ci.yml', safe='')
@@ -228,7 +246,20 @@ def assess(project, branch):
     try:
         read = _get_config(project, branch)
         if read is None:
-            return Plan(project, branch, 'manual', 'GitLab CI file absent/inaccessible; use native onboarding to add a reviewed pipeline.')
+            try:
+                present = _root_has_ci(project, branch)
+            except RuntimeError as exc:
+                return Plan(project, branch, 'blocked',
+                            'GitLab CI could not be read and repository root could not be verified: ' + str(exc))
+            if present:
+                return Plan(project, branch, 'blocked',
+                            'Existing GitLab CI file is inaccessible; refusing to overwrite it.')
+            from onboarding import make_plan
+            setup = make_plan('gitlab', project, branch=branch)
+            return Plan(project, branch, 'onboard-ready',
+                        'No existing GitLab CI; propose a create-only native runner smoke pipeline. '
+                        'Actual project tests/builds must be added separately after review.',
+                        setup.content, '', 1)
         source, commit = read
         changed, jobs = migrate(source)
         return Plan(project, branch, 'review-ready',
@@ -242,12 +273,12 @@ def existing_mr(project):
     items = invoke_json(['glab','api',f'projects/{encoded}/merge_requests?state=opened&per_page=100'])
     if not isinstance(items,list) or len(items) >= 100:
         raise RuntimeError('Cannot confirm all open GitLab merge requests.')
-    return any(isinstance(x,dict) and str(x.get('source_branch','')).startswith('open-ci-hub/fleet-')
-               for x in items)
+    return any(isinstance(x, dict) and str(x.get('source_branch', '')).startswith(
+               ('open-ci-hub/fleet-', 'open-ci-hub/onboard-')) for x in items)
 
 def create_mr(plan):
-    if plan.state != 'review-ready' or not plan.jobs:
-        raise ValueError('No safe migration candidate.')
+    if plan.state not in ('review-ready', 'onboard-ready') or not plan.jobs:
+        raise ValueError('No safe migration/onboarding candidate.')
     settings = policy()
     group_allowed = any(plan.project.casefold().startswith(g.casefold() + '/')
                         for g in settings['groups'])
@@ -269,6 +300,14 @@ def create_mr(plan):
     meta = _json_object(['glab','api',f'projects/{project_id}'])
     if meta.get('default_branch') != plan.branch:
         raise RuntimeError('GitLab default branch changed; refusing migration.')
+    if plan.state == 'onboard-ready':
+        from onboarding import make_plan, _create_gitlab_mr
+        template = make_plan('gitlab', plan.project, branch=plan.branch)
+        if plan.content != template.content or plan.last_commit_id:
+            raise RuntimeError('Unrecognised onboarding template; refusing file creation.')
+        # The existing native onboarding helper uses the GitLab create-only
+        # file endpoint: it must fail rather than replace any existing CI.
+        return _create_gitlab_mr(template)['url']
     branch = 'open-ci-hub/fleet-' + secrets.token_hex(6)
     _json_object(['glab','api','-X','POST',f'projects/{project_id}/repository/branches',
                   '-f',f'branch={branch}','-f',f'ref={plan.branch}'])
@@ -296,7 +335,7 @@ def sync(group, apply=False, limit=5, *, personal=False):
         try:
             plan = assess(project, branch)
             item = plan.summary()
-            if apply and plan.state == 'review-ready' and opened < limit:
+            if apply and plan.state in ('review-ready', 'onboard-ready') and opened < limit:
                 if existing_mr(project):
                     item.update(status='pending-review', reason='Existing fleet MR awaiting review.')
                 else:
