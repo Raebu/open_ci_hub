@@ -124,10 +124,13 @@ def _trusted_workflow(repo, branch):
             contents, _ = fleet._file(repo,branch,path)
             if not fleet.event_is_trusted_main(contents,branch):
                 return False
-            if '[self-hosted, linux, local-ci]' in contents:
-                found = True
-            elif fleet.RUNS_ON.search(contents):
+            jobs = re.findall(r'(?m)^ {4}runs-on:\s*([^\n#]+)', contents)
+            if re.search(r'(?m)^ {4}(?:uses|container|services):', contents):
                 return False
+            if any(job.strip() != '[self-hosted, linux, local-ci]' for job in jobs):
+                return False
+            if any(job.strip() == '[self-hosted, linux, local-ci]' for job in jobs):
+                found = True
         except RuntimeError:
             return False
     return found
@@ -280,17 +283,19 @@ def main(argv=None):
             p.add_argument('--limit',type=int,default=MAX_NEW)
     args=parser.parse_args(argv)
     try:
-        if args.action=='authorize':
-            result=authorize(args.target,args.confirm)
-        elif args.action=='schedule':
-            result=schedule()
-        elif args.action=='start':
-            result=start(safe_repo(args.target))
-        elif args.action=='stop':
-            result=stop(safe_repo(args.target))
-        else:
-            result=sync(args.target,apply=args.action=='sync' and args.apply,
-                        limit=getattr(args,'limit',MAX_NEW))
+        from state_lock import setup_lock
+        with setup_lock(ROOT / '.local'):
+            if args.action=='authorize':
+                result=authorize(args.target,args.confirm)
+            elif args.action=='schedule':
+                result=schedule()
+            elif args.action=='start':
+                result=start(safe_repo(args.target))
+            elif args.action=='stop':
+                result=stop(safe_repo(args.target))
+            else:
+                result=sync(args.target,apply=args.action=='sync' and args.apply,
+                            limit=getattr(args,'limit',MAX_NEW))
         print(json.dumps(result,indent=2))
         return 0
     except (RuntimeError,ValueError,PermissionError,OSError) as exc:
