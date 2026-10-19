@@ -32,6 +32,8 @@ class MigrationTests(unittest.TestCase):
         unsafe = [
             GOOD.replace('  workflow_dispatch:', '  pull_request:'),
             GOOD.replace('    branches: [main]', '    branches: [feature]'),
+            GOOD.replace('    branches: [main]', '    branches:\n      - main\n      - another'),
+            GOOD.replace('    branches: [main]', '    branches: [main, other]'),
             GOOD.replace('    branches: [main]', ''),
             GOOD.replace('on:\n  push:', 'on: [push]'),
             GOOD.replace('    runs-on: ubuntu-latest', '    runs-on: ubuntu-latest\n    container: python:3'),
