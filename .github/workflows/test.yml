@@ -1,14 +1,19 @@
-# Avoid paid hosted runner minutes on private repositories. This only runs on
-# trusted same-repository contributors. Fork PRs never run on personal hardware.
+# Native self-hosted jobs only; no paid hosted runner minutes.
+# Run main pushes only for the repository owner, and pull requests only from
+# trusted same-repository contributors. Never execute fork PR code on this PC.
 name: Open CI Hub tests (self-hosted)
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 jobs:
   test:
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/main' && github.actor == 'Raebu') ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
