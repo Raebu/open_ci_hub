@@ -139,6 +139,43 @@ async function loadDiagnostics(){
   }catch(e){audit.append(el('p',e.message))}
 }
 
+let hostInfo=null;
+function hostTargets(){
+  const targets=hostInfo?($('host-action').value==='flatpak_install'?hostInfo.allowed_flatpaks:hostInfo.allowed_services):[];
+  const select=$('host-target');select.replaceChildren();
+  for(const target of targets||[]){const option=el('option',target);option.value=target;select.append(option);}
+  $('host-prepare').disabled=!targets?.length;
+}
+async function loadHost(){
+  const status=$('host-status');status.replaceChildren();
+  try{
+    hostInfo=await api('/api/host');
+    if(!hostInfo.available){
+      status.append(el('h3','Host agent not running'),el('p',hostInfo.message||'Start the dedicated local user service on your PC.'));
+      show('host-controls',false);return;
+    }
+    status.append(el('h3','● Host connected'),el('p',hostInfo.system?.hostname||'Linux host'),
+      el('p','OS: '+(hostInfo.system?.system||'Unknown')+' · Free disk: '+(hostInfo.system?.disk_free_gb??'?')+' GB','small'),
+      el('p','Approved desktop apps: '+(hostInfo.allowed_flatpaks?.length||0)+' · User services: '+(hostInfo.allowed_services?.length||0),'small'));
+    show('host-controls',state.role==='owner'||state.role==='editor');
+    hostTargets();
+  }catch(err){hostInfo=null;status.append(el('p',err.message));show('host-controls',false);}
+}
+async function requestHostAction(){
+  const kind=$('host-action').value,target=$('host-target').value;
+  if(!target){notice('No target has been approved on the PC yet.',true);return;}
+  const preview=await api('/api/host/preview',{kind,target});
+  if(!confirm('Host operation: '+preview.description+'\n\n'+preview.warning+'\n\nThis changes your PC. Continue?'))return;
+  const results=$('host-results');results.replaceChildren(el('p','Waiting for the host agent to finish…'));
+  try{
+    const done=await api('/api/host/execute',{kind,target,preview_token:preview.preview_token,confirm:true});
+    results.replaceChildren(el('p',done.message));
+    notice('Approved host operation completed.');
+    await loadHost();
+    await loadDiagnostics();
+  }catch(err){results.replaceChildren(el('p',err.message));notice(err.message,true);}
+}
+
 function configureOnboarding(){
   const provider=$('onboard-provider').value;
   show('circleci-class-label',provider==='circleci');
@@ -173,7 +210,10 @@ async function init(){
     try{await api('/api/logout',{});notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();});
+  $('host-refresh').addEventListener('click',loadHost);
+  $('host-action').addEventListener('change',hostTargets);
+  $('host-form').addEventListener('submit',async e=>{e.preventDefault();const button=$('host-prepare');button.disabled=true;try{await requestHostAction();}catch(err){notice(err.message,true)}finally{hostTargets();}});
   $('browse-repos').addEventListener('click',browseRepositories);
   $('onboard-provider').addEventListener('change',configureOnboarding);
   $('onboard-form').addEventListener('submit',async e=>{e.preventDefault();await previewOnboarding();});
@@ -187,7 +227,7 @@ async function init(){
   });
   configureOnboarding();
   await refresh();
-  if(state.ready)await loadDiagnostics();
+  if(state.ready){await loadDiagnostics();await loadHost();}
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }
 document.addEventListener('DOMContentLoaded',init);
