@@ -87,7 +87,7 @@ class CircleCiFleetSafetyTests(unittest.TestCase):
         with patch('circleci_fleet.resource_for',return_value='team/local'),\
              patch('circleci_fleet.has_pending_pr',return_value=True),\
              patch('circleci_fleet._json_object') as write:
-            with self.assertRaisesRegex(RuntimeError,'already'):
+            with self.assertRaisesRegex(RuntimeError,'pending'):
                 cf.create_pr(p)
             write.assert_not_called()
 
