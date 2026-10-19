@@ -117,6 +117,11 @@ async function previewOnboarding(){
     const plan=await api('/api/onboarding/plan',{provider,repo,branch,resource_class});
     root.replaceChildren(el('h3',`New: ${plan.path}`),el('p',plan.warning,'small'));
     root.append(el('pre',plan.content,'workflow-preview'));
+    const readiness=el('p','Provider readiness has not been checked.','small');
+    root.append(readiness,btn('Check native runner',async()=>{
+      const result=await api('/api/onboarding/check',{provider,repo,branch,resource_class});
+      readiness.textContent=result.message+' '+result.runners.map(r=>r.name+(r.busy?' (busy; jobs will queue)':'')).join(', ');
+    }));
     root.append(btn('Open review request',async()=>{
       if(!confirm(`Create a ${provider==='gitlab'?'merge':'pull'} request for ${repo}? It will not be merged automatically.`))return;
       const created=await api('/api/onboarding/apply',{provider,repo,branch,resource_class,confirm:true});

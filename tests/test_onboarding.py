@@ -9,6 +9,11 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import onboarding
 
 class PlanTests(unittest.TestCase):
+    def setUp(self):
+        self.preflight = patch.object(onboarding, 'check_readiness', return_value={'verified': True})
+        self.preflight.start()
+        self.addCleanup(self.preflight.stop)
+
     def test_push_triggered_github_workflow_on_self_hosted_only(self):
         p=onboarding.make_plan('github','example/service')
         self.assertEqual(p.path,'.github/workflows/open-ci-hub.yml')
@@ -26,7 +31,7 @@ class PlanTests(unittest.TestCase):
     def test_circleci_resource_class_with_branch_filter(self):
         p=onboarding.make_plan('circleci','owner/repo',resource_class='namespace/workers')
         self.assertIn('resource_class: namespace/workers',p.content)
-        self.assertIn('only: main',p.content)
+        self.assertIn('only: "main"',p.content)
         self.assertIn('machine: true',p.content)
 
     def test_reject_invalid_repo_branch_or_resource_class(self):

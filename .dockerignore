@@ -1,0 +1,5 @@
+# Allow only runner image sources into Docker's build context.
+# Never transmit credentials, registration state, Git history or other projects.
+**
+!containers/
+!containers/**

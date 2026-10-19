@@ -39,7 +39,7 @@ class GithubRunnerBootstrapTests(unittest.TestCase):
     def test_registration_passes_through_bootstrap(self):
         from hub import Registration, register
         meta = Registration(name='local-runner', target='https://github.com/test/repo', token='dummy', metadata={})
-        with patch('hub.compose') as composer:
+        with patch('hub.compose') as composer, patch('hub.secure_write'):
             register('github', meta)
         args = composer.call_args_list[0].args
         self.assertNotIn('--entrypoint', args)

@@ -20,7 +20,7 @@ Open CI Hub **does not intercept commits** or replace provider schedulers. On ea
 2. Sign in to your provider with its official CLI. Register a project, organisation or GitLab group runner and confirm it is connected.
 3. Under **Native CI onboarding**, choose GitHub, GitLab or CircleCI, select an authorised repository, and enter the default branch (usually `main`). For CircleCI use your actual resource class.
 4. Click **Preview native workflow**. Read the generated YAML and safety warning before proceeding.
-5. Click **Open review request** and confirm. This uses the provider's authenticated CLI and creates a new review branch and PR/MR. It **never automatically merges**.
+5. Click **Check native runner**. GitHub/GitLab require an eligible online worker; GitLab also requires a protected branch. Apply rechecks readiness. CircleCI readiness stays UNVERIFIED. Click **Open review request** and confirm. This uses the provider's authenticated CLI and creates a new review branch and PR/MR. It **never automatically merges**.
 6. Confirm runner eligibility and repository branch protection. Review and merge the PR/MR. A subsequent push to the configured default branch triggers the workflow natively and targets your self-hosted runner.
 
 The first native job is an intentionally minimal **smoke test**, not an automatic migration of the repository's other CI jobs. Existing workflows can still target hosted executors and therefore can still consume hosted billable minutes. Do not claim otherwise. Migrating complex pipelines requires reviewing language/toolchain needs, operating system, permissions, caching, build containers and deployment secrets before changing `runs-on`, GitLab `tags`, or CircleCI `resource_class`.

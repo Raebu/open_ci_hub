@@ -8,14 +8,16 @@ import urllib.parse
 RUNNER_TAG = 'local-ci'
 
 
-def command(args: list[str], *, capture: bool = False, sensitive: bool = False) -> str:
+def command(args: list[str], *, capture: bool = False, sensitive: bool = False, timeout: int = 120) -> str:
     """Run a trusted installed CLI. Avoid printing token-bearing CLI output/errors."""
     if not shutil.which(args[0]):
         raise RuntimeError(f'{args[0]} is not installed. See docs/INSTALL.md.')
     try:
-        result = subprocess.run(args, check=True, text=True,
+        result = subprocess.run(args, check=True, text=True, timeout=timeout,
                                 stdout=subprocess.PIPE if capture or sensitive else None,
                                 stderr=subprocess.PIPE if sensitive else None)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f'{args[0]} timed out. Check provider state before retrying.') from None
     except subprocess.CalledProcessError as exc:
         # Provider response bodies may contain secrets or private account information.
         if sensitive:

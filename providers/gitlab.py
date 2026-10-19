@@ -34,12 +34,12 @@ def login(host: str | None = None) -> None:
     print(f'Opening GitLab browser sign-in for {host}.')
     if host != 'gitlab.com':
         print('Self-managed GitLab OAuth may require the server owner to create an OAuth application (client ID).')
-    command(['glab', 'auth', 'login', '--hostname', host, '--web'])
+    command(['glab', 'auth', 'login', '--hostname', host, '--web'], timeout=600)
 
 
 def prepare() -> Registration:
     target, origin, path = validate_target(input('GitLab project URL: '))
-    host = urlsplit(origin).hostname
+    host = urlsplit(origin).netloc
     name = input_name()
     if not authenticated(host):
         login(host)
@@ -50,9 +50,9 @@ def prepare() -> Registration:
         raise RuntimeError('Could not resolve GitLab project ID. Check project access.')
     # Runner restrictions are established server-side before receiving the secret.
     created = response_object(['glab', 'api', '--hostname', host, '-X', 'POST', 'user/runners',
-                               '-f', 'runner_type=project_type', '-f', f'project_id={project_id}',
+                               '-f', 'runner_type=project_type', '-F', f'project_id={project_id}',
                                '-f', f'description={name}', '-f', f'tag_list={RUNNER_TAG}',
-                               '-f', 'run_untagged=false', '-f', 'access_level=ref_protected'])
+                               '-F', 'run_untagged=false', '-f', 'access_level=ref_protected'])
     token = secret_from(created)
     return Registration(name=name, target=origin, token=token,
                         metadata={'url': origin, 'project': target, 'name': name,
@@ -69,7 +69,7 @@ def prepare_group() -> Registration:
         raise ValueError('Unsupported GitLab HTTPS port.')
     if not group or not all(re.fullmatch(r'[A-Za-z0-9_.-]+', segment) for segment in group.split('/')):
         raise ValueError('Enter a valid GitLab group path (subgroups supported).')
-    host = uri.hostname
+    host = uri.netloc
     origin = f'https://{uri.netloc}'
     name = input_name()
     if not authenticated(host):
@@ -79,9 +79,9 @@ def prepare_group() -> Registration:
     if not isinstance(group_id,int) or isinstance(group_id,bool):
         raise RuntimeError('Could not resolve GitLab group ID. Check group access.')
     created = response_object(['glab', 'api', '--hostname', host, '-X', 'POST', 'user/runners',
-                               '-f', 'runner_type=group_type', '-f', f'group_id={group_id}',
+                               '-f', 'runner_type=group_type', '-F', f'group_id={group_id}',
                                '-f', f'description={name}', '-f', f'tag_list={RUNNER_TAG}',
-                               '-f', 'run_untagged=false', '-f', 'access_level=ref_protected'])
+                               '-F', 'run_untagged=false', '-f', 'access_level=ref_protected'])
     return Registration(name=name, target=origin, token=secret_from(created),
                         metadata={'url': origin, 'group': target, 'scope': 'group',
                                   'name': name, 'runner_id': str(created.get('id',''))})

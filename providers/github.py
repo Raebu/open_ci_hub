@@ -29,7 +29,7 @@ def authenticated(host: str | None = None) -> bool:
 
 def login(host: str | None = None) -> None:
     print('Opening GitHub browser sign-in. Grant repository access required to administer runners.')
-    command(['gh', 'auth', 'login', '--hostname', 'github.com', '--web', '--scopes', 'repo'])
+    command(['gh', 'auth', 'login', '--hostname', 'github.com', '--web', '--scopes', 'repo'], timeout=600)
 
 
 def prepare() -> Registration:

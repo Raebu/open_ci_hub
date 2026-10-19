@@ -11,6 +11,7 @@ import secrets
 from dataclasses import dataclass
 from urllib.parse import quote
 from operations import safe_repo, invoke_json, invoke
+from readiness import check as check_readiness
 
 RESOURCE_CLASS = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$')
 BRANCH = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,149}$')
@@ -36,7 +37,7 @@ def _github(branch: str) -> str:
 name: Open CI Hub smoke test
 on:
   push:
-    branches: [{branch}]
+    branches: [{json.dumps(branch)}]
   workflow_dispatch:
 permissions:
   contents: read
@@ -85,7 +86,7 @@ workflows:
       - open-ci-hub-smoke:
           filters:
             branches:
-              only: {branch}
+              only: {json.dumps(branch)}
 '''
 
 
@@ -93,6 +94,8 @@ def make_plan(provider: str, repo: str, *, branch: str = 'main', resource_class:
     repo = safe_repo(repo)
     if not isinstance(branch, str) or not BRANCH.fullmatch(branch) or '..' in branch or branch.endswith(('/', '.')) or '//' in branch:
         raise ValueError('Invalid branch name.')
+    if provider in ('github', 'circleci') and len(repo.split('/')) != 2:
+        raise ValueError('GitHub source repositories require exactly OWNER/REPO.')
     if provider == 'github':
         return NativePlan(provider, repo, '.github/workflows/open-ci-hub.yml', _github(branch), branch,
                           'Adds a separate GitHub Actions smoke workflow. Existing workflows are NOT moved off hosted runners. ' 
@@ -194,6 +197,7 @@ def _create_gitlab_mr(plan: NativePlan) -> dict:
 def create_review_request(plan: NativePlan, *, approved: bool = False) -> dict:
     if not approved:
         raise PermissionError('Approval is required to create a branch and open a review request.')
+    check_readiness(plan.provider, plan.repo, plan.branch)
     if plan.provider in ('github','circleci'):
         return _create_github_pr(plan)
     if plan.provider == 'gitlab':

@@ -22,7 +22,7 @@ def authenticated(host: str | None = None) -> bool:
 
 def login(host: str | None = None) -> None:
     print('Opening CircleCI browser sign-in using the current CircleCI CLI.')
-    command(['circleci', 'auth', 'login'])
+    command(['circleci', 'auth', 'login'], timeout=600)
 
 
 def prepare() -> Registration:

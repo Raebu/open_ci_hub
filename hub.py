@@ -77,14 +77,33 @@ def metadata_path(provider: str) -> Path:
     return LOCAL / f'{provider}.json'
 
 
+def gitlab_index() -> list:
+    index = LOCAL / 'gitlab-runners.json'
+    try:
+        current = json.loads(index.read_text()) if index.exists() else []
+        if not isinstance(current, list) or any(not isinstance(x, dict) for x in current):
+            raise RuntimeError('Invalid GitLab runner metadata. Do not overwrite it.')
+        if not current and metadata_path('gitlab').exists():
+            current = [json.loads(metadata_path('gitlab').read_text())]
+    except (OSError, ValueError):
+        raise RuntimeError('Cannot read existing GitLab runner metadata safely; repair it before registration.') from None
+    if not isinstance(current, list) or any(not isinstance(x, dict) for x in current):
+        raise RuntimeError('Invalid GitLab runner metadata. Do not overwrite it.')
+    return current
+
+
 def register(provider: str, data: Registration) -> None:
     """Register the native runner using tokens only in transient process environment."""
+    if provider == 'gitlab':
+        current = gitlab_index()
+        if any(x.get('runner_id') == data.metadata.get('runner_id') and data.metadata.get('runner_id') for x in current):
+            raise RuntimeError('This GitLab runner already appears in the local index.')
     if provider == 'github':
         # Never embed the token in the host-side Docker argv; expand inside the
         # short-lived container. Docker administrators can still inspect it.
         command = ('exec ./config.sh --unattended --url "$GH_URL" '
                    '--token "$GH_TOKEN" --name "$GH_NAME" '
-                   f'--labels {RUNNER_TAG} --work _work --replace')
+                   f'--labels {RUNNER_TAG} --work _work')
         compose('--profile', 'github', 'run', '--rm', '--no-deps',
                 '-e', 'GH_URL', '-e', 'GH_NAME', '-e', 'GH_TOKEN',
                 'github', '/bin/sh', '-c', command,
@@ -108,21 +127,6 @@ def register(provider: str, data: Registration) -> None:
         raise ValueError(f'Unsupported provider: {provider}')
     if provider == 'gitlab':
         index = LOCAL / 'gitlab-runners.json'
-        try:
-            current = json.loads(index.read_text()) if index.exists() else []
-        except (OSError, ValueError):
-            raise RuntimeError('Cannot read existing GitLab runner metadata safely.') from None
-        if not isinstance(current, list):
-            raise RuntimeError('Invalid GitLab runner metadata. Do not overwrite it.')
-        if not current and metadata_path(provider).exists():
-            try:
-                original = json.loads(metadata_path(provider).read_text())
-            except (OSError, ValueError):
-                raise RuntimeError('Cannot read legacy GitLab runner metadata.') from None
-            if isinstance(original, dict):
-                current = [original]
-        if any(x.get('runner_id') == data.metadata.get('runner_id') and data.metadata.get('runner_id') for x in current if isinstance(x,dict)):
-            raise RuntimeError('This GitLab runner already appears in the local index.')
         current.append(data.metadata)
         secure_write(index, json.dumps(current, indent=2) + '\n')
         if not metadata_path(provider).exists():
@@ -139,6 +143,12 @@ def connect(provider: str) -> None:
 
 
 def setup(provider: str, *, group: bool = False, add: bool = False) -> None:
+    from state_lock import setup_lock
+    with setup_lock(LOCAL):
+        _setup(provider, group=group, add=add)
+
+
+def _setup(provider: str, *, group: bool = False, add: bool = False) -> None:
     if not docker_ready():
         raise RuntimeError('Docker Engine/Desktop and Docker Compose V2 must be running.')
     if metadata_path(provider).exists() and not (provider == 'gitlab' and add):
@@ -146,6 +156,8 @@ def setup(provider: str, *, group: bool = False, add: bool = False) -> None:
                            'remove or deregister existing runner before reconfiguration.')
     if group and provider != 'gitlab':
         raise ValueError('Group runner setup is supported for GitLab only.')
+    if provider == 'gitlab':
+        gitlab_index()  # Fail before creating a remote credential if recovery is needed.
     if group:
         from providers.gitlab import prepare_group
         data = prepare_group()
@@ -263,11 +275,23 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser('setup-gitlab-group', help='Register a protected group-scoped GitLab runner')
     sub.add_parser('add-gitlab-project', help='Register another project-scoped GitLab runner')
     sub.add_parser('add-gitlab-group', help='Register another group-scoped GitLab runner')
+    verify_cmd = sub.add_parser('verify-provider', help='Read-only native worker eligibility check')
+    verify_cmd.add_argument('provider', choices=SUPPORTED)
+    verify_cmd.add_argument('repo')
+    verify_cmd.add_argument('--branch', default='main')
+    verify_cmd.add_argument('--resource-class', default='')
     mobile_cmd = sub.add_parser('mobile', help='Private Tailscale mobile access')
     mobile_cmd.add_argument('action', choices=('on', 'off'))
     args = parser.parse_args(argv)
     try:
-        if args.command == 'menu': menu()
+        if args.command == 'verify-provider':
+            from onboarding import make_plan
+            from readiness import check
+            plan = make_plan(args.provider, args.repo, branch=args.branch, resource_class=args.resource_class)
+            result = check(plan.provider, plan.repo, plan.branch, args.resource_class)
+            print(json.dumps(result, indent=2))
+            return 0 if result['verified'] else 2
+        elif args.command == 'menu': menu()
         elif args.command == 'doctor': doctor()
         elif args.command == 'status': status()
         elif args.command == 'dashboard': dashboard()

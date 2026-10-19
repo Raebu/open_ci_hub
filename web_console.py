@@ -101,7 +101,7 @@ def launch_signin(provider: str, setup: bool = False, group: bool = False, add: 
         import shlex
         script = shlex.join(args)   # fully quoted local path and static arguments
         subprocess.Popen(['osascript', '-e', 'tell application "Terminal" to activate',
-                          '-e', f'tell application "Terminal" to do script "{script}"'],
+                          '-e', f'tell application "Terminal" to do script {json.dumps(script)}'],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         terminals = [
@@ -358,13 +358,16 @@ class WebConsole:
                             raise
                         console.audit.add(actor, 'pipeline.' + action, provider + ':' + repo + '#' + str(run_id), 'requested')
                         return self.output(200, {'message': 'Provider accepted the ' + action + ' request.'})
-                    if path in ('/api/onboarding/plan', '/api/onboarding/apply'):
+                    if path in ('/api/onboarding/plan', '/api/onboarding/apply', '/api/onboarding/check'):
                         from onboarding import make_plan, create_review_request
                         if console.role(self) not in ('owner', 'editor'):
                             return self.output(403, {'error': 'Management permission required.'})
                         plan = make_plan(data.get('provider'), data.get('repo'),
                                          branch=data.get('branch', 'main'),
                                          resource_class=data.get('resource_class', ''))
+                        if path.endswith('check'):
+                            from readiness import check
+                            return self.output(200, check(plan.provider, plan.repo, plan.branch, data.get('resource_class', '')))
                         if path.endswith('plan'):
                             return self.output(200, plan.as_dict())
                         if data.get('confirm') is not True:

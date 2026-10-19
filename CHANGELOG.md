@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — native runner eligibility and setup safety
+
+- Added provider-native readiness checks to dashboard, CLI and workflow application.
+- Excluded GitLab shared runners and required protected branch/tag eligibility.
+- Serialized runner setup across processes; validate metadata before registration.
+- Removed automatic replacement of existing GitHub runners; bounded provider calls.
+- Fixed GitLab typed API fields/custom ports and YAML branch scalar quoting.
+- Restricted Docker build context; added isolated local container validation.
+- Recorded real local and provider evidence, with remaining production gates explicit.
+
 ## 4.0.0 — 2026-10-19 (community preview)
 
 - Added GitHub/GitLab repository inventory to the graphical dashboard, with provider navigation and responsive layout.
