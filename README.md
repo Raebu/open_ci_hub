@@ -148,3 +148,9 @@ Open CI Hub now distinguishes native provider pipeline statuses from [runner-rep
 ## Explicitly authorised Host Terminal
 
 A separate **Terminal** tab can create an actor-scoped interactive Linux pseudo-terminal on the real host, under the regular user account. It is a new shell, **not a mirror of an existing KDE Konsole window**. It is disabled until the host owner explicitly runs the enablement command and grants each mobile editor separately. See [Host Terminal security and activation](docs/HOST-TERMINAL.md). No CI runner receives arbitrary host console privileges, and a successful PR run does not imply the host agent is deployed on the PC.
+
+## Signed deployment and rollback (optional)
+
+[Signed deployments guide](docs/SIGNED-DEPLOYMENTS.md) explains immutable staged .tar.gz releases approved with an **offline OpenSSH signing key**, source commit and mandatory test/build/database check metadata. The unprivileged release manager validates SHA-256 and signature, rejects malicious archive members, verifies release files again before activation, atomically switches the user-service current pointer and health-checks the release. If the service fails to restart or reports unhealthy, the last pointer is restored; explicit rollback is also supported.
+
+This is a host-local user-service deployment primitive, **not** cross-PC zero-downtime deployment, database rollback or independently attested CI. No signed release can be created by mere green status; a separate reviewer holding the private key must approve the release after evaluating evidence.
