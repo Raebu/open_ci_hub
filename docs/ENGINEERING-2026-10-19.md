@@ -14,7 +14,7 @@ native onboarding and recovery; it does not complete the entire product mandate.
   or group runner with `local-ci`. Query scopes separately so shared runners cannot
   hide the native workers. Shared/instance runners never qualify.
 - Recheck readiness on apply; a preview alone cannot authorize or bypass the gate.
-- Report CircleCI readiness as UNVERIFIED and block workflow application until verified. Login alone is not a runner or push test.
+- Check CircleCI project linkage, default branch, fork policy, available resource class and online instances using the official CLI before opening a workflow PR. An eligible agent is not proof of a completed push job.
 - Cross-process setup lock protects native config and local metadata from concurrent
   registrations. OS releases the lock on process death; preserve its inode.
 - Validate GitLab metadata before minting a credential or registering a worker.
@@ -136,3 +136,7 @@ execution guarantee. GitHub checks the first 100 runners; GitLab checks the firs
 
 Implementation commit: `22d8510`. Review: [PR #4](https://github.com/Raebu/open_ci_hub/pull/4).
 The earlier external `Raeburn Local CI` status failed with `No allow-listed CI workflow detected`. A subsequent exact-head status **passed** and the native self-hosted GitHub Actions PR test also **passed** on runner `open-ci-hub-garuda` (run 39294659429). This is not a hosted paid runner. The updated CircleCI readiness guard needs its own subsequent green checks and code review. GitLab/CircleCI real push-to-run evidence and independent security review remain outstanding.
+
+## CircleCI native eligibility (implementation after PR #4)
+
+For GitHub-backed projects, the readiness check uses `circleci project get`, `circleci project setting list`, `circleci runner resource-class list` and `circleci runner instance list` with JSON results. It requires a linked project, matching default branch, fork-PR builds disabled, project enabled, matching resource class and an online instance. This is **eligibility only**. Project webhooks, organisation credit requirements, successful pushes, artifacts and cancellation remain live gates. No resource class is created or any job scheduled by the check.
