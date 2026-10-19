@@ -123,3 +123,9 @@ Open CI Hub includes scoped, repeatable migration controllers for existing CI jo
 Use the one-time scope approval and optional hourly user timers on your own computer. Both controllers are **disabled by default**, do not automatically merge workflow changes and block ambiguous/untrusted pipelines. A personal GitHub account may need separately registered per-repository workers; eligible organisation/group runners can serve multiple authorised repositories. CircleCI continues to support native workflow onboarding and readiness checks, but complex existing CircleCI workflow migration is not automated or live verified.
 
 **Do not confuse automated migration proposals with universal guaranteed job compatibility or production certification.** Review worker isolation, toolchains, permissions and all pre-existing hosted workflow triggers before merging proposals.
+
+### Personal GitHub repository runner pool
+
+If your GitHub repositories are under a personal account rather than an organisation, a single repository runner does **not** have access to all your other repositories. The optional [per-repository runner pool](docs/RUNNER-POOL.md) registers separate native GitHub runners with isolated persistent Docker volumes after a second, explicit scope approval.
+
+It caps simultaneous worker processes, looks for queued provider jobs, and can rotate idle workers on a five-minute user timer. The pool never registers untrusted PR-triggered workflows, replaces existing credentials or deletes registered volumes without approval. It needs Docker and access to the native GitHub provider; live pool registration and rotation are **not yet externally verified**.
