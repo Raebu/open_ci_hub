@@ -276,7 +276,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -284,6 +284,12 @@ class WebConsole:
                         return self.output(400, {'error': 'Duplicate query parameters are not allowed.'})
                     def param(key): return params.get(key, [''])[0]
                     try:
+                        if path == '/api/host':
+                            from host_agent import client_request
+                            try:
+                                return self.output(200, client_request({'op':'status'}))
+                            except RuntimeError as exc:
+                                return self.output(200, {'available': False, 'message': str(exc)[:200]})
                         if path == '/api/repos':
                             return self.output(200, {'items': list_repositories(param('provider'), param('owner'))})
                         if path == '/api/pipelines':
@@ -349,6 +355,30 @@ class WebConsole:
                         return self.output(202, {'message': 'Approval requested. Open the desktop dashboard to approve this identity.'})
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Sign in or request mobile approval first.'})
+                    if path in ('/api/host/preview', '/api/host/execute'):
+                        from host_agent import client_request
+                        role = console.role(self)
+                        if role not in ('owner', 'editor'):
+                            return self.output(403, {'error':'Host actions require an approved management identity.'})
+                        if path.endswith('execute') and data.get('confirm') is not True:
+                            return self.output(400, {'error':'Explicit host operation confirmation required.'})
+                        actor = 'local-owner' if role == 'owner' else console.remote_identity(self)
+                        if not actor:
+                            return self.output(403, {'error':'Verified host management identity required.'})
+                        action = {'op': 'execute' if path.endswith('execute') else 'preview',
+                                  'actor': actor, 'kind': data.get('kind'), 'target': data.get('target')}
+                        if action['op'] == 'execute':
+                            action['preview_token'] = data.get('preview_token')
+                        try:
+                            result = client_request(action)
+                        except (RuntimeError, ValueError, PermissionError) as exc:
+                            if action['op'] == 'execute':
+                                console.audit.add(actor, 'host.' + str(action['kind'])[:32],
+                                                  str(action['target'])[:100], 'failed')
+                            raise
+                        if action['op'] == 'execute':
+                            console.audit.add(actor, 'host.' + action['kind'], action['target'], 'success')
+                        return self.output(200, result)
                     if path == '/api/pipeline':
                         if console.role(self) not in ('owner', 'editor'):
                             return self.output(403, {'error': 'Management permission required.'})
