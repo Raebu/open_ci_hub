@@ -86,10 +86,10 @@ def launch_signin(provider: str, setup: bool = False) -> str:
     }
     if provider not in commands:
         raise ValueError('Unsupported provider')
-    args = ([sys.executable, str(Path(__file__).resolve().parent / 'hub.py'), 'setup', provider]
-            if setup else commands[provider])
-    if not shutil.which(args[0]):
-        raise RuntimeError(f'Install the {args[0]} CLI first (see INSTALL.md).')
+    # Open sign-in/setup in a separate interactive wrapper that holds its terminal
+    # open after failure or success, so users can inspect the final result.
+    args = [sys.executable, str(Path(__file__).resolve().parent / 'terminal_session.py'),
+            provider, 'setup' if setup else 'login']
     if os.name == 'nt':
         # Use a visible PowerShell window for CLIs that require interactive prompts.
         # All arguments are static and never come from incoming HTTP requests.
