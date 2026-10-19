@@ -13,7 +13,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#health">✦ <span>Health</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -59,6 +59,26 @@
             <div class="wide"><button id="browse-pipelines" type="button" class="btn secondary">Load recent pipelines</button></div></div>
           <div id="pipeline-items" class="results" aria-live="polite"></div>
           <div id="job-details" class="results" aria-live="polite"></div>
+        </section>
+        <section id="host">
+          <div class="section-head"><div><h2>My PC · secure host agent</h2>
+            <p>Inspect your Garuda host and manage explicitly approved desktop apps or user services. Never grants CI jobs administrator access.</p></div>
+            <button class="btn secondary" type="button" id="host-refresh">↻ Refresh PC</button></div>
+          <div class="device-panel"><div id="host-status"><p>Checking local host agent…</p></div></div>
+          <div id="host-controls" class="hidden">
+            <form id="host-form" class="form-grid">
+              <label>Action<select id="host-action">
+                <option value="flatpak_install">Install approved Flatpak app (user only)</option>
+                <option value="service_start">Start approved user service</option>
+                <option value="service_stop">Stop approved user service</option>
+                <option value="service_restart">Restart approved user service</option>
+              </select></label>
+              <label>Approved target<select id="host-target"></select></label>
+              <div class="wide"><button type="submit" class="btn primary" id="host-prepare">Preview and confirm action</button></div>
+            </form>
+          </div>
+          <p class="small">The host agent must first be installed and started on the PC. Only allowlisted packages/services can be changed. Mobile management additionally needs a specific approved Tailscale identity. Root-level pacman installation and arbitrary commands are deliberately not available.</p>
+          <div id="host-results" class="results" aria-live="polite"></div>
         </section>
         <section id="health"><div class="section-head"><div><h2>Diagnostics and activity</h2><p>Local runner readiness and a protected audit history of management actions.</p></div></div>
           <div id="health-panel" class="stats" aria-live="polite"></div>
