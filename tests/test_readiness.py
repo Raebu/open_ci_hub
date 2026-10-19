@@ -64,9 +64,34 @@ class ReadinessTests(unittest.TestCase):
                     onboarding.create_review_request(plan, approved=True)
                 write.assert_not_called()
 
-    def test_circleci_remains_unverified(self):
+    def circleci_checks(self, *, online=True, fork=False, disabled=False):
+        project = {'slug': 'gh/a/b', 'vcs_default_branch': 'main'}
+        settings = {'enable_building_fork_prs': fork, 'is_running_disabled': disabled}
+        classes = [{'resource_class': 'org/worker'}]
+        instances = [{'resource_class': 'org/worker', 'name': 'runner-1',
+                      'status': 'online' if online else 'offline', 'is_busy': False}]
+        return [project, settings, classes, instances]
+
+    def test_circleci_online_instance_can_qualify(self):
+        with patch('readiness.invoke_json', side_effect=self.circleci_checks()) as api:
+            result = readiness.check('circleci', 'a/b', 'main', 'org/worker')
+        self.assertTrue(result['verified'])
+        self.assertEqual(result['runners'][0]['name'], 'runner-1')
+        calls = [' '.join(call.args[0]) for call in api.call_args_list]
+        self.assertIn('--project gh/a/b', calls[0])
+        self.assertIn('--org gh/a', calls[2])
+        self.assertIn('--resource-class org/worker', calls[3])
+
+    def test_circleci_missing_policy_or_runner_fails_closed(self):
+        for overrides in [{'online': False}, {'fork': True}, {'disabled': True}]:
+            with self.subTest(overrides=overrides), patch('readiness.invoke_json', side_effect=self.circleci_checks(**overrides)):
+                with self.assertRaises(RuntimeError):
+                    readiness.check('circleci', 'a/b', 'main', 'org/worker')
+
+    def test_circleci_bad_resource_class_makes_no_provider_calls(self):
         with patch('readiness.invoke_json') as api:
-            self.assertFalse(readiness.check('circleci', 'a/b', 'main', 'org/worker')['verified'])
+            with self.assertRaises(ValueError):
+                readiness.check('circleci', 'a/b', 'main', 'invalid')
             api.assert_not_called()
 
     def test_preflight_failure_prevents_all_writes(self):
