@@ -34,6 +34,8 @@ class GitLabMigrationTests(unittest.TestCase):
     def test_blocks_insecure_pipeline_and_executor_customization(self):
         examples = [
             PIPELINE.replace("    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'", "    - when: always"),
+            PIPELINE.replace("    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'",
+                             "    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'\n    - when: always"),
             PIPELINE.replace("    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'", "    - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'"),
             PIPELINE.replace('  script:\n    - npm test','  tags: [hosted]\n  script:\n    - npm test'),
             PIPELINE.replace('  script:\n    - npm test','  image: node:22\n  script:\n    - npm test'),
