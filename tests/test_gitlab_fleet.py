@@ -112,5 +112,81 @@ class GitLabFleetSafetyTests(unittest.TestCase):
         self.assertIn('branch=open-ci-hub/fleet-abc012',update)
         self.assertFalse(any('merge_when_pipeline_succeeds' in ' '.join(z.args[0]) for z in api.call_args_list))
 
+
+class GitLabPersonalNamespaceTests(unittest.TestCase):
+    def identity(self):
+        return {'username': 'Theraeburngroup', 'id': 42800558}
+
+    def test_discover_owned_personal_only_and_skip_groups(self):
+        projects = [
+            {'path_with_namespace':'Theraeburngroup/main_ats',
+             'default_branch':'main','archived':False},
+            {'path_with_namespace':'Theraeburngroup/open-ci',
+             'default_branch':'master','archived':False},
+            {'path_with_namespace':'the-raeburn-group/project',
+             'default_branch':'main','archived':False},
+            {'path_with_namespace':'Theraeburngroup/archived',
+             'default_branch':'main','archived':True},
+            {'path_with_namespace':'Theraeburngroup/fork',
+             'default_branch':'main','forked_from_project':{'id':3}},
+        ]
+        with patch('gitlab_fleet._json_object', return_value=self.identity()) as identity, \
+             patch('gitlab_fleet.invoke_json', return_value=projects) as projects_api:
+            result = gf.discover_personal('Theraeburngroup')
+        self.assertEqual(result, [
+            ('Theraeburngroup/main_ats','main'),
+            ('Theraeburngroup/open-ci','master')])
+        identity.assert_called_once_with(['glab','api','user'])
+        self.assertIn('projects?owned=true',projects_api.call_args.args[0][2])
+
+    def test_personal_scope_must_match_signed_in_account(self):
+        with patch('gitlab_fleet._json_object', return_value=self.identity()), \
+             patch('gitlab_fleet.invoke_json') as api:
+            with self.assertRaises(PermissionError):
+                gf.discover_personal('OtherUser')
+            api.assert_not_called()
+
+    def test_personal_policy_requires_separate_approval_and_private_state(self):
+        with tempfile.TemporaryDirectory() as td, \
+             patch.object(gf, 'POLICY', Path(td)/'.local'/'fleet.json'), \
+             patch('gitlab_fleet._json_object', return_value=self.identity()):
+            with self.assertRaises(PermissionError):
+                gf.authorize_personal('Theraeburngroup')
+            self.assertFalse(gf.personal_approved('Theraeburngroup'))
+            result = gf.authorize_personal('Theraeburngroup', confirm=True)
+            self.assertTrue(gf.personal_approved('theraeburngroup'))
+            self.assertEqual(result['groups'], [])
+            self.assertEqual(result['users'], ['Theraeburngroup'])
+            self.assertEqual(gf.POLICY.stat().st_mode & 0o077, 0)
+
+    def test_personal_sync_requires_explicit_saved_scope(self):
+        with patch('gitlab_fleet.policy', return_value={'groups': [], 'users': []}), \
+             patch('gitlab_fleet.discover_personal') as api:
+            with self.assertRaises(PermissionError):
+                gf.sync('Theraeburngroup', apply=True, personal=True)
+            api.assert_not_called()
+
+    def test_personal_mr_requires_identity_and_online_protected_runner(self):
+        plan=gf.Plan('Theraeburngroup/main_ats','main','review-ready',
+                     'ok',PIPELINE,'a'*40,1)
+        with patch('gitlab_fleet.policy',return_value={'groups':[], 'users':['Theraeburngroup']}), \
+             patch('gitlab_fleet._json_object',return_value=self.identity()), \
+             patch('gitlab_fleet.existing_mr',return_value=False), \
+             patch('gitlab_fleet.check_readiness',return_value={'verified':False}):
+            with self.assertRaisesRegex(RuntimeError,'unavailable'):
+                gf.create_mr(plan)
+
+    def test_personal_name_cannot_be_group_or_subgroup(self):
+        for name in ('Group/Subgroup','../../bad','Other/Repo'):
+            with self.subTest(name=name),self.assertRaises(ValueError):
+                gf.personal_approved(name)
+
+    def test_bad_user_policy_refuses_all_mutations(self):
+        with tempfile.TemporaryDirectory() as td, \
+             patch.object(gf,'POLICY',Path(td)/'bad.json'):
+            gf.POLICY.write_text('{"groups":[],"users":["../../evil"]}')
+            with self.assertRaises(RuntimeError):
+                gf.personal_approved('Theraeburngroup')
+
 if __name__ == '__main__':
     unittest.main()

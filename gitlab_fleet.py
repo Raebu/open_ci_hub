@@ -51,7 +51,7 @@ def policy():
     if POLICY.is_symlink() or POLICY.parent.is_symlink():
         raise RuntimeError('Refusing symlinked group policy.')
     if not POLICY.exists():
-        return {'groups': []}
+        return {'groups': [], 'users': []}
     try:
         data = json.loads(POLICY.read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -60,6 +60,10 @@ def policy():
             not isinstance(g, str) or len(g) > 300 or not all(SEGMENT.fullmatch(s) and '..' not in s for s in g.split('/'))
             for g in data['groups']):
         raise RuntimeError('Invalid GitLab group policy.')
+    if (not isinstance(data.get('users', []), list) or
+            any(not isinstance(u, str) or not SEGMENT.fullmatch(u) or '..' in u
+                for u in data.get('users', []))):
+        raise RuntimeError('Invalid GitLab personal-namespace policy.')
     return data
 
 def approved(group):
@@ -74,6 +78,67 @@ def authorize(group, confirm=False):
         settings['groups'].append(group)
     secure_write(POLICY, json.dumps(settings, indent=2) + '\n')
     return settings
+
+def personal_approved(username):
+    username = group_path(username)
+    if '/' in username:
+        raise ValueError('Personal namespace must be a single GitLab username.')
+    return username.casefold() in {x.casefold() for x in policy().get('users', [])}
+
+
+def _verify_current_user(username):
+    username = group_path(username)
+    if '/' in username:
+        raise ValueError('Personal namespace must be a single GitLab username.')
+    identity = _json_object(['glab', 'api', 'user'])
+    if (not isinstance(identity.get('username'), str) or
+            identity['username'].casefold() != username.casefold() or
+            not isinstance(identity.get('id'), int) or isinstance(identity.get('id'), bool)):
+        raise PermissionError('Sign in to glab as this exact personal GitLab account.')
+    return identity
+
+
+def authorize_personal(username, confirm=False):
+    _verify_current_user(username)
+    if confirm is not True:
+        raise PermissionError('Explicit --confirm required for personal GitLab review MRs.')
+    settings = policy()
+    users = settings.setdefault('users', [])
+    if not personal_approved(username):
+        users.append(username)
+    secure_write(POLICY, json.dumps(settings, indent=2) + '\n')
+    return settings
+
+
+def discover_personal(username):
+    """List signed-in user's owned projects, excluding groups and shared projects."""
+    _verify_current_user(username)
+    seen = {}
+    for page in range(1, 11):
+        # Owned projects endpoint works for authenticated private-profile users.
+        items = invoke_json(['glab', 'api',
+                             f'projects?owned=true&simple=true&per_page=50&page={page}'])
+        if not isinstance(items, list):
+            raise RuntimeError('Unexpected personal GitLab project inventory.')
+        for item in items:
+            if (not isinstance(item, dict) or item.get('archived') or
+                    item.get('forked_from_project')):
+                continue
+            project, branch = item.get('path_with_namespace'), item.get('default_branch')
+            try:
+                safe_repo(project)
+            except ValueError:
+                continue
+            if (len(project.split('/')) == 2 and
+                    project.split('/')[0].casefold() == username.casefold() and
+                    isinstance(branch, str) and
+                    re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,149}', branch) and
+                    '..' not in branch):
+                seen[project] = branch
+        if len(items) < 50:
+            return sorted(seen.items(), key=lambda x: x[0].casefold())
+    raise RuntimeError('Personal GitLab project pagination limit reached; refusing a partial scan.')
+
 
 def discover(group):
     group = group_path(group)
@@ -183,8 +248,16 @@ def existing_mr(project):
 def create_mr(plan):
     if plan.state != 'review-ready' or not plan.jobs:
         raise ValueError('No safe migration candidate.')
-    if not any(plan.project.casefold().startswith(g.casefold()+'/') for g in policy()['groups']):
-        raise PermissionError('GitLab group not authorised.')
+    settings = policy()
+    group_allowed = any(plan.project.casefold().startswith(g.casefold() + '/')
+                        for g in settings['groups'])
+    personal_allowed = (len(plan.project.split('/')) == 2 and
+                        plan.project.split('/')[0].casefold() in
+                        {u.casefold() for u in settings.get('users', [])})
+    if not (group_allowed or personal_allowed):
+        raise PermissionError('GitLab group or personal namespace not authorised.')
+    if personal_allowed and not group_allowed:
+        _verify_current_user(plan.project.split('/')[0])
     if existing_mr(plan.project):
         raise RuntimeError('A GitLab fleet MR already exists.')
     eligibility = check_readiness('gitlab', plan.project, plan.branch)
@@ -212,13 +285,14 @@ def create_mr(plan):
         raise RuntimeError('GitLab review branch created but merge request unconfirmed.')
     return url
 
-def sync(group, apply=False, limit=5):
-    if apply and not approved(group):
-        raise PermissionError('Approve exact GitLab group with --confirm first.')
+def sync(group, apply=False, limit=5, *, personal=False):
+    if apply and not (personal_approved(group) if personal else approved(group)):
+        raise PermissionError('Approve exact GitLab namespace with --confirm first.')
     if not isinstance(limit,int) or not 1 <= limit <= 5:
         raise ValueError('Maximum 5 MRs per pass.')
     output, opened = [], 0
-    for project, branch in discover(group):
+    projects = discover_personal(group) if personal else discover(group)
+    for project, branch in projects:
         try:
             plan = assess(project, branch)
             item = plan.summary()
@@ -236,29 +310,35 @@ def sync(group, apply=False, limit=5):
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Opt-in GitLab group CI migration.')
     sub = parser.add_subparsers(dest='command',required=True)
-    for cmd in ('authorize','scan','sync','watch'):
+    for cmd in ('authorize','scan','sync','watch',
+                'authorize-personal','scan-personal','sync-personal','watch-personal'):
         item = sub.add_parser(cmd)
         item.add_argument('group')
-        if cmd == 'authorize':
+        if cmd.startswith('authorize'):
             item.add_argument('--confirm',action='store_true')
-        if cmd in ('sync','watch'):
+        if cmd.startswith(('sync','watch')):
             item.add_argument('--apply',action='store_true')
             item.add_argument('--limit',type=int,default=5)
-        if cmd == 'watch':
+        if cmd.startswith('watch'):
             item.add_argument('--interval',type=int,default=3600)
     args=parser.parse_args(argv)
     try:
-        if args.command == 'authorize':
-            print(json.dumps(authorize(args.group,confirm=args.confirm)))
+        personal = args.command.endswith('-personal')
+        action = args.command.removesuffix('-personal')
+        if action == 'authorize':
+            result = (authorize_personal(args.group, confirm=args.confirm) if personal
+                      else authorize(args.group, confirm=args.confirm))
+            print(json.dumps(result))
             return 0
-        if args.command == 'watch':
-            if not args.apply or not approved(args.group) or not 600 <= args.interval <= 86400:
+        if action == 'watch':
+            valid = personal_approved(args.group) if personal else approved(args.group)
+            if not args.apply or not valid or not 600 <= args.interval <= 86400:
                 raise ValueError('Watch requires approved scope, --apply, and 600-86400s interval.')
             while True:
-                print(json.dumps(sync(args.group,apply=True,limit=args.limit)),flush=True)
+                print(json.dumps(sync(args.group,apply=True,limit=args.limit,personal=personal)),flush=True)
                 time.sleep(args.interval)
-        print(json.dumps(sync(args.group, apply=args.command=='sync' and args.apply,
-                              limit=getattr(args,'limit',5)),indent=2))
+        print(json.dumps(sync(args.group, apply=action=='sync' and args.apply,
+                              limit=getattr(args,'limit',5),personal=personal),indent=2))
         return 0
     except KeyboardInterrupt:
         return 130

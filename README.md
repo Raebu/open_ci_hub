@@ -119,6 +119,7 @@ Open CI Hub includes scoped, repeatable migration controllers for existing CI jo
 
 - **GitHub**: [GitHub fleet guide](docs/FLEET.md). Scan an account/organisation and prepare review pull requests that move compatible default-branch jobs onto eligible native self-hosted runners while preserving build steps.
 - **GitLab**: [GitLab fleet guide](docs/GITLAB-FLEET.md). Scan authorised groups/subgroups and prepare review merge requests for conventional protected default-branch jobs using native group/project runner tags.
+- **GitLab personal namespaces**: Use `python3 gitlab_fleet.py scan-personal USERNAME` to discover repositories owned by the authenticated user; separate scope approval is required for review-only migration. See the [GitLab fleet guide](docs/GITLAB-FLEET.md).
 
 Use the one-time scope approval and optional hourly user timers on your own computer. Both controllers are **disabled by default**, do not automatically merge workflow changes and block ambiguous/untrusted pipelines. A personal GitHub account may need separately registered per-repository workers; eligible organisation/group runners can serve multiple authorised repositories. CircleCI continues to support native workflow onboarding and readiness checks, but complex existing CircleCI workflow migration is not automated or live verified.
 
