@@ -193,7 +193,8 @@ class HostController:
             return {'available': True, 'system': _system(),
                     'allowed_flatpaks': policy['flatpaks'],
                     'allowed_services': policy['services'],
-                    'note': 'Non-root host user. No arbitrary commands or package-manager privileges.'}
+                    'terminal_enabled': policy['terminal_enabled'],
+                    'note': 'Non-root host user. Interactive PTY requires separate local activation.'}
         if op not in ('preview', 'execute', 'job', 'terminal_preview', 'terminal_open',
                       'terminal_read', 'terminal_write', 'terminal_close'):
             raise ValueError('Unsupported host agent operation.')
