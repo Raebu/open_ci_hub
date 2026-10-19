@@ -1,5 +1,12 @@
 # Release verification checklist
 
+## Repeatable local validator
+
+`python3 scripts/validate.py` runs Python tests/compilation, JavaScript syntax and
+all Compose profiles without loading secret env files. Add `--containers` to
+build both images and verify GitHub bootstrap/state retention in isolated containers.
+This does not schedule provider CI. See the [engineering evidence](ENGINEERING-2026-10-19.md).
+
 ## Offline repeatable checks
 
 ```bash

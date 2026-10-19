@@ -7,3 +7,5 @@
 .header-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 
 .workflow-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;background:#081525;border:1px solid #294054;border-radius:8px;padding:1rem;font-size:0.8rem;}
+
+.job-card{border:1px solid #2b3850;border-radius:12px;padding:18px;background:#121e31;min-width:0}.job-log{white-space:pre-wrap;overflow-wrap:anywhere;max-height:30rem;overflow:auto;padding:16px;background:#061322;border-radius:8px;font-size:.8rem}.job-card p{font-size:.8rem;margin:8px 0}

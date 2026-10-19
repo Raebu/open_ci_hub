@@ -1,15 +1,22 @@
 # Avoid paid hosted runner minutes on private repositories. This only runs on
-# a trusted self-hosted runner after an operator manually dispatches it.
+# trusted same-repository contributors. Fork PRs never run on personal hardware.
 name: Open CI Hub tests (self-hosted)
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
 jobs:
   test:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
     runs-on: [self-hosted, linux, local-ci]
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Run Python test suite
         run: python3 -m unittest discover -s tests -v

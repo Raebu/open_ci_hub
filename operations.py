@@ -30,7 +30,7 @@ def safe_run_id(value) -> str:
 
 
 def invoke(argv: list[str], *, timeout: int = 30) -> str:
-    if argv[0] not in ('gh', 'glab'):
+    if argv[0] not in ('gh', 'glab', 'circleci'):
         raise ValueError('Unsupported provider CLI.')
     if not shutil.which(argv[0]):
         raise RuntimeError(f'Install and sign in to the {argv[0]} CLI on this computer.')
@@ -87,6 +87,9 @@ def list_repositories(provider: str, owner: str = '') -> list[dict]:
 
 def list_pipelines(provider: str, repo: str) -> list[dict]:
     repo = safe_repo(repo)
+    if provider == 'circleci':
+        from providers.circleci_cockpit import list_pipelines as circle_pipelines
+        return circle_pipelines(repo)
     if provider == 'github':
         raw = invoke_json(['gh','run','list','--repo',repo,'--limit','20','--json',
                            'databaseId,displayTitle,status,conclusion,headBranch,createdAt,url'])
@@ -111,6 +114,9 @@ def list_pipelines(provider: str, repo: str) -> list[dict]:
 
 def pipeline_action(provider: str, repo: str, run_id, action: str) -> None:
     repo = safe_repo(repo)
+    if provider == 'circleci':
+        from providers.circleci_cockpit import pipeline_action as circle_action
+        return circle_action(repo, run_id, action)
     run_id = safe_run_id(run_id)
     if action not in ('cancel','retry'):
         raise ValueError('Unsupported pipeline action.')

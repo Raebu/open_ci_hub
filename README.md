@@ -2,7 +2,10 @@
 
 An **open-source, provider-neutral, local-first CI/CD control centre** for GitHub Actions, GitLab CI/CD and CircleCI. Use the providers' native self-hosted runners to build on a computer you control instead of purchasing hosted runner minutes.
 
-**Release: v4 community preview; native onboarding is implemented in source and requires live verification.** This release has not been validated with live provider accounts or Docker in the build environment. Do **not** treat it as a security-audited or production-certified service.
+**Release: v4 community preview; native onboarding is implemented in source and requires live verification.** Local Docker image builds/bootstrap and read-only provider checks have passed; real push builds across all three providers remain unverified. Do **not** treat it as a security-audited or production-certified service.
+
+See the [engineering delivery and evidence](docs/ENGINEERING-2026-10-19.md) for
+current validation, activation commands and remaining release gates.
 
 ## Highlights
 
@@ -79,6 +82,21 @@ The public source repository is [Raebu/open_ci_hub](https://github.com/Raebu/ope
 The GitHub runner image includes a bootstrap that restores missing `config.sh` and `run.sh` into the persistent runner volume before registration or startup. Docker normally seeds **new named volumes** from existing image content; this bootstrap also protects against partially initialised volumes and avoids depending on Docker's one-time copy behaviour. Runner registration is then retained across container restarts. Updating the image does **not** update an already-populated volume's runner binaries; plan a controlled runner upgrade and re-registration rather than deleting live volumes without first deregistering them.
 
 **Untrusted code warning:** self-hosted runner jobs run code on your computer. Do not attach this runner to public-repository pull requests from unknown contributors. GitHub and GitLab platform permissions, protected branches and operator approval are required; the project does not provide a general-purpose sandbox. Never mount the host Docker socket into the runner container to make builds work.
+
+## Local validation and native readiness
+
+```sh
+python3 scripts/validate.py
+python3 scripts/validate.py --containers
+python3 hub.py verify-provider github OWNER/REPOSITORY
+python3 hub.py verify-provider gitlab GROUP/PROJECT --branch main
+```
+
+The dashboard's **Check native runner** action queries provider readiness without
+starting a job. GitHub/GitLab workflow application rechecks eligibility and refuses
+when it cannot verify an online native worker. GitLab additionally requires a
+protected target branch. CircleCI remains explicitly unverified. Container uptime
+alone is not evidence that a provider can schedule a job.
 
 ## Native push-to-run workflows (new)
 
