@@ -67,7 +67,8 @@ class DashboardHTTPTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        # daemonized test server terminates with test process
+        cls.console.server.shutdown()
+        cls.thread.join(timeout=10)
         cls.tmp.cleanup()
 
     def request(self, method, path, body=None, cookie=None, origin=None, headers=None):

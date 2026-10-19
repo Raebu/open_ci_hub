@@ -24,6 +24,7 @@ import webbrowser
 from providers import ADAPTERS
 from audit import AuditLog
 from operations import list_repositories, list_pipelines, pipeline_action, system_health
+from pipeline_details import list_jobs, job_log, list_artifacts
 
 SESSION_TTL = 12 * 3600
 LIMIT_BYTES = 4096
@@ -129,6 +130,7 @@ class WebConsole:
         self.port = port
         self.lock = threading.RLock()
         self.sessions: dict[str, float] = {}
+        self.server = None
         self.auth_file = self.local_state / 'dashboard-secret'
         if not self.auth_file.exists():
             from hub import secure_write
@@ -222,6 +224,10 @@ class WebConsole:
         class Handler(BaseHTTPRequestHandler):
             server_version = 'OpenCIHub/4'
 
+            def setup(self):
+                super().setup()
+                self.connection.settimeout(15)
+
             def log_message(self, format, *args):
                 # No request body, cookies or authentication credentials in logs.
                 return
@@ -270,7 +276,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -282,6 +288,12 @@ class WebConsole:
                             return self.output(200, {'items': list_repositories(param('provider'), param('owner'))})
                         if path == '/api/pipelines':
                             return self.output(200, {'items': list_pipelines(param('provider'), param('repo'))})
+                        if path == '/api/jobs':
+                            return self.output(200, {'items': list_jobs(param('provider'), param('repo'), param('run'))})
+                        if path == '/api/job-log':
+                            return self.output(200, job_log(param('provider'), param('repo'), param('run'), param('job')))
+                        if path == '/api/artifacts':
+                            return self.output(200, {'items': list_artifacts(param('provider'), param('repo'), param('run'))})
                         if path == '/api/health':
                             return self.output(200, system_health())
                         if path == '/api/activity':
@@ -346,10 +358,14 @@ class WebConsole:
                                                           ('provider','repo','id','action'))
                         # Validate before recording or calling external providers.
                         from operations import safe_repo, safe_run_id
-                        if provider not in ('github','gitlab') or action not in ('retry','cancel'):
+                        if provider not in ('github','gitlab','circleci') or action not in ('retry','cancel'):
                             raise ValueError('Unsupported provider or operation.')
                         safe_repo(repo)
-                        safe_run_id(run_id)
+                        if provider == 'circleci':
+                            from providers.circleci_cockpit import workflow_id
+                            workflow_id(run_id)
+                        else:
+                            safe_run_id(run_id)
                         actor = console.remote_identity(self) or 'local-owner'
                         try:
                             pipeline_action(provider, repo, run_id, action)
@@ -440,6 +456,7 @@ class WebConsole:
                     return self.output(400, {'error': str(exc)[:300]})
 
         server = ThreadingHTTPServer(('127.0.0.1', self.port), Handler)
+        self.server = server
         if open_browser:
             url = f'http://127.0.0.1:{self.port}/#access={self.admin_secret}'
             print(f'Local dashboard: http://127.0.0.1:{self.port}/')

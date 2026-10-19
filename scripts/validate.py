@@ -23,7 +23,8 @@ def main():
     parser.add_argument('--containers', action='store_true', help='Build runner images and smoke-test GitHub bootstrap using a temporary private volume; requires image downloads')
     args = parser.parse_args()
     try:
-        if not compileall.compile_dir(str(ROOT), quiet=1, rx=__import__('re').compile(r'[/\\](\.git|\.local)[/\\]')):
+        sources = list(ROOT.glob('*.py')) + list((ROOT / 'providers').glob('*.py')) + list((ROOT / 'scripts').glob('*.py')) + list((ROOT / 'tests').glob('*.py'))
+        if not all(compileall.compile_file(str(path), quiet=1) for path in sources):
             raise RuntimeError('Python compilation failed.')
         run('Python unit/API/security tests', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v'])
         for binary in ('node', 'docker'):

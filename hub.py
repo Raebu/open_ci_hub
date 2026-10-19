@@ -27,21 +27,21 @@ CONTAINERS = {p: f'open-ci-{p}-runner' for p in SUPPORTED}
 
 
 def run(args: list[str], *, extra_env: dict[str, str] | None = None,
-        capture: bool = False):
+        capture: bool = False, timeout: int = 120):
     env = dict(os.environ)
     if extra_env:
         env.update(extra_env)
-    return subprocess.run(args, cwd=ROOT, env=env, text=True, check=True,
+    return subprocess.run(args, cwd=ROOT, env=env, text=True, check=True, timeout=timeout,
                           stdout=subprocess.PIPE if capture else None,
                           stderr=subprocess.PIPE if capture else None)
 
 
 def docker_ready() -> bool:
     try:
-        run(['docker', 'info'], capture=True)
-        run(['docker', 'compose', 'version'], capture=True)
+        run(['docker', 'info'], capture=True, timeout=15)
+        run(['docker', 'compose', 'version'], capture=True, timeout=15)
         return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
 
 
@@ -142,13 +142,13 @@ def connect(provider: str) -> None:
     print(f'Next: python hub.py setup {provider}')
 
 
-def setup(provider: str, *, group: bool = False, add: bool = False) -> None:
+def setup(provider: str, *, group: bool = False, add: bool = False, target: str | None = None, name: str | None = None) -> None:
     from state_lock import setup_lock
     with setup_lock(LOCAL):
-        _setup(provider, group=group, add=add)
+        _setup(provider, group=group, add=add, target=target, name=name)
 
 
-def _setup(provider: str, *, group: bool = False, add: bool = False) -> None:
+def _setup(provider: str, *, group: bool = False, add: bool = False, target: str | None = None, name: str | None = None) -> None:
     if not docker_ready():
         raise RuntimeError('Docker Engine/Desktop and Docker Compose V2 must be running.')
     if metadata_path(provider).exists() and not (provider == 'gitlab' and add):
@@ -158,7 +158,12 @@ def _setup(provider: str, *, group: bool = False, add: bool = False) -> None:
         raise ValueError('Group runner setup is supported for GitLab only.')
     if provider == 'gitlab':
         gitlab_index()  # Fail before creating a remote credential if recovery is needed.
-    if group:
+    if target is not None:
+        if provider != 'github' or group or add:
+            raise ValueError('Noninteractive --target is currently supported for GitHub only.')
+        from providers.github import prepare_target
+        data = prepare_target(target, name or 'local-ci-runner')
+    elif group:
         from providers.gitlab import prepare_group
         data = prepare_group()
     else:
@@ -181,7 +186,7 @@ def runner_state(provider: str) -> str:
         process = run(['docker', 'ps', '-a', '--filter',
                        f'name=^/{CONTAINERS[provider]}$', '--format', '{{.Status}}'], capture=True)
         return process.stdout.strip() or 'Not started'
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return 'Unavailable'
 
 
@@ -222,10 +227,10 @@ def provider_action(provider: str, action: str) -> None:
         raise ValueError('Unsupported action.')
 
 
-def dashboard(port: int = 8765) -> None:
+def dashboard(port: int = 8765, *, open_browser: bool = True) -> None:
     """Serve the local, authenticated, mobile-capable management dashboard."""
     from web_console import WebConsole
-    WebConsole(ROOT, port).serve()
+    WebConsole(ROOT, port).serve(open_browser=open_browser)
 
 
 def mobile(action: str, port: int = 8765) -> None:
@@ -268,10 +273,18 @@ def menu() -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Open-source local CI runner orchestrator')
     sub = parser.add_subparsers(dest='command', required=True)
-    for operation in ('menu', 'doctor', 'status', 'dashboard'):
+    for operation in ('menu', 'doctor', 'status'):
         sub.add_parser(operation)
+    dash = sub.add_parser('dashboard')
+    dash.add_argument('--port', type=int, default=8765)
+    dash.add_argument('--no-browser', action='store_true')
+    sub.add_parser('open', help='Open the private local owner dashboard link')
     for operation in ('connect', 'setup', 'start', 'stop', 'logs'):
-        sub.add_parser(operation).add_argument('provider', choices=SUPPORTED)
+        operation_parser = sub.add_parser(operation)
+        operation_parser.add_argument('provider', choices=SUPPORTED)
+        if operation == 'setup':
+            operation_parser.add_argument('--target', help='GitHub HTTPS repository or organisation URL')
+            operation_parser.add_argument('--name', help='Native runner name')
     sub.add_parser('setup-gitlab-group', help='Register a protected group-scoped GitLab runner')
     sub.add_parser('add-gitlab-project', help='Register another project-scoped GitLab runner')
     sub.add_parser('add-gitlab-group', help='Register another group-scoped GitLab runner')
@@ -294,16 +307,23 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == 'menu': menu()
         elif args.command == 'doctor': doctor()
         elif args.command == 'status': status()
-        elif args.command == 'dashboard': dashboard()
+        elif args.command == 'dashboard': dashboard(args.port, open_browser=not args.no_browser)
+        elif args.command == 'open':
+            secret_path = LOCAL / 'dashboard-secret'
+            if not secret_path.is_file() or secret_path.is_symlink():
+                raise RuntimeError('Start the dashboard first.')
+            secret = secret_path.read_text().strip()
+            webbrowser.open('http://127.0.0.1:8765/#access=' + secret)
+            print('Opened the private local dashboard link in your browser.')
         elif args.command == 'mobile': mobile(args.action)
         elif args.command == 'connect': connect(args.provider)
-        elif args.command == 'setup': setup(args.provider)
+        elif args.command == 'setup': setup(args.provider, target=args.target, name=args.name)
         elif args.command == 'setup-gitlab-group': setup('gitlab', group=True)
         elif args.command == 'add-gitlab-project': setup('gitlab', add=True)
         elif args.command == 'add-gitlab-group': setup('gitlab', group=True, add=True)
         else: provider_action(args.provider, args.command)
         return 0
-    except (RuntimeError, ValueError, FileNotFoundError, subprocess.CalledProcessError, KeyboardInterrupt) as exc:
+    except (RuntimeError, ValueError, FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
         print(f'Error: {exc}', file=sys.stderr)
         return 1
 

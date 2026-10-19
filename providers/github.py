@@ -2,7 +2,7 @@
 from __future__ import annotations
 import re
 from urllib.parse import urlsplit
-from .common import command, response_object, secret_from, input_name
+from .common import command, response_object, secret_from, input_name, validate_name
 from . import Registration
 
 
@@ -32,16 +32,25 @@ def login(host: str | None = None) -> None:
     command(['gh', 'auth', 'login', '--hostname', 'github.com', '--web', '--scopes', 'repo'], timeout=600)
 
 
-def prepare() -> Registration:
-    target, endpoint = validate_target(input('GitHub repository URL (recommended) or organisation URL: '))
-    name = input_name()
+def prepare_target(value: str, name: str) -> Registration:
+    target, endpoint = validate_target(value)
+    name = validate_name(name)
     if not authenticated():
-        login()
+        raise RuntimeError('Sign in with `gh auth login --web --scopes repo` before noninteractive setup.')
     try:
         token = secret_from(response_object(['gh', 'api', '--method', 'POST', f'/{endpoint}']))
     except RuntimeError:
         if endpoint.startswith('orgs/'):
-            raise RuntimeError('Organisation runner access requires GitHub organisation administration and may require `gh auth refresh -s admin:org`.') from None
-        raise RuntimeError('GitHub runner creation failed. You need repository admin access and an OAuth login with repo scope.') from None
+            raise RuntimeError('Organisation runner access requires organisation administration and may require `gh auth refresh -s admin:org`.') from None
+        raise RuntimeError('GitHub runner creation failed. Repository admin access and repo scope are required.') from None
     return Registration(name=name, target=target, token=token,
                         metadata={'url': target, 'name': name})
+
+
+def prepare() -> Registration:
+    target = input('GitHub repository URL (recommended) or organisation URL: ')
+    validate_target(target)
+    name = input_name()
+    if not authenticated():
+        login()
+    return prepare_target(target, name)

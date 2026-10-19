@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {mode:'desktop', ready:false};
+const state = {mode:'desktop', ready:false, pipelineBusy:false, pipelineSelected:false, statuses:new Map()};
 const show = (id,on) => $(id).classList.toggle('hidden',!on);
 function notice(msg,error=false){const x=$('notice');x.textContent=msg;x.classList.toggle('error',error);show('notice',!!msg)}
 async function api(path, body){
@@ -67,6 +67,7 @@ async function browseRepositories(){
   }catch(e){root.replaceChildren();notice(e.message,true)}
 }
 async function browsePipelines(){
+  if(state.pipelineBusy)return;state.pipelineBusy=true;state.pipelineSelected=true;
   const provider=$('pipeline-provider').value,repo=$('pipeline-repo').value.trim(),root=$('pipeline-items');
   root.replaceChildren(el('p','Loading pipelines…'));
   try{
@@ -81,10 +82,44 @@ async function browsePipelines(){
         const out=await api('/api/pipeline',{provider,repo,id:x.id,action,confirm:true});notice(out.message);
         await browsePipelines();await loadDiagnostics();
       }));
+      if(provider!=='circleci')actions.append(btn('Jobs, logs & artifacts',async()=>{
+        await showJobDetails(provider,repo,x.id);
+      }));
+      const previous=state.statuses.get(provider+':'+repo+':'+x.id);
+      if(previous&&previous!==x.status)notice(`${x.title||'Pipeline'} #${x.id}: ${previous} → ${x.status}`);
+      state.statuses.set(provider+':'+repo+':'+x.id,x.status);
       row.append(left,actions);root.append(row);
     }
-  }catch(e){root.replaceChildren();notice(e.message,true)}
+  }catch(e){root.replaceChildren();notice(e.message,true)}finally{state.pipelineBusy=false}
 }
+async function showJobDetails(provider,repo,run){
+  const root=$('job-details');root.replaceChildren(el('h3',`Pipeline #${run}: native jobs`));
+  root.append(btn('Close job details',async()=>root.replaceChildren()));
+  const query=`provider=${encodeURIComponent(provider)}&repo=${encodeURIComponent(repo)}&run=${encodeURIComponent(run)}`;
+  const jobs=await api('/api/jobs?'+query);
+  if(!jobs.items.length)root.append(el('p','No jobs yet. The provider may still be preparing the pipeline.'));
+  for(const job of jobs.items){
+    const card=el('article',undefined,'job-card'),actions=el('div',undefined,'controls');
+    card.append(el('strong',`${job.name} · ${job.status}`),el('p',`Worker: ${job.runner}`));
+    if(job.url)actions.append(safeLink(job.url,'Open native job'));
+    actions.append(btn('Load log',async()=>{
+      const result=await api('/api/job-log?'+query+'&job='+encodeURIComponent(job.id));
+      const old=card.querySelector('pre');if(old)old.remove();
+      card.append(el('pre',result.text||'No log content available.','job-log'));
+      notice(result.note);
+    }));card.append(actions);root.append(card);
+  }
+  const artifacts=await api('/api/artifacts?'+query);
+  root.append(el('h3','Artifacts'));
+  if(!artifacts.items.length)root.append(el('p','No retained artifacts reported by the provider.'));
+  for(const item of artifacts.items){
+    const row=el('div',undefined,'result-row');
+    row.append(item.expired?el('span',item.name+' (expired)'):safeLink(item.url,item.name),el('span',`${item.size} bytes`,'small'));
+    root.append(row);
+  }
+  root.scrollIntoView({behavior:'smooth'});
+}
+
 async function loadDiagnostics(){
   const root=$('health-panel');root.replaceChildren();
   try{const v=await api('/api/health');
@@ -153,5 +188,6 @@ async function init(){
   configureOnboarding();
   await refresh();
   if(state.ready)await loadDiagnostics();
+  setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }
 document.addEventListener('DOMContentLoaded',init);
