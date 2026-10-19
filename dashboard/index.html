@@ -13,7 +13,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -101,6 +101,19 @@
         <section id="health"><div class="section-head"><div><h2>Diagnostics and activity</h2><p>Local runner readiness and a protected audit history of management actions.</p></div></div>
           <div id="health-panel" class="stats" aria-live="polite"></div>
           <div id="audit-panel" class="results"></div>
+        </section>
+        <section id="machines">
+          <div class="section-head"><div><h2>My computers</h2>
+            <p>Switch between separately authorised PCs over private Tailscale HTTPS. Each PC retains its own runner, terminal and deployment approvals.</p></div>
+            <button type="button" class="btn secondary" id="machines-refresh">↻ Refresh</button>
+          </div>
+          <div id="machine-items" class="results" aria-live="polite"></div>
+          <form id="machine-enroll" class="form-grid hidden">
+            <label>PC display name<input id="machine-name" maxlength="60" placeholder="Garuda desktop"></label>
+            <label>Exact Tailscale MagicDNS address<input id="machine-host" maxlength="130" placeholder="desktop.tailnet.ts.net"></label>
+            <div class="wide"><button type="submit" class="btn secondary">Trust this PC from owner desktop</button></div>
+          </form>
+          <p class="small">Remote health checks only verify the HTTPS dashboard endpoint. They do not prove CI or shell access, and registration never gives one PC credentials to control another. Each PC needs its own host agent and Tailscale Serve configuration.</p>
         </section>
         <section id="devices"><div class="section-head"><div><h2>Mobile & other devices</h2><p>Open the same workspace on your phone through a private Tailscale connection.</p></div></div>
           <div class="device-panel"><div><h3>Unified device sign-in</h3><p>Sign into Tailscale with a supported identity provider, then open your PC's private HTTPS address. New users require approval from the PC.</p><p class="small">On your PC: <code>python hub.py mobile on</code> · Check link: <code>tailscale serve status</code></p></div><div id="device-users"></div></div>
