@@ -7,7 +7,8 @@ The generated jobs use GitLab's own native CI scheduler and an authorised, **pro
 ## Discover without mutations
 
 ~~~fish
-python3 gitlab_fleet.py scan Theraeburngroup
+python3 gitlab_fleet.py scan the-raeburn-group
+python3 gitlab_fleet.py scan the-raeburn-group1
 ~~~
 
 Only eligible group-owned, non-archived, non-fork projects are considered. A restrictive, explicit global default-branch-only CI rule is required to avoid untrusted merge-request code reaching a persistent personal machine. Pipelines containing includes, images, existing tags, job inheritance, triggers, parallelism, or ambiguous syntax are reported as manual, not modified.
@@ -15,8 +16,8 @@ Only eligible group-owned, non-archived, non-fork projects are considered. A res
 ## Authorise reviewed migrations
 
 ~~~fish
-python3 gitlab_fleet.py authorize Theraeburngroup --confirm
-python3 gitlab_fleet.py sync Theraeburngroup --apply --limit 5
+python3 gitlab_fleet.py authorize the-raeburn-group --confirm
+python3 gitlab_fleet.py sync the-raeburn-group --apply --limit 5
 ~~~
 
 An approved group permits the tool to create up to five review-only merge requests per pass. It **never merges** and never changes default branches directly. It verifies an online eligible protected native GitLab runner immediately before writes and re-checks unchanged source and the default branch.
@@ -27,8 +28,8 @@ An existing fleet MR prevents duplicate requests. Failed creation may leave an u
 
 ~~~fish
 bash scripts/install-gitlab-fleet-service.sh
-systemctl --user enable --now open-ci-hub-gitlab-fleet@Theraeburngroup.timer
-journalctl --user -u open-ci-hub-gitlab-fleet@Theraeburngroup.service -n 50
+systemctl --user enable --now open-ci-hub-gitlab-fleet@the-raeburn-group.timer
+journalctl --user -u open-ci-hub-gitlab-fleet@the-raeburn-group.service -n 50
 ~~~
 
 This timer is installed disabled. It does not start without explicit scope authorisation and enabling. It scans every hour while the PC and user systemd instance are running. Nested subgroup names in systemd unit instances require appropriate systemd escaping; the manual CLI accepts nested group paths directly.
@@ -36,7 +37,7 @@ This timer is installed disabled. It does not start without explicit scope autho
 Stop automatic reviews:
 
 ~~~fish
-systemctl --user disable --now open-ci-hub-gitlab-fleet@Theraeburngroup.timer
+systemctl --user disable --now open-ci-hub-gitlab-fleet@the-raeburn-group.timer
 ~~~
 
 ## Caveats
@@ -44,3 +45,31 @@ systemctl --user disable --now open-ci-hub-gitlab-fleet@Theraeburngroup.timer
 GitLab pipelines with complex configuration, unprotected references, external includes or images cannot be mechanically moved to a persistent shell executor without a security and compatibility review. Other CI systems may also be triggered by a branch or MR; inspect providers before enabling bulk scans. Native GitLab self-hosted execution avoids GitLab hosted runner minutes, but the project still needs compatible tools on the actual worker. Never assume a CI job passed without a real run URL and logs.
 
 GitHub account/organisation support is available in docs/FLEET.md. CircleCI retains native onboarding and readiness checking but complex existing CircleCI migration has not been automated or verified end-to-end.
+
+## Personal GitLab namespace (not a group)
+
+GitLab usernames and GitLab groups are distinct namespaces. For the account Theraeburngroup, the real accessible groups are the-raeburn-group and the-raeburn-group1. A group scan of Theraeburngroup returns 404.
+
+Personal discovery uses the authenticated user's GitLab owned-projects endpoint and filters strictly to USERNAME/REPO projects. It refuses another user's account and subgroups.
+
+Read-only scan:
+~~~fish
+glab auth status
+python3 gitlab_fleet.py scan-personal Theraeburngroup
+~~~
+
+Enable approved, review-only personal migration MRs after checking the scan:
+~~~fish
+python3 gitlab_fleet.py authorize-personal Theraeburngroup --confirm
+python3 gitlab_fleet.py sync-personal Theraeburngroup --apply --limit 5
+~~~
+
+Personal scope approval is separate from group approval. MR creation still requires eligible protected project-specific/native runner access, an unchanged source and manual review before merge. A group runner belonging to an unrelated group does not cover personal projects.
+
+Optional hourly monitoring, disabled by default:
+~~~fish
+bash scripts/install-gitlab-personal-fleet-service.sh
+systemctl --user enable --now open-ci-hub-gitlab-personal@Theraeburngroup.timer
+~~~
+
+Do not enable this until account sign-in, safety review and cost implications of existing other CI workflows are confirmed. It does not establish real GitLab job execution.
