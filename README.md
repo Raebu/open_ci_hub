@@ -129,3 +129,7 @@ Use the one-time scope approval and optional hourly user timers on your own comp
 If your GitHub repositories are under a personal account rather than an organisation, a single repository runner does **not** have access to all your other repositories. The optional [per-repository runner pool](docs/RUNNER-POOL.md) registers separate native GitHub runners with isolated persistent Docker volumes after a second, explicit scope approval.
 
 It caps simultaneous worker processes, looks for queued provider jobs, and can rotate idle workers on a five-minute user timer. The pool never registers untrusted PR-triggered workflows, replaces existing credentials or deletes registered volumes without approval. It needs Docker and access to the native GitHub provider; live pool registration and rotation are **not yet externally verified**.
+
+### CircleCI existing workflow migration
+
+For GitHub-backed CircleCI projects with an authorised native machine resource class, the [CircleCI fleet guide](docs/CIRCLECI-FLEET.md) documents a disabled-by-default migration controller. It preserves conventional existing machine-job build steps, proposes resource-class changes as GitHub PRs, and refuses unsafe or ambiguous configurations. Unlike the verified GitHub native push runner, real CircleCI self-hosted execution remains unverified until an eligible CircleCI instance and live job are available.
