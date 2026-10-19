@@ -34,3 +34,11 @@
 
 - Local Docker Compose management of independent official runner agents.
 - Read-only localhost dashboard and sample CI workflows.
+
+## Unreleased — Native CI onboarding
+
+- Add approved native push-workflow preview and GitHub pull request / GitLab merge request creation without overwriting existing configuration.
+- Support CircleCI machine resource class workflow generation for GitHub-backed sources.
+- Support group-scoped GitLab runners and multiple native GitLab runner registrations.
+- Carry forward GitHub runner-state bootstrapping and durable setup-terminal failure output.
+- Add security, plan and request-contract regression coverage. No hosted CI minutes are needed for local tests.

@@ -87,7 +87,7 @@ def register(provider: str, data: Registration) -> None:
                    f'--labels {RUNNER_TAG} --work _work --replace')
         compose('--profile', 'github', 'run', '--rm', '--no-deps',
                 '-e', 'GH_URL', '-e', 'GH_NAME', '-e', 'GH_TOKEN',
-                '--entrypoint', '/bin/sh', 'github', '-c', command,
+                'github', '/bin/sh', '-c', command,
                 extra_env={'GH_URL': data.target, 'GH_NAME': data.name, 'GH_TOKEN': data.token})
     elif provider == 'gitlab':
         compose('--profile', 'gitlab', 'run', '--rm', '--no-deps',
@@ -106,7 +106,29 @@ def register(provider: str, data: Registration) -> None:
                      f'CIRCLECI_RUNNER_API_AUTH_TOKEN={data.token}\n')
     else:
         raise ValueError(f'Unsupported provider: {provider}')
-    secure_write(metadata_path(provider), json.dumps(data.metadata, indent=2) + '\n')
+    if provider == 'gitlab':
+        index = LOCAL / 'gitlab-runners.json'
+        try:
+            current = json.loads(index.read_text()) if index.exists() else []
+        except (OSError, ValueError):
+            raise RuntimeError('Cannot read existing GitLab runner metadata safely.') from None
+        if not isinstance(current, list):
+            raise RuntimeError('Invalid GitLab runner metadata. Do not overwrite it.')
+        if not current and metadata_path(provider).exists():
+            try:
+                original = json.loads(metadata_path(provider).read_text())
+            except (OSError, ValueError):
+                raise RuntimeError('Cannot read legacy GitLab runner metadata.') from None
+            if isinstance(original, dict):
+                current = [original]
+        if any(x.get('runner_id') == data.metadata.get('runner_id') and data.metadata.get('runner_id') for x in current if isinstance(x,dict)):
+            raise RuntimeError('This GitLab runner already appears in the local index.')
+        current.append(data.metadata)
+        secure_write(index, json.dumps(current, indent=2) + '\n')
+        if not metadata_path(provider).exists():
+            secure_write(metadata_path(provider), json.dumps(data.metadata, indent=2) + '\n')
+    else:
+        secure_write(metadata_path(provider), json.dumps(data.metadata, indent=2) + '\n')
     compose('--profile', provider, 'up', '-d', provider)
 
 
@@ -116,13 +138,19 @@ def connect(provider: str) -> None:
     print(f'Next: python hub.py setup {provider}')
 
 
-def setup(provider: str) -> None:
+def setup(provider: str, *, group: bool = False, add: bool = False) -> None:
     if not docker_ready():
         raise RuntimeError('Docker Engine/Desktop and Docker Compose V2 must be running.')
-    if metadata_path(provider).exists():
+    if metadata_path(provider).exists() and not (provider == 'gitlab' and add):
         raise RuntimeError(f'{provider} is already configured on this installation; '
                            'remove or deregister existing runner before reconfiguration.')
-    data = ADAPTERS[provider].prepare()
+    if group and provider != 'gitlab':
+        raise ValueError('Group runner setup is supported for GitLab only.')
+    if group:
+        from providers.gitlab import prepare_group
+        data = prepare_group()
+    else:
+        data = ADAPTERS[provider].prepare()
     try:
         register(provider, data)
     except subprocess.CalledProcessError:
@@ -232,6 +260,9 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_parser(operation)
     for operation in ('connect', 'setup', 'start', 'stop', 'logs'):
         sub.add_parser(operation).add_argument('provider', choices=SUPPORTED)
+    sub.add_parser('setup-gitlab-group', help='Register a protected group-scoped GitLab runner')
+    sub.add_parser('add-gitlab-project', help='Register another project-scoped GitLab runner')
+    sub.add_parser('add-gitlab-group', help='Register another group-scoped GitLab runner')
     mobile_cmd = sub.add_parser('mobile', help='Private Tailscale mobile access')
     mobile_cmd.add_argument('action', choices=('on', 'off'))
     args = parser.parse_args(argv)
@@ -243,6 +274,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == 'mobile': mobile(args.action)
         elif args.command == 'connect': connect(args.provider)
         elif args.command == 'setup': setup(args.provider)
+        elif args.command == 'setup-gitlab-group': setup('gitlab', group=True)
+        elif args.command == 'add-gitlab-project': setup('gitlab', add=True)
+        elif args.command == 'add-gitlab-group': setup('gitlab', group=True, add=True)
         else: provider_action(args.provider, args.command)
         return 0
     except (RuntimeError, ValueError, FileNotFoundError, subprocess.CalledProcessError, KeyboardInterrupt) as exc:

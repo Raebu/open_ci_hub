@@ -5,3 +5,5 @@
 @media(max-width:700px){.result-row{align-items:flex-start;flex-direction:column}.result-row .controls{width:100%}.stats .stat{flex:1;min-width:125px}}
 
 .header-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+
+.workflow-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;background:#081525;border:1px solid #294054;border-radius:8px;padding:1rem;font-size:0.8rem;}

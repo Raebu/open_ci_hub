@@ -17,6 +17,14 @@ function renderProviders(data){const root=$('cards');root.replaceChildren();for(
   const controls=el('div',undefined,'controls');
   if(state.mode==='desktop')controls.append(btn(p.authenticated?'Reconnect':'Sign in',async()=>{const out=await api('/api/provider/login',{provider:p.id});notice(out.message);},'primary'));
   if(p.configured&&state.role!=='viewer'){controls.append(btn('Start',async()=>{notice((await api('/api/runner',{provider:p.id,action:'start'})).message);await refresh();}));controls.append(btn('Stop',async()=>{notice((await api('/api/runner',{provider:p.id,action:'stop'})).message);await refresh();}));}
+  if(p.configured && p.id==='gitlab' && state.role==='owner'){
+    controls.append(btn('Add project',async()=>notice((await api('/api/runner/add-gitlab',{scope:'project'})).message)));
+    controls.append(btn('Add group',async()=>notice((await api('/api/runner/add-gitlab',{scope:'group'})).message)));
+  }
+  if(!p.configured && p.id==='gitlab' && state.role==='owner')
+    controls.append(btn('Register group runner',async()=>{
+      const result=await api('/api/runner/group-setup',{});notice(result.message);
+    }));
   if(!p.configured){
     card.append(el('p','Register a runner from the owner PC; the guided setup opens in a terminal.','small'));
     if(state.role==='owner') controls.append(btn('Register runner',async()=>{
@@ -34,7 +42,7 @@ function renderDevices(data){let root=$('device-users');root.replaceChildren();i
   if(!Object.keys(approved).length)b.append(el('p','No mobile users approved.','small'));
   for(const [u,role] of Object.entries(approved)){let row=el('div',undefined,'user');row.append(el('span',`${u} (${role})`),btn('Revoke',async()=>{if(!confirm('Revoke access for '+u+'?'))return;await api('/api/mobile/revoke',{user:u});notice('Access revoked.');await refresh();}));b.append(row)}root.append(b);
 }
-async function refresh(){try{const data=await api('/api/overview');state.mode=data.mode;state.role=data.role;$('mode').textContent=data.mode==='mobile'?'Secure mobile session':'Local desktop session';show('access',false);show('workspace',true);state.ready=true;show('repositories',state.role!=='viewer');show('signout',state.role==='owner');renderProviders(data);renderDevices(data)}catch(e){state.ready=false;show('workspace',false);show('access',true);show('signout',false);if(e.status===401&&e.data?.mobile){$('access-title').textContent='Approve this mobile device';$('access-detail').textContent=`Signed into Tailscale as ${e.data.identity}. Request permission, then approve it from the desktop dashboard.`;show('pair',true)}else{$('access-title').textContent='Open CI Hub desktop session required';$('access-detail').textContent='Launch python hub.py dashboard on your PC. It opens a private administrator link in your browser.';show('pair',false)}if(e.status!==401)notice(e.message,true)}}
+async function refresh(){try{const data=await api('/api/overview');state.mode=data.mode;state.role=data.role;$('mode').textContent=data.mode==='mobile'?'Secure mobile session':'Local desktop session';show('access',false);show('workspace',true);state.ready=true;show('repositories',state.role!=='viewer');show('onboarding',state.role!=='viewer');show('signout',state.role==='owner');renderProviders(data);renderDevices(data)}catch(e){state.ready=false;show('workspace',false);show('access',true);show('signout',false);if(e.status===401&&e.data?.mobile){$('access-title').textContent='Approve this mobile device';$('access-detail').textContent=`Signed into Tailscale as ${e.data.identity}. Request permission, then approve it from the desktop dashboard.`;show('pair',true)}else{$('access-title').textContent='Open CI Hub desktop session required';$('access-detail').textContent='Launch python hub.py dashboard on your PC. It opens a private administrator link in your browser.';show('pair',false)}if(e.status!==401)notice(e.message,true)}}
 
 function safeLink(href,label){
   const a=el('a',label);const u=String(href||'');
@@ -96,6 +104,28 @@ async function loadDiagnostics(){
   }catch(e){audit.append(el('p',e.message))}
 }
 
+function configureOnboarding(){
+  const provider=$('onboard-provider').value;
+  show('circleci-class-label',provider==='circleci');
+  $('onboard-result').replaceChildren();
+}
+async function previewOnboarding(){
+  const provider=$('onboard-provider').value, repo=$('onboard-repo').value.trim();
+  const branch=$('onboard-branch').value.trim(),resource_class=$('onboard-class').value.trim();
+  const root=$('onboard-result');root.replaceChildren(el('p','Checking native workflow…'));
+  try{
+    const plan=await api('/api/onboarding/plan',{provider,repo,branch,resource_class});
+    root.replaceChildren(el('h3',`New: ${plan.path}`),el('p',plan.warning,'small'));
+    root.append(el('pre',plan.content,'workflow-preview'));
+    root.append(btn('Open review request',async()=>{
+      if(!confirm(`Create a ${provider==='gitlab'?'merge':'pull'} request for ${repo}? It will not be merged automatically.`))return;
+      const created=await api('/api/onboarding/apply',{provider,repo,branch,resource_class,confirm:true});
+      root.append(el('p',created.message));root.append(safeLink(created.url,'View review request'));
+      notice('Review request created. Approve and merge it to activate push-triggered CI.');
+      await loadDiagnostics();
+    },'primary'));
+  }catch(err){root.replaceChildren();notice(err.message,true)}
+}
 async function init(){
   let secret=null;if(location.hash.startsWith('#access=')){secret=decodeURIComponent(location.hash.slice(8));history.replaceState(null,'',location.pathname+location.search);}
   if(secret){try{await api('/api/session',{secret});}catch(e){notice(e.message,true)}}
@@ -105,6 +135,8 @@ async function init(){
   });
   $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();});
   $('browse-repos').addEventListener('click',browseRepositories);
+  $('onboard-provider').addEventListener('change',configureOnboarding);
+  $('onboard-form').addEventListener('submit',async e=>{e.preventDefault();await previewOnboarding();});
   $('browse-pipelines').addEventListener('click',browsePipelines);
   $('pair').addEventListener('click',async()=>{try{const out=await api('/api/mobile/request',{});notice(out.message)}catch(e){notice(e.message,true)}});
   $('repo-visibility').addEventListener('change',()=>show('public-warning',$('repo-visibility').value==='public'));
@@ -113,6 +145,7 @@ async function init(){
     if(!confirm(`Create ${visibility} ${provider} repository “${name}”?`))return;
     const b=$('create-repo');b.disabled=true;try{const out=await api('/api/repos',{provider,name,visibility,description,confirm_public:$('confirm-public').checked});notice(out.url?`${out.message} ${out.url}`:out.message);$('new-repo').reset();show('public-warning',false);}catch(err){notice(err.message,true)}finally{b.disabled=false}
   });
+  configureOnboarding();
   await refresh();
   if(state.ready)await loadDiagnostics();
 }
