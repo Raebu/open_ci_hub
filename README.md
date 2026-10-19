@@ -65,7 +65,7 @@ The UI launches interactive CLI setup in a visible terminal on **the owner PC**.
 
 Open CI Hub is **MIT licensed** and its core is neutral: no account, organisation, company or domain is hard-coded. Contributions for Azure DevOps, Forgejo, Gitea, Jenkins, Buildkite and other providers are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md), [ROADMAP.md](docs/ROADMAP.md), and [SECURITY.md](docs/SECURITY.md).
 
-This ZIP is a Git-ready project, **not a published GitHub repository**. To publish it, create your own repository then upload/push the extracted files; never add `.local/`.
+The public source repository is [Raebu/open_ci_hub](https://github.com/Raebu/open_ci_hub). Never commit `.local/` or provider credentials.
 
 ### What remains before a verified production release
 
@@ -73,3 +73,9 @@ This ZIP is a Git-ready project, **not a published GitHub repository**. To publi
 - Complete at least one native build for GitHub, GitLab and CircleCI; verify job tags, protected refs, artifact behavior and teardown/deregistration.
 - Obtain a security review, particularly of native runner isolation, reverse-proxy identity, token storage, updates, logs and device permissions.
 - Optional true cloud-synced multi-computer identities require a **separately deployed control plane** and OIDC/OAuth infrastructure. Do not confuse the shipped Tailscale private workspace with an always-on cloud account.
+
+## Runner storage and safety
+
+The GitHub runner image includes a bootstrap that restores missing `config.sh` and `run.sh` into the persistent runner volume before registration or startup. Docker normally seeds **new named volumes** from existing image content; this bootstrap also protects against partially initialised volumes and avoids depending on Docker's one-time copy behaviour. Runner registration is then retained across container restarts. Updating the image does **not** update an already-populated volume's runner binaries; plan a controlled runner upgrade and re-registration rather than deleting live volumes without first deregistering them.
+
+**Untrusted code warning:** self-hosted runner jobs run code on your computer. Do not attach this runner to public-repository pull requests from unknown contributors. GitHub and GitLab platform permissions, protected branches and operator approval are required; the project does not provide a general-purpose sandbox. Never mount the host Docker socket into the runner container to make builds work.

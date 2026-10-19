@@ -2,7 +2,9 @@ name: open-ci-hub
 services:
   github:
     profiles: [github]
-    image: ghcr.io/actions/actions-runner:2.338.0
+    build:
+      context: .
+      dockerfile: containers/github/Dockerfile
     container_name: open-ci-github-runner
     working_dir: /home/runner
     command: ["./run.sh"]

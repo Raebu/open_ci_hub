@@ -87,7 +87,7 @@ def register(provider: str, data: Registration) -> None:
                    f'--labels {RUNNER_TAG} --work _work --replace')
         compose('--profile', 'github', 'run', '--rm', '--no-deps',
                 '-e', 'GH_URL', '-e', 'GH_NAME', '-e', 'GH_TOKEN',
-                '--entrypoint', '/bin/sh', 'github', '-c', command,
+                'github', '/bin/sh', '-c', command,
                 extra_env={'GH_URL': data.target, 'GH_NAME': data.name, 'GH_TOKEN': data.token})
     elif provider == 'gitlab':
         compose('--profile', 'gitlab', 'run', '--rm', '--no-deps',

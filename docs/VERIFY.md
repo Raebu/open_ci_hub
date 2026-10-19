@@ -15,6 +15,7 @@ Check `.local/`, tokens, dotenv files, caches and credentials are excluded from 
 
 - [ ] Install supported versions of Docker Desktop/Engine + Compose V2 and official `gh`, `glab`, `circleci` CLI.
 - [ ] Browser sign-in completes for each provider, with the minimum necessary scopes.
+- [ ] Build the GitHub runner image (`docker compose --profile github build github`) and inspect the mounted `/home/runner` volume; confirm `config.sh` and `run.sh` remain present after registration and restarts.
 - [ ] Register a test repository/project runner through the dashboard and confirm native runner appears in the provider's UI.
 - [ ] Run a small tagged test on each provider; confirm job appears in pipeline cockpit and in provider UI. GitLab branch must be protected and job tagged `local-ci`.
 - [ ] Restart runner container and PC; verify runner reconnects and retained credentials are not shown in UI or logs.
