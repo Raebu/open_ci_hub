@@ -38,12 +38,12 @@ def read():
     return data
 
 def add(name,host,*,confirm=False):
-    if not isinstance(name,str) or not NAME.fullmatch(name):
+    if not isinstance(name,str) or not NAME.fullmatch(name) or name!=name.strip():
         raise ValueError('Invalid friendly machine name.')
     host=hostname(host)
     if confirm is not True:raise PermissionError('Confirm exact machine identity before saving.')
     data=read()
-    if any(x['host']==host or x['name']==name for x in data):
+    if any(x['host']==host or x['name'].casefold()==name.casefold() for x in data):
         raise RuntimeError('Machine already registered; do not silently replace it.')
     if len(data)>=MAX_MACHINES:raise RuntimeError('Machine limit reached.')
     data.append({'name':name,'host':host})
