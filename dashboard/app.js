@@ -175,7 +175,8 @@ async function loadHost(){
       el('p','Approved desktop apps: '+(hostInfo.allowed_flatpaks?.length||0)+' · User services: '+(hostInfo.allowed_services?.length||0),'small'));
     show('host-controls',state.role==='owner'||state.role==='editor');
     hostTargets();
-  }catch(err){hostInfo=null;status.append(el('p',err.message));show('host-controls',false);}
+    terminalControls();
+  }catch(err){hostInfo=null;status.append(el('p',err.message));show('host-controls',false);terminalControls();}
 }
 async function requestHostAction(){
   const kind=$('host-action').value,target=$('host-target').value;
@@ -200,6 +201,72 @@ async function requestHostAction(){
     await loadHost();
     await loadDiagnostics();
   }catch(err){results.replaceChildren(el('p',err.message));notice(err.message,true);}
+}
+
+let terminalSession=null;
+let terminalPolling=false;
+const terminalDecoder=new TextDecoder('utf-8');
+function terminalControls(){
+  const connected=!!terminalSession;
+  $('terminal-open').disabled=connected||!(hostInfo?.available&&hostInfo?.terminal_enabled)||(state.role!=='owner'&&state.role!=='editor');
+  $('terminal-close').disabled=!connected;
+  $('terminal-interrupt').disabled=!connected;
+  $('terminal-input').disabled=!connected;
+  $('terminal-send').disabled=!connected;
+}
+function terminalMessage(text){
+  const area=$('terminal-output');
+  area.textContent=(area.textContent+text).slice(-20000);
+  area.scrollTop=area.scrollHeight;
+}
+async function terminalRead(){
+  if(!terminalSession||terminalPolling||document.hidden)return;
+  terminalPolling=true;
+  try{
+    const data=await api('/api/host/terminal/read',{session_id:terminalSession});
+    if(data.data_b64){
+      const bytes=Uint8Array.from(atob(data.data_b64),c=>c.charCodeAt(0));
+      terminalMessage(terminalDecoder.decode(bytes,{stream:true}));
+    }
+    if(!data.running){
+      terminalMessage('\n[Shell exited; session no longer running]\n');
+      terminalSession=null;
+      terminalControls();
+    }
+  }catch(err){
+    terminalMessage('\n[Terminal connection: '+err.message+']\n');
+    terminalSession=null;
+    terminalControls();
+  }finally{terminalPolling=false;}
+}
+async function terminalOpen(){
+  const p=await api('/api/host/terminal/preview',{});
+  if(!confirm('Start a real Linux user shell on your PC?\n\n'+p.warning+
+      '\n\nThis session can read and change your files. Only continue on your trusted device.'))return;
+  const opened=await api('/api/host/terminal/open',{preview_token:p.preview_token,confirm:true});
+  terminalSession=opened.session_id;
+  $('terminal-output').textContent='';
+  $('terminal-status').textContent='Interactive user shell · idle expiry '+opened.idle_timeout+'s';
+  terminalControls();
+  await terminalRead();
+}
+async function terminalSend(value){
+  if(!terminalSession)return;
+  const bytes=new TextEncoder().encode(value);
+  if(bytes.length>512)throw new Error('Input is too large for one terminal write.');
+  const wire=btoa(Array.from(bytes,b=>String.fromCharCode(b)).join(''));
+  await api('/api/host/terminal/write',{session_id:terminalSession,data_b64:wire});
+  await terminalRead();
+}
+async function terminalClose(){
+  if(!terminalSession)return;
+  const old=terminalSession;
+  terminalSession=null;
+  terminalControls();
+  try{
+    await api('/api/host/terminal/close',{session_id:old});
+    terminalMessage('\n[Terminal closed]\n');
+  }catch(err){notice(err.message,true);}
 }
 
 function configureOnboarding(){
@@ -238,6 +305,12 @@ async function init(){
   });
   $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();});
   $('host-refresh').addEventListener('click',loadHost);
+  $('terminal-open').addEventListener('click',async()=>{try{await terminalOpen()}catch(err){notice(err.message,true)}});
+  $('terminal-close').addEventListener('click',terminalClose);
+  $('terminal-interrupt').addEventListener('click',async()=>{try{await terminalSend('\x03')}catch(err){notice(err.message,true)}});
+  $('terminal-form').addEventListener('submit',async e=>{e.preventDefault();const value=$('terminal-input').value;$('terminal-input').value='';if(!value.trim())return;try{await terminalSend(value+'\n')}catch(err){notice(err.message,true)}});
+  setInterval(terminalRead,1000);
+  terminalControls();
   $('host-action').addEventListener('change',hostTargets);
   $('host-form').addEventListener('submit',async e=>{e.preventDefault();const button=$('host-prepare');button.disabled=true;try{await requestHostAction();}catch(err){notice(err.message,true)}finally{hostTargets();}});
   $('browse-repos').addEventListener('click',browseRepositories);
