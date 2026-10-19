@@ -144,3 +144,7 @@ The [host agent guide](docs/HOST-AGENT.md) describes a separate, **non-root** lo
 ## Execution proof (not just a green tick)
 
 Open CI Hub now distinguishes native provider pipeline statuses from [runner-reported CI execution receipts](docs/EXECUTION-EVIDENCE.md). Its own self-hosted Python build records the command, actual process exit, observed number of unittest tests, duration and hashed transcript, and stores a short-retention artifact for later comparison. Use **Pipelines → Jobs, logs & artifacts** to inspect the runner assigned, the provider's native job steps and whether receipts are present. Missing runner assignments and exhausted hosted quotas remain explicitly **not proven**. Neither a green status nor a self-hashed transcript is independent attestation.
+
+## Explicitly authorised Host Terminal
+
+A separate **Terminal** tab can create an actor-scoped interactive Linux pseudo-terminal on the real host, under the regular user account. It is a new shell, **not a mirror of an existing KDE Konsole window**. It is disabled until the host owner explicitly runs the enablement command and grants each mobile editor separately. See [Host Terminal security and activation](docs/HOST-TERMINAL.md). No CI runner receives arbitrary host console privileges, and a successful PR run does not imply the host agent is deployed on the PC.

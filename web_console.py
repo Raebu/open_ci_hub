@@ -358,6 +358,29 @@ class WebConsole:
                         return self.output(202, {'message': 'Approval requested. Open the desktop dashboard to approve this identity.'})
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Sign in or request mobile approval first.'})
+                    if path.startswith('/api/host/terminal/'):
+                        from host_agent import client_request
+                        operation=path.rsplit('/',1)[-1]
+                        if operation not in ('preview','open','read','write','close'):
+                            return self.output(404, {'error':'Unsupported terminal operation.'})
+                        if console.role(self) not in ('owner','editor'):
+                            return self.output(403, {'error':'Owner-approved terminal access required.'})
+                        actor = 'local-owner' if console.role(self)=='owner' else console.remote_identity(self)
+                        if not actor:
+                            return self.output(403, {'error':'Verified host identity required.'})
+                        if operation=='open' and data.get('confirm') is not True:
+                            return self.output(400, {'error':'Explicit terminal confirmation required.'})
+                        packet={'op':'terminal_'+operation,'actor':actor}
+                        if operation=='open':
+                            packet['preview_token']=data.get('preview_token')
+                        if operation in ('read','write','close'):
+                            packet['session_id']=data.get('session_id')
+                        if operation=='write':
+                            packet['data_b64']=data.get('data_b64')
+                        answer=client_request(packet)
+                        if operation in ('open','close'):
+                            console.audit.add(actor,'host.terminal_'+operation,'user-shell','requested')
+                        return self.output(200, answer)
                     if path == '/api/host/job':
                         from host_agent import client_request
                         role = console.role(self)
