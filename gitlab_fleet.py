@@ -273,8 +273,8 @@ def existing_mr(project):
     items = invoke_json(['glab','api',f'projects/{encoded}/merge_requests?state=opened&per_page=100'])
     if not isinstance(items,list) or len(items) >= 100:
         raise RuntimeError('Cannot confirm all open GitLab merge requests.')
-    return any(isinstance(x,dict) and str(x.get('source_branch','')).startswith('open-ci-hub/fleet-')
-               for x in items)
+    return any(isinstance(x, dict) and str(x.get('source_branch', '')).startswith(
+               ('open-ci-hub/fleet-', 'open-ci-hub/onboard-')) for x in items)
 
 def create_mr(plan):
     if plan.state not in ('review-ready', 'onboard-ready') or not plan.jobs:
