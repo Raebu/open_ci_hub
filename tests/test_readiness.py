@@ -54,6 +54,16 @@ class ReadinessTests(unittest.TestCase):
                 readiness.check('gitlab', 'a/b', 'main')
             api.assert_called_once()
 
+    def test_unverified_provider_cannot_create_review_request(self):
+        for provider, resource in [('circleci', 'org/worker'), ('github', '')]:
+            plan = onboarding.make_plan(provider, 'owner/repo', resource_class=resource)
+            with self.subTest(provider=provider), \
+                 patch('onboarding.check_readiness', return_value={'verified': False}), \
+                 patch('onboarding._create_github_pr') as write:
+                with self.assertRaisesRegex(RuntimeError, 'readiness is unverified'):
+                    onboarding.create_review_request(plan, approved=True)
+                write.assert_not_called()
+
     def test_circleci_remains_unverified(self):
         with patch('readiness.invoke_json') as api:
             self.assertFalse(readiness.check('circleci', 'a/b', 'main', 'org/worker')['verified'])
