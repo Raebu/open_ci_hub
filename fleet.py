@@ -119,11 +119,14 @@ def event_is_trusted_main(content, branch):
         return False
     following = event_lines[begin:]
     stop = next((i for i, line in enumerate(following) if line.startswith('  ') and not line.startswith('    ')), len(following))
-    push = '\n'.join(following[:stop])
-    branch = re.escape(branch)
-    single = r'(?m)^    branches: \[\s*["\x27]?' + branch + r'["\x27]?\s*\]\s*$'
-    multiple = r'(?m)^    branches:\s*\n      -\s*["\x27]?' + branch + r'["\x27]?\s*$'
-    return bool(re.search(single, push) or re.search(multiple, push))
+    filters = [line.strip().split('#', 1)[0].strip() for line in following[:stop]
+               if line.strip() and not line.lstrip().startswith('#')]
+    if len(filters) == 1 and filters[0].startswith('branches: [') and filters[0].endswith(']'):
+        value = filters[0][len('branches: ['):-1].strip().strip("'\\\"")
+        return value == branch
+    if len(filters) == 2 and filters[0] == 'branches:' and filters[1].startswith('- '):
+        return filters[1][2:].strip().strip("'\\\"") == branch
+    return False
 
 def migrate(content, branch):
     if not event_is_trusted_main(content, branch):
