@@ -131,3 +131,14 @@ and [GitLab runner API](https://docs.gitlab.com/api/runners/) define the provide
 checks used here. Runner inventory is a bounded point-in-time observation, not an
 execution guarantee. GitHub checks the first 100 runners; GitLab checks the first
 100 per project/group scope and fails closed if no eligible worker is observed.
+
+## GitHub delivery and merge gate
+
+Implementation commit: `22d8510`. Review: [PR #4](https://github.com/Raebu/open_ci_hub/pull/4).
+The externally reported `Raeburn Local CI` status failed with **“No allow-listed CI
+workflow detected”**, with no diagnostic URL. This is separate from the passing
+local Python/Compose/container checks. Its workflow allowlist could not be located
+in the repository or the inspected local orchestration source. The status was not
+overridden, and no checks were disabled or hosted workflows dispatched. PR #4 is
+left open and unmerged pending a compatible, approved local-CI configuration and
+review. This external failure must not be presented as a passing CI gate.
