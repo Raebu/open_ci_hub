@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import socket
 import tempfile
+import time
 import threading
 import unittest
 from unittest.mock import patch
@@ -72,11 +73,22 @@ class AgentSafetyTests(unittest.TestCase):
                 c.process({**p,'op':'execute','actor':'any@example.com','preview_token':token})
             execute.assert_not_called()
             token=c.process(p)['preview_token']
-            self.assertEqual(c.process({**p,'op':'execute','preview_token':token})['ok'],True)
-            audit.assert_called_once()
+            accepted = c.process({**p,'op':'execute','preview_token':token})
+            self.assertEqual(accepted['status'], 'running')
+            for _ in range(100):
+                state = c.process({'op':'job','actor':'local-owner',
+                                   'job_id':accepted['job_id']})
+                if state['status'] != 'running':
+                    break
+                time.sleep(.01)
+            self.assertEqual(state['status'], 'success')
+            self.assertGreaterEqual(audit.call_count, 2)
             with self.assertRaises(PermissionError):
                 c.process({**p,'op':'execute','preview_token':token})
             execute.assert_called_once()
+            with self.assertRaises(PermissionError):
+                c.process({'op':'job','actor':'any@example.com',
+                           'job_id':accepted['job_id']})
 
     def test_expired_preview_refuses_execution(self):
         c=h.HostController()
