@@ -96,6 +96,22 @@ async function showJobDetails(provider,repo,run){
   const root=$('job-details');root.replaceChildren(el('h3',`Pipeline #${run}: native jobs`));
   root.append(btn('Close job details',async()=>root.replaceChildren()));
   const query=`provider=${encodeURIComponent(provider)}&repo=${encodeURIComponent(repo)}&run=${encodeURIComponent(run)}`;
+  try{
+    const proof=await api('/api/execution-evidence?'+query);
+    const label=proof.verification==='runner-reported'?'Receipt available — not independently attested':'Execution unproven';
+    root.append(el('h3','Execution proof: '+label),
+      el('p',proof.message,'small'),
+      el('p','Commit: '+(proof.commit||'unknown')+' · Pipeline: '+proof.pipeline_status+' · Native jobs: '+proof.jobs.length,'small'));
+    for(const job of proof.jobs){
+      const details=el('div',undefined,'result-row');
+      details.append(el('strong',job.name+' · '+job.status),
+        el('span','Runner: '+(job.runner||'NOT ASSIGNED')+
+          (job.failure_reason?' · Failure: '+job.failure_reason:'')+
+          (job.duration_seconds!=null?' · '+job.duration_seconds+' seconds':''),'small'));
+      root.append(details);
+      for(const step of job.steps||[])root.append(el('p','  '+step.name+': '+step.status,'small'));
+    }
+  }catch(err){root.append(el('p','Execution proof unavailable: '+err.message,'small'));}
   const jobs=await api('/api/jobs?'+query);
   if(!jobs.items.length)root.append(el('p','No jobs yet. The provider may still be preparing the pipeline.'));
   for(const job of jobs.items){

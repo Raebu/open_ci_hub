@@ -23,5 +23,18 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Run Python test suite
-        run: python3 -m unittest discover -s tests -v
+      - name: Record full Python test execution
+        run: python3 execution_evidence.py run --name python-unittest --output .local/ci-proof/receipt.json --timeout 300 -- python3 -m unittest discover -s tests -v
+      - name: Verify receipt matches actual execution transcript
+        if: always()
+        run: python3 execution_evidence.py verify .local/ci-proof/receipt.json
+      - name: Upload self-hosted execution proof (not independent attestation)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-ci-hub-execution-proof
+          path: |
+            .local/ci-proof/receipt.json
+            .local/ci-proof/python-unittest.log
+          if-no-files-found: error
+          retention-days: 7

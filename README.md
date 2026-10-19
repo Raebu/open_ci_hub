@@ -140,3 +140,7 @@ For GitHub-backed CircleCI projects with an authorised native machine resource c
 The [host agent guide](docs/HOST-AGENT.md) describes a separate, **non-root** local management service for your Linux PC. It can show host status, install explicitly approved Flatpak desktop apps for your desktop user, and start/stop explicitly approved systemd user services. An owner session or separately authorised Tailscale mobile editor uses the existing dashboard's **My PC** section, two-step confirmation and asynchronous job outcome polling.
 
 **No CI/CD job is given direct administrator access or a host-agent socket.** The agent never listens on a TCP port or runs arbitrary shell commands and does not perform root-level pacman installs. This is opt-in and requires one-time installation on the actual PC; a successful CI test does not activate it.
+
+## Execution proof (not just a green tick)
+
+Open CI Hub now distinguishes native provider pipeline statuses from [runner-reported CI execution receipts](docs/EXECUTION-EVIDENCE.md). Its own self-hosted Python build records the command, actual process exit, observed number of unittest tests, duration and hashed transcript, and stores a short-retention artifact for later comparison. Use **Pipelines → Jobs, logs & artifacts** to inspect the runner assigned, the provider's native job steps and whether receipts are present. Missing runner assignments and exhausted hosted quotas remain explicitly **not proven**. Neither a green status nor a self-hashed transcript is independent attestation.

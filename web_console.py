@@ -276,7 +276,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -294,6 +294,9 @@ class WebConsole:
                             return self.output(200, {'items': list_repositories(param('provider'), param('owner'))})
                         if path == '/api/pipelines':
                             return self.output(200, {'items': list_pipelines(param('provider'), param('repo'))})
+                        if path == '/api/execution-evidence':
+                            from execution_proof import inspect
+                            return self.output(200, inspect(param('provider'), param('repo'), param('run')))
                         if path == '/api/jobs':
                             return self.output(200, {'items': list_jobs(param('provider'), param('repo'), param('run'))})
                         if path == '/api/job-log':
