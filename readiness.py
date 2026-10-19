@@ -65,9 +65,39 @@ def check(provider: str, repo: str, branch: str, resource_class: str = '') -> di
         if not eligible:
             raise RuntimeError('No online protected project/group runner with local-ci tag found in the first 100 runners per scope. Register/start your worker and check project access.')
     elif provider == 'circleci':
-        # Listing instances is not proof that project triggers, fork settings or
-        # plan eligibility work. Keep CircleCI onboarding explicit about this.
-        return {'verified': False, 'runners': [], 'message': 'CircleCI end-to-end readiness is UNVERIFIED. Confirm project follows this GitHub repository, resource class access, fork restrictions and a real push build.'}
+        from onboarding import RESOURCE_CLASS
+        if not isinstance(resource_class, str) or not RESOURCE_CLASS.fullmatch(resource_class):
+            raise ValueError('CircleCI requires a namespace/resource-class name.')
+        org = 'gh/' + repo.split('/')[0]
+        project_slug = 'gh/' + repo
+        project = _object(['circleci', 'project', 'get', '--project', project_slug, '--json'])
+        if str(project.get('slug', '')).lower() != project_slug.lower():
+            raise RuntimeError('The CircleCI project has not been verified for this GitHub repository.')
+        if project.get('vcs_default_branch') != branch:
+            raise RuntimeError('The CircleCI default branch does not match this onboarding target.')
+        settings = _object(['circleci', 'project', 'setting', 'list', '--project', project_slug, '--json'])
+        if settings.get('enable_building_fork_prs') is not False:
+            raise RuntimeError('Disable builds from forked pull requests before using a personal self-hosted runner.')
+        if settings.get('is_running_disabled') is not False:
+            raise RuntimeError('CircleCI project execution is disabled or cannot be verified.')
+        classes = invoke_json(['circleci', 'runner', 'resource-class', 'list',
+                               '--resource-class', resource_class, '--org', org, '--json'])
+        if not isinstance(classes, list) or not any(
+                isinstance(item, dict) and item.get('resource_class') == resource_class for item in classes):
+            raise RuntimeError('The CircleCI resource class is not accessible from the repository organisation.')
+        instances = invoke_json(['circleci', 'runner', 'instance', 'list',
+                                 '--resource-class', resource_class, '--org', org, '--json'])
+        if not isinstance(instances, list):
+            raise RuntimeError('CircleCI returned an invalid runner instance inventory.')
+        eligible = [
+            {'name': item.get('name', ''), 'busy': item.get('is_busy') is True}
+            for item in instances
+            if isinstance(item, dict)
+            and item.get('resource_class') == resource_class
+            and item.get('status') == 'online'
+        ]
+        if not eligible:
+            raise RuntimeError('No online CircleCI instance for this resource class. Start an approved runner and retry.')
     else:
         raise ValueError('Unsupported provider.')
     return {'verified': True, 'runners': eligible,
