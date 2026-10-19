@@ -45,7 +45,7 @@ def policy_data():
     if POLICY.is_symlink() or POLICY.parent.is_symlink():
         raise RuntimeError('Refusing symlinked host policy.')
     if not POLICY.is_file():
-        return {'flatpaks': [], 'services': [], 'mobile_admins': []}
+        return {'flatpaks': [], 'services': [], 'mobile_admins': [], 'terminal_enabled': False, 'terminal_admins': []}
     try:
         data = json.loads(POLICY.read_text(encoding='utf-8'))
     except (ValueError, OSError):
@@ -60,13 +60,26 @@ def policy_data():
             raise RuntimeError('Invalid host policy section: ' + key)
     if 'open-ci-hub-host-agent.service' in data['services']:
         raise RuntimeError('Host agent cannot administer its own systemd service.')
+    data.setdefault('terminal_enabled',False)
+    data.setdefault('terminal_admins',[])
+    if not isinstance(data['terminal_enabled'],bool) or not isinstance(data['terminal_admins'],list) or len(data['terminal_admins'])>20 or any(
+        not isinstance(x,str) or not IDENTITY.fullmatch(x) for x in data['terminal_admins']):
+        raise RuntimeError('Invalid remote terminal authorisation policy.')
     return data
 
 def allow(kind: str, value: str, *, confirm: bool = False):
     choices = {'flatpak': ('flatpaks', FLATPAK_ID), 'service': ('services', SERVICE_NAME),
-               'mobile': ('mobile_admins', IDENTITY)}
+               'mobile': ('mobile_admins', IDENTITY),
+               'terminal-mobile': ('terminal_admins', IDENTITY)}
+    if kind == 'terminal':
+        if value != 'enabled' or confirm is not True:
+            raise PermissionError('Enable a host terminal only locally using terminal enabled --confirm.')
+        data=policy_data()
+        data['terminal_enabled']=True
+        secure_write(POLICY,json.dumps(data,indent=2)+'\n')
+        return data
     if kind not in choices:
-        raise ValueError('Only flatpak, user service and Tailscale identity grants are supported.')
+        raise ValueError('Only named local targets or explicitly approved terminal grants are supported.')
     key, pattern = choices[kind]
     if not isinstance(value, str) or not pattern.fullmatch(value):
         raise ValueError('Invalid allowlist entry.')
@@ -154,6 +167,8 @@ class HostController:
         self.lock = threading.RLock()
         self.pending = {}
         self.jobs = {}
+        from host_terminal import TerminalManager
+        self.terminal = TerminalManager()
 
     def _run_job(self, job_id, actor, kind, target):
         try:
@@ -179,13 +194,47 @@ class HostController:
                     'allowed_flatpaks': policy['flatpaks'],
                     'allowed_services': policy['services'],
                     'note': 'Non-root host user. No arbitrary commands or package-manager privileges.'}
-        if op not in ('preview', 'execute', 'job'):
+        if op not in ('preview', 'execute', 'job', 'terminal_preview', 'terminal_open',
+                      'terminal_read', 'terminal_write', 'terminal_close'):
             raise ValueError('Unsupported host agent operation.')
         actor = req.get('actor')
         kind, target = req.get('kind'), req.get('target')
         if not isinstance(actor, str) or not 1 <= len(actor) <= 200 or not (
                 actor == 'local-owner' or IDENTITY.fullmatch(actor)):
             raise ValueError('Invalid actor identity.')
+        if op.startswith('terminal_'):
+            policy=policy_data()
+            if not policy['terminal_enabled']:
+                raise PermissionError('Host terminal is disabled until local owner enables it.')
+            if actor != 'local-owner' and (actor not in policy['mobile_admins'] or
+                                              actor not in policy['terminal_admins']):
+                raise PermissionError('Mobile host terminal requires a separate local-owner grant.')
+            if op == 'terminal_preview':
+                with self.lock:
+                    now=time.monotonic()
+                    self.pending={x:y for x,y in self.pending.items() if y[0]>now}
+                    if len(self.pending)>=MAX_PENDING:
+                        raise RuntimeError('Too many pending approvals.')
+                    token=secrets.token_urlsafe(30)
+                    self.pending[token]=(now+60,actor,'terminal_open','host-user')
+                return {'preview_token':token,'expires_in':60,
+                        'warning':'Creates an interactive shell with full permissions of your Linux user. Do not share session access.'}
+            if op == 'terminal_open':
+                token=req.get('preview_token')
+                with self.lock:
+                    item=self.pending.pop(token,None) if isinstance(token,str) else None
+                    if not item or item[0]<time.monotonic() or item[1:]!=(actor,'terminal_open','host-user'):
+                        raise PermissionError('Terminal authorisation expired, mismatched or already used.')
+                _append_audit(actor,'terminal_open','desktop-user','requested')
+                return self.terminal.open(actor)
+            if op == 'terminal_read':
+                return self.terminal.read(actor,req.get('session_id'))
+            if op == 'terminal_write':
+                return self.terminal.write(actor,req.get('session_id'),req.get('data_b64'))
+            if op == 'terminal_close':
+                result=self.terminal.close(actor,req.get('session_id'))
+                _append_audit(actor,'terminal_close','desktop-user','success')
+                return result
         if op == 'job':
             if actor != 'local-owner' and actor not in policy_data()['mobile_admins']:
                 raise PermissionError('Mobile host permission has been revoked.')
@@ -318,7 +367,7 @@ def main(argv=None):
     cmds.add_parser('serve')
     cmds.add_parser('status')
     allow_cmd = cmds.add_parser('allow')
-    allow_cmd.add_argument('kind', choices=('flatpak','service','mobile'))
+    allow_cmd.add_argument('kind', choices=('flatpak','service','mobile','terminal','terminal-mobile'))
     allow_cmd.add_argument('value')
     allow_cmd.add_argument('--confirm', action='store_true')
     args = ap.parse_args(argv)
