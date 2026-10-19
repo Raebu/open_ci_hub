@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from release_manager import Releases
 
-def archive(app, *, links=False, checks=True):
+def archive(app, *, links=False, checks=True, program=b"print('hello')\n"):
     checks_payload={key:{'status':'passed','log_sha256':'a'*64}
                     for key in ('tests','build','database')}
     if not checks:checks_payload.pop('database')
@@ -21,7 +21,7 @@ def archive(app, *, links=False, checks=True):
     buffer=io.BytesIO()
     with tarfile.open(fileobj=buffer,mode='w:gz') as tar:
         for name,data in [('release.json',json.dumps(release).encode()),
-                          ('app/server.py',b"print('hello')\n")]:
+                          ('app/server.py',program)]:
             info=tarfile.TarInfo(name);info.size=len(data)
             tar.addfile(info,io.BytesIO(data))
         if links:
@@ -96,7 +96,7 @@ class ReleaseSafetyTests(unittest.TestCase):
             done=self.m.deploy('serviceapp',d1,confirm=True)
         self.assertEqual(done['state'],'healthy')
         self.assertEqual(self.m.status('serviceapp')['current'],d1)
-        blob=archive('serviceapp').replace(b'hello',b'HELLO')
+        blob=archive('serviceapp',program=b"print('updated')\n")
         d2=self.signed_stage(blob)
         with patch.object(self.m,'_restart'),patch.object(self.m,'_health',side_effect=RuntimeError('unhealthy')):
             with self.assertRaisesRegex(RuntimeError,'restored'):
