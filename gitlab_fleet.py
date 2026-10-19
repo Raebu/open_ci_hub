@@ -124,14 +124,22 @@ def _get_config(project, branch):
 def migrate(content):
     # A verified global workflow rule must block merge-request and other refs
     # on a persistent, protected shell worker. Refuse ambiguous/complex YAML.
-    expected = r"""(?m)^workflow:\s*\n  rules:\s*\n    - if:\s*['"]?\$CI_COMMIT_BRANCH == \$CI_DEFAULT_BRANCH['"]?\s*$"""
-    if not re.search(expected, content):
-        raise RuntimeError('Pipeline must have an explicit global default-branch-only rule.')
+    headers = list(SAFE_JOB.finditer(content))
+    workflow = next((i for i, h in enumerate(headers) if h.group(1) == 'workflow'), None)
+    if workflow is None:
+        raise RuntimeError('A global default-branch-only workflow is required.')
+    start = headers[workflow].start()
+    end = headers[workflow+1].start() if workflow+1 < len(headers) else len(content)
+    lines = [line.strip() for line in content[start:end].splitlines()
+             if line.strip() and not line.lstrip().startswith('#')]
+    allowed = ["workflow:", "rules:",
+               "- if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'"]
+    if lines != allowed:
+        raise RuntimeError('Workflow must contain exactly one default-branch-only rule.')
     if re.search(r'(?m)^(include|image|services|default|before_script):', content):
         raise RuntimeError('Inherited includes/images/default config require manual runner review.')
     if re.search(r'(?m)^  (?:trigger|extends|parallel|image|services|tags):', content):
         raise RuntimeError('Complex pipeline requires manual review.')
-    headers = list(SAFE_JOB.finditer(content))
     jobs = [m for m in headers if m.group(1) not in RESERVED]
     if not jobs:
         raise RuntimeError('No simple script jobs to migrate.')
