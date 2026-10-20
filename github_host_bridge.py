@@ -96,6 +96,18 @@ def configure(repo, sender, *, confirm=False):
     return result
 
 
+
+def verify_control_repo(cfg):
+    """Fail closed if the private repo is transferred, replaced or exposed."""
+    info = gh('repos/' + cfg['repo'])
+    if (not isinstance(info, dict) or info.get('private') is not True
+        or info.get('id') != cfg['repo_id']
+        or str(info.get('full_name', '')).lower() != cfg['repo'].lower()
+        or str(info.get('owner', {}).get('login', '')).lower() != cfg['sender'].lower()):
+        raise PermissionError('Trusted private GitHub control repo is missing, changed or public.')
+    return True
+
+
 def validate_task(issue, cfg):
     if (not isinstance(issue, dict) or type(issue.get('number')) != int
         or issue['number'] < 1 or issue.get('state') != 'open'
@@ -143,6 +155,7 @@ def get_issue(cfg, number):
 
 def pending():
     cfg = config()
+    verify_control_repo(cfg)
     issues = gh('repos/' + cfg['repo'] + '/issues', fields={'state': 'open', 'per_page': '100'})
     if not isinstance(issues, list):
         raise ValueError('Invalid GitHub issue collection.')
@@ -167,6 +180,7 @@ def approve(number, digest, *, confirm=False):
     if not confirm or not isinstance(digest, str) or not DIGEST.fullmatch(digest):
         raise PermissionError('Exact SHA-256 digest and local --confirm required.')
     cfg = config()
+    verify_control_repo(cfg)
     issue = get_issue(cfg, number)
     if digest != issue['digest']:
         raise PermissionError('Issue changed or supplied digest does not match.')
@@ -232,6 +246,7 @@ def execute_native(task, number):
 def run_once(executor=execute_native):
     require_user()
     cfg = config()
+    verify_control_repo(cfg)
     if not JOBS.exists():
         return {'status': 'idle'}
     # Caller uses setup_lock around the entire operation to prevent a second
