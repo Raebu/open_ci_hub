@@ -83,7 +83,9 @@ def validate_event(event):
     _must(event["provider"] in PROVIDERS and isinstance(event["repository"], str)
           and REPOSITORY.fullmatch(event["repository"]), "Unknown repository.")
     _must(event["kind"] in EVENTS, "Unsupported event kind.")
-    _must(isinstance(event["ref"], str) and REF.fullmatch(event["ref"]),
+    _must(isinstance(event["ref"], str) and REF.fullmatch(event["ref"])
+          and all(part not in ("", ".", "..") for part in event["ref"].split("/"))
+          and ".." not in event["ref"] and "//" not in event["ref"],
           "Invalid full Git ref.")
     _must(isinstance(event["sha"], str) and SHA.fullmatch(event["sha"]),
           "Immutable commit SHA required.")
