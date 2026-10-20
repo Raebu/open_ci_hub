@@ -155,8 +155,7 @@ class ResourceGate:
 
     @staticmethod
     def _active(db):
-        return db.execute('SELECT app,task FROM jobs WHERE status="leased" '
-                          'AND lease_until>strftime("%s","now")').fetchall()
+        return db.execute('SELECT app,task FROM jobs WHERE status IN ("leased","stranded")').fetchall()
 
     def snapshot(self,db):
         cfg=self.config(db)
