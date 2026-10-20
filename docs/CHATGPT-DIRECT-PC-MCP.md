@@ -69,7 +69,9 @@ into this chat):
 
 \`\`\`fish
 cd /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
-set -gx CONTROL_PLANE_API_KEY (read -s -P "OpenAI tunnel runtime API key: ")
+echo "Enter your OpenAI tunnel runtime key (hidden input):"
+read --silent CONTROL_PLANE_API_KEY
+set -gx CONTROL_PLANE_API_KEY "$CONTROL_PLANE_API_KEY"
 tunnel-client init --sample sample_mcp_stdio_local \
   --profile open-ci-garuda \
   --tunnel-id YOUR_ACTUAL_TUNNEL_ID \
