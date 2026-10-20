@@ -131,6 +131,77 @@ class FailedJobTests(unittest.TestCase):
         self.assertNotIn('ghp_SECRETSECRET',text)
         self.assertNotIn('abc123',text)
 
+    def test_real_log_lines_and_exit_code_are_preserved_with_provenance(self):
+        sha = 'd' * 40
+        text = ('2026-10-20 test failed\n'
+                'Traceback (most recent call last):\n'
+                '  File "app.py", line 23, in run\n'
+                'AssertionError: expected 2 got 3\n'
+                'Error: Process completed with exit code 1.\n')
+        row = {'id':'9', 'name':'tests', 'status':'failure',
+               'failed_steps':['Run tests'], 'runner':'local-runner', 'url':'https://github.com/a/b/actions/runs/5/job/9'}
+        with patch('ci_failure_diagnostics.list_jobs', return_value=[row]), \
+             patch('ci_failure_diagnostics.job_log', return_value={'text':text}), \
+             patch('ci_failure_diagnostics.invoke_json', return_value={
+                 'head_sha': sha, 'status':'completed','conclusion':'failure','run_attempt':2
+             }) as inv:
+            result=failures.diagnose('github','a/b','5',include_logs=True)
+        evidence=result['failures'][0]
+        self.assertEqual(evidence['log_state'],'available')
+        self.assertIn('AssertionError: expected 2 got 3', evidence['log_excerpt'])
+        self.assertIn('File "app.py", line 23', evidence['log_excerpt'])
+        self.assertEqual(evidence['exit_code_from_log'],1)
+        self.assertEqual(result['commit'],sha)
+        self.assertEqual(result['attempt'],2)
+        self.assertEqual(result['run_url'],'https://github.com/a/b/actions/runs/5')
+        inv.assert_called_once()
+
+    def test_no_job_logs_never_claims_an_exact_root_cause(self):
+        row={'id':'9','name':'validate','status':'failure',
+             'failed_steps':[], 'runner':'Waiting for worker', 'url':''}
+        with patch('ci_failure_diagnostics.list_jobs',return_value=[row]), \
+             patch('ci_failure_diagnostics.job_log', side_effect=RuntimeError('BlobNotFound')), \
+             patch('ci_failure_diagnostics.invoke_json',side_effect=RuntimeError('missing metadata')):
+            result=failures.diagnose('github','a/b','5',include_logs=True)
+        job=result['failures'][0]
+        self.assertEqual(job['log_state'],'unavailable')
+        self.assertEqual(job['log_excerpt'],'')
+        self.assertFalse(job['runner_assigned'])
+        self.assertIsNone(job['exit_code_from_log'])
+        self.assertIn('not expose',job['reason'])
+        self.assertEqual(result['pipeline_status'],'unverified')
+
+    def test_provider_secret_redaction_before_chatgpt_excerpt(self):
+        row={'id':'3','name':'build','status':'failure',
+             'failed_steps':['Run'], 'runner':'Garuda','url':''}
+        leaked='fatal: token=NEVERDISPLAY\nError: Authorization: Bearer supersecret\nAssertionError: failed\n'
+        with patch('ci_failure_diagnostics.list_jobs',return_value=[row]), \
+             patch('ci_failure_diagnostics.job_log',return_value={'text':leaked}), \
+             patch('ci_failure_diagnostics.invoke_json',return_value={}):
+            result=failures.diagnose('github','a/b','5',include_logs=True)
+        output=result['failures'][0]['log_excerpt']
+        self.assertNotIn('NEVERDISPLAY',output)
+        self.assertNotIn('supersecret',output)
+        self.assertIn('AssertionError: failed',output)
+        self.assertIn('[REDACTED]',output)
+
+    def test_error_excerpts_are_bounded_and_reveal_kind(self):
+        text=('unimportant step\n' * 1500 + 'ERROR: smoke failed\n' + 'exit code 2\n')
+        evidence=failures._evidence_excerpt(text)
+        self.assertLessEqual(len(evidence['log_excerpt']), failures.MAX_EXCERPT_CHARS)
+        self.assertEqual(evidence['excerpt_kind'],'error_context')
+        self.assertTrue(evidence['excerpt_truncated'])
+
+    def test_log_fetch_is_opt_in_and_bounded(self):
+        rows=[{'id':str(i),'name':'test','status':'failure','failed_steps':[],
+               'runner':'host','url':''} for i in range(5)]
+        with patch('ci_failure_diagnostics.list_jobs',return_value=rows), \
+             patch('ci_failure_diagnostics.job_log',return_value={'text':'ERROR: failure'}) as fetch, \
+             patch('ci_failure_diagnostics.invoke_json',return_value={}):
+            report=failures.diagnose('github','a/b','5',include_logs=True)
+        self.assertEqual(fetch.call_count,failures.MAX_LOG_JOBS)
+        self.assertEqual(report['failures'][-1]['log_state'],'not_requested')
+
     def test_pending_jobs_not_falsely_marked_failed(self):
         with patch('ci_failure_diagnostics.list_jobs',return_value=[
                 {'status':'queued','id':'12','name':'CI waiting'}]):
@@ -158,6 +229,18 @@ class CIDiagnosticHTTPTests(DashboardHTTPTests):
                     '/api/ci/failure?provider=github&repo=Raebu/repo&run=12'):
             response, *_=self.request('GET',url)
             self.assertEqual(response,401)
+
+    def test_log_request_is_explicit_and_validated(self):
+        with patch('ci_failure_diagnostics.diagnose',return_value={'code':'native_job_failed'}) as spy:
+            status,data,_=self.request('GET',
+                '/api/ci/failure?provider=github&repo=Raebu/repo&run=12&logs=1',
+                cookie=self.session())
+        self.assertEqual(status,200)
+        self.assertTrue(spy.call_args.kwargs['include_logs'])
+        status,data,_=self.request('GET',
+            '/api/ci/failure?provider=github&repo=Raebu/repo&run=12&logs=maybe',
+            cookie=self.session())
+        self.assertEqual(status,400)
 
     def test_authenticated_diagnostics_return_precise_payload(self):
         expected={'verified':False,'code':'trigger_not_allowlisted','message':'PR event blocked'}
