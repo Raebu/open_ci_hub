@@ -285,10 +285,19 @@ async function loadApps(){
           ' · System RAM reserve: '+c.min_free_ram_mb+' MiB','small'));
       const gpus=Object.entries(res.gpu);
       if(!gpus.length)root.append(el('p','GPU VRAM telemetry unavailable: GPU jobs pause automatically.','small'));
-      for(const [id,gpu] of gpus)root.append(el('p','GPU '+id+
-        ' · VRAM free: '+gpu.free_mb+'/'+gpu.total_mb+' MiB'+
-        ' · Reserved: '+(res.reserved_vram_mb[id]||0)+' MiB'+
-        ' · Minimum free: '+c.min_free_vram_mb+' MiB','small'));
+      for(const [id,gpu] of gpus){
+        if(gpu.mode==='shared'){
+          root.append(el('p','GPU '+id+' · '+(gpu.model||'Intel integrated graphics')+
+            ' · Shared system RAM (no separate VRAM pool)'+
+            ' · Shared GPU RAM reserved: '+(res.reserved_shared_gpu_ram_mb||0)+' MiB'+
+            ' · GPU jobs: '+res.active_integrated_gpu_jobs+'/'+res.max_integrated_gpu_jobs,'small'));
+        }else{
+          root.append(el('p','GPU '+id+
+            ' · Dedicated VRAM free: '+gpu.free_mb+'/'+gpu.total_mb+' MiB'+
+            ' · Reserved: '+(res.reserved_vram_mb[id]||0)+' MiB'+
+            ' · Minimum free: '+c.min_free_vram_mb+' MiB','small'));
+        }
+      }
       root.append(el('p','Resource reservations are admission controls; RAM hard limits require protected worker cgroups. VRAM is monitored, not hardware-enforced.','small'));
     }
     if(!inventory.apps.length){root.append(el('p','No applications registered yet. Use the local owner CLI to authorise one.'));return;}
