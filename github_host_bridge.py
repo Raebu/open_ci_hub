@@ -205,6 +205,9 @@ def safe_capacity():
     if policy['max_parallel'] < 1:
         raise RuntimeError('Host task deferred due to PC resource pressure: ' + policy['reason'])
     resources = Broker().resource_status()
+    runtime_policy = resources.get('policy', {})
+    if runtime_policy.get('paused') or runtime_policy.get('max_parallel') == 0:
+        raise RuntimeError('Host task deferred: Open CI Hub admissions paused.')
     available = resources.get('memory_available_mb')
     native = resources.get('reserved_native_runner_ram_mb')
     active = resources.get('reserved_ram_mb')
