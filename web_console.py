@@ -303,7 +303,7 @@ class WebConsole:
                                                        data.get('idempotency_key'))
                             return self.output(200 if result['duplicate'] else 201,result)
                         if path=='/api/v1/workers/claim':
-                            return self.output(200,console.apps.claim(who))
+                            return self.output(200,console.apps.claim(who,data.get('telemetry')))
                         if path=='/api/v1/workers/complete':
                             return self.output(200,console.apps.complete(
                                 who,data.get('job_id'),data.get('lease_token'),
