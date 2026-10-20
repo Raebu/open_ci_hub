@@ -182,3 +182,8 @@ On detected Tiger Lake Intel Iris Xe hardware, GPU working-memory reservations s
 The private [Workload Control](docs/WORKLOAD-CONTROL.md) layer observes the Docker memory reservations for managed native GitHub/GitLab/CircleCI runners and GitHub personal runner pool, and deducts them before admitting more application jobs. CPU-limited native runner starts use the same safety check. Managed app workers add bounded output capture, cgroup MemoryHigh/MemoryMax and CPUQuota. Host memory pressure, thermal conditions and battery can reduce new-job concurrency. The mobile App Runtime provides pause/resume, Quiet/Balanced mode, queue priority and app-only emergency-stop controls. Live Garuda enforcement remains pending owner host activation and validation.
 
 **Worker output hardening:** Worker responses are bounded independently from file creation. Abnormal scope termination requires verified systemd inactive state before releasing reservations. See [WORKLOAD-CONTROL](docs/WORKLOAD-CONTROL.md).
+
+
+### Guarded CI provider containers
+
+The existing GitHub/GitLab/CircleCI Compose runner templates no longer automatically restart Docker containers outside central admission checks. A separate opt-in, owner-approved guard verifies preserved existing Docker container identity, RAM/swap/CPU/PID/security caps, Docker restart=no, and laptop pressure policy before starting an idle provider runner. A disabled-by-default user timer can retry approved starts after reboot. No containers or named volumes are created/deleted/migrated automatically. See [provider runner admission](docs/PROVIDER-RUNNER-ADMISSION.md). Native provider jobs remain capped by Docker; this is not complete control over scheduling inside each external CI provider.
