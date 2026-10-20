@@ -69,6 +69,9 @@ class Broker:
                     ON jobs(app, status, created);
             ''')
             ResourceGate.setup(db)
+            cols={x['name'] for x in db.execute('PRAGMA table_info(jobs)')}
+            if 'priority' not in cols:
+                db.execute('ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0')
         self.resource_gate=ResourceGate()
         if os.name != 'nt':
             os.chmod(self.path, 0o600)
@@ -270,6 +273,38 @@ class Broker:
             db.commit()
         return {'job_id':job,'status':new_status}
 
+    def control(self,mode=None,paused=None,*,confirm=False):
+        if confirm is not True:
+            raise PermissionError('Explicit owner/editor confirmation required.')
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            result=ResourceGate.set_controls(db,mode=mode,paused=paused)
+            db.commit()
+        return result
+
+    def reprioritize(self,job,priority,*,confirm=False):
+        if confirm is not True:
+            raise PermissionError('Explicit job priority confirmation required.')
+        if not isinstance(job,str) or not JOB.fullmatch(job) or type(priority)!=int or not -5<=priority<=5:
+            raise ValueError('Invalid job ID or priority (-5 to 5).')
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT app,task,status FROM jobs WHERE id=?',(job,)).fetchone()
+            if not row or row['status']!='queued':
+                raise RuntimeError('Only queued jobs can be reprioritised.')
+            db.execute('UPDATE jobs SET priority=? WHERE id=?',(priority,job))
+            db.commit()
+        return {'job_id':job,'app':row['app'],'priority':priority}
+
+    def queue_preview(self):
+        with self._db() as db:
+            rows=db.execute('SELECT id,app,task,priority,created,status FROM jobs '
+                            'WHERE status IN ("queued","leased","stranded") '
+                            'ORDER BY priority DESC,created,id LIMIT 60').fetchall()
+        return {'jobs':[{'job_id':r['id'],'app':r['app'],'task':r['task'],
+                         'priority':r['priority'],'created':r['created'],
+                         'status':r['status']} for r in rows]}
+
     def claim(self,who):
         self._require(who,'worker')
         now=time.time();app=who['app']
@@ -284,7 +319,7 @@ class Broker:
             snapshot=self.resource_gate.snapshot(db)
             candidates=db.execute('SELECT id,task,payload,attempts FROM jobs '
                                   'WHERE app=? AND status="queued" '
-                                  'ORDER BY created,id LIMIT 100',(app,)).fetchall()
+                                  'ORDER BY priority DESC,created,id LIMIT 100',(app,)).fetchall()
             if not candidates:
                 db.commit()
                 return {'job':None,'reason':'queue_empty'}
@@ -407,6 +442,12 @@ def main(argv=None):
     recover=sub.add_parser('recover-stranded');recover.add_argument('job_id')
     recover.add_argument('--confirm',action='store_true')
     sub.add_parser('resources')
+    pause=sub.add_parser('pause');pause.add_argument('--confirm',action='store_true')
+    resume=sub.add_parser('resume');resume.add_argument('--confirm',action='store_true')
+    mode=sub.add_parser('mode');mode.add_argument('name',choices=['quiet','balanced','performance'])
+    mode.add_argument('--confirm',action='store_true')
+    priority=sub.add_parser('priority');priority.add_argument('job_id')
+    priority.add_argument('value',type=int);priority.add_argument('--confirm',action='store_true')
     args=parser.parse_args(argv)
     try:
         broker=Broker(args.state)
@@ -420,6 +461,10 @@ def main(argv=None):
         elif args.cmd=='global-resources':out=broker.set_global_resources(
             args.max_parallel,args.min_free_ram_mb,args.min_free_vram_mb,confirm=args.confirm)
         elif args.cmd=='recover-stranded':out=broker.recover_stranded(args.job_id,confirm=args.confirm)
+        elif args.cmd=='pause':out=broker.control(paused=True,confirm=args.confirm)
+        elif args.cmd=='resume':out=broker.control(paused=False,confirm=args.confirm)
+        elif args.cmd=='mode':out=broker.control(mode=args.name,confirm=args.confirm)
+        elif args.cmd=='priority':out=broker.reprioritize(args.job_id,args.value,confirm=args.confirm)
         else:out=broker.resource_status()
         print(json.dumps(out,indent=2));return 0
     except (PermissionError,RuntimeError,ValueError,OSError,sqlite3.Error) as exc:
