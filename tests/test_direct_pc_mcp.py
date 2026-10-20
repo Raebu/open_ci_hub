@@ -20,7 +20,9 @@ class DirectMcpTests(unittest.TestCase):
     def test_tools_discovered_with_explicit_scopes(self):
         response=self.request('tools/list')
         names={x['name'] for x in response['result']['tools']}
-        self.assertEqual(names,{'get_pc_status','inspect_ci_failure','create_pc_document'})
+        self.assertEqual(names,{ 'get_pc_status', 'inspect_ci_failure', 'create_pc_document',
+            'list_coding_workspaces', 'list_coding_files', 'read_coding_file',
+            'write_coding_file', 'run_coding_check' })
         for tool in response['result']['tools']:
             self.assertEqual(tool['inputSchema']['additionalProperties'],False)
         self.assertFalse(any('shell' in x['name'] or 'sudo' in x['name'] for x in response['result']['tools']))
