@@ -122,7 +122,8 @@ def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
     payload=json.dumps({'job_id':jid,'task':task,'payload':job['payload'],
                         'attempt':job['attempt']},separators=(',',':'))
     env={k:v for k,v in os.environ.items() if k not in (
-        'OPEN_CI_WORKER_TOKEN','OPEN_CI_APP_TOKEN','GITHUB_TOKEN','CI_JOB_TOKEN')}
+        'OPEN_CI_WORKER_TOKEN','OPEN_CI_APP_TOKEN','GITHUB_TOKEN','CI_JOB_TOKEN',
+        'CUDA_VISIBLE_DEVICES','OPEN_CI_INTEL_SHARED_GPU')}
     if reserve and gpu_mode=='dedicated':
         env['CUDA_VISIBLE_DEVICES']=str(gpu)
     elif reserve and gpu_mode=='shared':
