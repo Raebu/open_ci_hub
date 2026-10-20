@@ -28,6 +28,7 @@ IMAGE = 'open-ci-hub-github'
 MAX_ACTIVE = 3
 MAX_NEW = 4
 PREFIX = 'open-ci-hub-pool-'
+_LAST_WORKFLOW_REPORTS = {}
 
 def _read(path: Path, kind):
     if path.is_symlink() or path.parent.is_symlink():
@@ -132,7 +133,9 @@ def _active():
 def _trusted_workflow(repo, branch):
     """Maintain the strict gate but retain precise reasons in the diagnostics API."""
     from ci_workflow_diagnostics import inspect_github
-    return inspect_github(repo, branch)['verified']
+    result = inspect_github(repo, branch)
+    _LAST_WORKFLOW_REPORTS[(repo, branch)] = result
+    return result['verified']
 
 
 def register(repo,branch):
@@ -226,22 +229,37 @@ def schedule():
     rows=_state()
     running=_active()
     trusted={}
+    blockers=[]
+    deferred=[]
     for repo,info in rows.items():
+        failure=None
         try:
             safe = _trusted_workflow(repo,info['branch'])
         except (RuntimeError,ValueError):
             safe = False
+            failure={'code':'workflow_inspection_unavailable',
+                     'message':'Provider workflow inventory could not be verified.',
+                     'suggestion':'Check provider permissions and retry; do not bypass CI trust.'}
         if safe:
             trusted[repo]=info
-        elif info['container'] in running:
-            stop(repo)  # Fail closed when a registered repo becomes untrusted.
-            running.discard(info['container'])
+        else:
+            report = failure or _LAST_WORKFLOW_REPORTS.get((repo, info['branch'])) or {}
+            blockers.append({'repo':repo,
+                             'code':report.get('code','workflow_not_allowlisted'),
+                             'reason':report.get('message','No verified eligible workflow.'),
+                             'next_step':report.get('suggestion','Check CI workflow diagnostics.')})
+            if info['container'] in running:
+                stop(repo)  # Fail closed when a registered repo becomes untrusted.
+                running.discard(info['container'])
     pending=[]
     for repo,info in trusted.items():
         try:
             if queued(repo,'queued'):
                 pending.append(repo)
         except RuntimeError:
+            deferred.append({'repo':repo, 'code':'queue_lookup_unverified',
+                             'reason':'GitHub queue state unavailable; runner was not started.',
+                             'next_step':'Check GitHub CLI authentication and retry.'})
             continue
     # Prefer queued jobs. Never interrupt a repo that has in-progress runs or
     # whose activity cannot be verified safely.
@@ -258,14 +276,25 @@ def schedule():
                         running.remove(info['container'])
                         break
                 except RuntimeError:
+                    deferred.append({'repo':victim, 'code':'busy_check_unverified',
+                                     'reason':'Cannot verify the existing runner is idle; no interruption.',
+                                     'next_step':'Inspect native provider job state before rotating runners.'})
                     continue
         if len(running) < MAX_ACTIVE:
             try:
                 start(repo)
                 running.add(trusted[repo]['container'])
-            except RuntimeError:
-                pass
-    return {'registered':len(rows),'active':len(running),'queued_repositories':len(pending)}
+            except RuntimeError as exc:
+                deferred.append({'repo':repo,'code':'runner_start_deferred',
+                                 'reason':str(exc)[:200],
+                                 'next_step':'Inspect local runner admission and resource headroom.'})
+        else:
+            deferred.append({'repo':repo, 'code':'runner_capacity_full',
+                             'reason':'All approved worker slots are occupied.',
+                             'next_step':'Wait for an idle runner rather than killing active CI jobs.'})
+    return {'registered':len(rows),'active':len(running),
+            'queued_repositories':len(pending), 'blocked':blockers[:30],
+            'deferred':deferred[:30]}
 
 def sync(owner,apply=False,limit=MAX_NEW):
     owner=fleet.validate_owner(owner)
@@ -285,10 +314,16 @@ def sync(owner,apply=False,limit=MAX_NEW):
     for repo,branch in visible:
         try:
             rows=_state()
-            if not _trusted_workflow(repo,branch) or (repo in rows and rows[repo]['branch']!=branch):
+            policy_ok=_trusted_workflow(repo,branch)
+            changed_branch=repo in rows and rows[repo]['branch']!=branch
+            if not policy_ok or changed_branch:
                 if apply and repo in rows:
                     stop(repo)  # Policy drift must not expose personal hosts to PR jobs.
-                output.append({'repo':repo,'status':'paused-unsafe' if repo in rows else 'manual'})
+                report=_LAST_WORKFLOW_REPORTS.get((repo,branch),{})
+                output.append({'repo':repo,'status':'paused-unsafe' if repo in rows else 'manual',
+                               'code':'branch_changed' if changed_branch else report.get('code','workflow_not_allowlisted'),
+                               'reason':'Registered branch no longer matches the default branch.' if changed_branch else report.get('message','Workflow is not allowlisted.'),
+                               'next_step':'Review and deliberately re-register this runner.' if changed_branch else report.get('suggestion','Inspect workflow policy.')})
                 continue
             if repo in rows:
                 status='registered'
