@@ -158,3 +158,7 @@ This is a host-local user-service deployment primitive, **not** cross-PC zero-do
 ## Private multi-PC navigation
 
 The mobile dashboard can now show an explicitly approved [Tailscale multi-PC inventory](docs/MULTI-PC.md), inspect each remote dashboard's HTTPS /health through certificate validation and open that machine's *own* private Open CI Hub dashboard. Devices, CI runners, host terminals and deployment approvals remain independent on each PC. **This is private navigation/health discovery**, not yet automatic distributed build scheduling or central cross-machine terminal execution.
+
+## Reproducible signed source distribution
+
+Use `python3 scripts/build_distribution.py HEAD` to produce deterministic Git-commit-pinned source archives and a SHA-256 digest. An owner may sign them separately with the existing offline `scripts/sign-distribution.sh` script. Recipients can verify the exact bytes and signer identity with `python3 scripts/verify_distribution.py ARCHIVE ARCHIVE.sig SIGNER APPROVED_PUBLIC_SIGNERS`. Automated CI has no release signing key and never claims an unsigned archive is signed. See [signed deployments](docs/SIGNED-DEPLOYMENTS.md).
