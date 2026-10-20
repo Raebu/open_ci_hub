@@ -1,0 +1,157 @@
+"""Failure diagnostics retain actionable reasons and deny unsafe workflows."""
+import unittest
+from unittest.mock import patch
+
+import ci_workflow_diagnostics as workflows
+import ci_failure_diagnostics as failures
+import pipeline_details
+
+GOOD = """name: Native CI
+on:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: [self-hosted, linux, local-ci]
+    steps:
+      - run: python3 -m unittest
+"""
+TREE = {'truncated': False, 'tree': [
+    {'type': 'blob', 'path': '.github/workflows/build.yml'},
+]}
+
+
+class WorkflowDiagnosticTests(unittest.TestCase):
+    def report(self, source=GOOD, tree=TREE):
+        with patch('ci_workflow_diagnostics.fleet._json_object', return_value=tree), \
+             patch('ci_workflow_diagnostics.fleet._file', return_value=(source, 'a'*40)):
+            return workflows.inspect_github('Raebu/service', 'main')
+
+    def test_valid_local_only_main_workflow_is_eligible(self):
+        report=self.report()
+        self.assertTrue(report['verified'])
+        self.assertEqual(report['code'], 'eligible')
+        self.assertEqual(report['issues'], [])
+
+    def test_missing_workflow_gets_exact_next_action(self):
+        report=self.report(tree={'truncated': False, 'tree': []})
+        self.assertEqual(report['code'], 'workflow_missing')
+        self.assertIn('onboarding', report['suggestion'].lower())
+
+    def test_truncated_inventory_is_not_falsely_called_missing(self):
+        report=self.report(tree={'truncated': True, 'tree': []})
+        self.assertEqual(report['code'], 'workflow_tree_unverified')
+        self.assertFalse(report['verified'])
+
+    def test_pull_request_trigger_is_explained_not_silently_accepted(self):
+        source=GOOD.replace('  push:', '  pull_request:\n    branches: [main]\n  push:')
+        report=self.report(source=source)
+        self.assertEqual(report['code'], 'trigger_not_allowlisted')
+        self.assertIn('pull-request', report['message'])
+        self.assertFalse(report['verified'])
+
+    def test_hosted_or_wrong_runner_labels_are_explained(self):
+        report=self.report(source=GOOD.replace(
+            '[self-hosted, linux, local-ci]', 'ubuntu-latest'))
+        self.assertEqual(report['code'], 'runner_label_mismatch')
+        self.assertIn('self-hosted', report['suggestion'])
+
+    def test_unreadable_workflow_does_not_authorise_runner(self):
+        with patch('ci_workflow_diagnostics.fleet._json_object', return_value=TREE), \
+             patch('ci_workflow_diagnostics.fleet._file', side_effect=RuntimeError('provider error')):
+            result=workflows.inspect_github('Raebu/service', 'main')
+        self.assertEqual(result['code'], 'workflow_unreadable')
+        self.assertFalse(result['verified'])
+
+    def test_mixed_workflows_fail_closed_with_specific_path(self):
+        second={'truncated': False, 'tree': [
+            {'type':'blob','path':'.github/workflows/a.yml'},
+            {'type':'blob','path':'.github/workflows/b.yml'},
+        ]}
+        with patch('ci_workflow_diagnostics.fleet._json_object', return_value=second), \
+             patch('ci_workflow_diagnostics.fleet._file', side_effect=[
+                 (GOOD, 'a'*40),
+                 (GOOD.replace('  push:', '  pull_request:'), 'b'*40)
+             ]):
+            result=workflows.inspect_github('Raebu/service', 'main')
+        self.assertFalse(result['verified'])
+        self.assertEqual(result['issues'][0]['workflow'], '.github/workflows/b.yml')
+
+    def test_pool_stays_strict_and_returns_reason(self):
+        import runner_pool
+        with patch('ci_workflow_diagnostics.fleet._json_object', return_value=TREE), \
+             patch('ci_workflow_diagnostics.fleet._file', return_value=(
+                 GOOD.replace('  push:', '  pull_request:'), 'a'*40)):
+            self.assertFalse(runner_pool._trusted_workflow('Raebu/service', 'main'))
+
+
+class FailedJobTests(unittest.TestCase):
+    def test_failed_step_reports_real_concrete_reason(self):
+        payload={'jobs':[{'id':123, 'name':'unit tests', 'conclusion':'failure',
+                        'runner_name':'open-ci-hub-garuda',
+                        'html_url':'https://github.com/Raebu/repo/actions/runs/10/job/123',
+                        'steps':[{'name':'Set up','conclusion':'success'},
+                                 {'name':'Run Python tests','conclusion':'failure'}]}]}
+        with patch('pipeline_details.invoke_json', return_value=payload):
+            result=pipeline_details.list_jobs('github','Raebu/repo','10')
+        with patch('ci_failure_diagnostics.list_jobs', return_value=result):
+            report=failures.diagnose('github','Raebu/repo','10')
+        self.assertEqual(report['code'], 'native_job_failed')
+        self.assertIn('Run Python tests',report['failures'][0]['reason'])
+        self.assertEqual(report['failures'][0]['runner'],'open-ci-hub-garuda')
+
+    def test_gitlab_failure_reason_preserved(self):
+        payload=[{'id':55,'name':'test','status':'failed', 'failure_reason':'stuck_or_timeout_failure',
+                  'runner':None,'web_url':'https://gitlab.example/jobs/55'}]
+        with patch('pipeline_details.invoke_json', return_value=payload):
+            rows=pipeline_details.list_jobs('gitlab','Raebu/repo','10')
+        with patch('ci_failure_diagnostics.list_jobs',return_value=rows):
+            result=failures.diagnose('gitlab','Raebu/repo','10')
+        self.assertEqual(result['failures'][0]['reason'],'stuck_or_timeout_failure')
+
+    def test_secrets_not_echoed_by_status_endpoint(self):
+        rows=[{'id':'123','name':'token=VERYPRIVATE','status':'failure',
+               'failure_reason':'Authorization: Bearer abc123',
+               'runner':'','failed_steps':['ghp_SECRETSECRET']}]
+        with patch('ci_failure_diagnostics.list_jobs',return_value=rows):
+            res=failures.diagnose('github','Raebu/repo','10')
+        text=str(res)
+        self.assertNotIn('VERYPRIVATE',text)
+        self.assertNotIn('ghp_SECRETSECRET',text)
+        self.assertNotIn('abc123',text)
+
+    def test_pending_jobs_not_falsely_marked_failed(self):
+        with patch('ci_failure_diagnostics.list_jobs',return_value=[
+                {'status':'queued','id':'12','name':'CI waiting'}]):
+            result=failures.diagnose('github','Raebu/repo','10')
+        self.assertEqual(result['code'],'jobs_not_finished')
+        self.assertFalse(result['failures'])
+
+
+from tests.test_web_console import DashboardHTTPTests
+
+
+class CIDiagnosticHTTPTests(DashboardHTTPTests):
+    def test_ci_routes_require_login(self):
+        for url in ('/api/ci/workflow?provider=github&repo=Raebu/repo',
+                    '/api/ci/failure?provider=github&repo=Raebu/repo&run=12'):
+            response, *_=self.request('GET',url)
+            self.assertEqual(response,401)
+
+    def test_authenticated_diagnostics_return_precise_payload(self):
+        expected={'verified':False,'code':'trigger_not_allowlisted','message':'PR event blocked'}
+        with patch('fleet._json_object',return_value={'default_branch':'main'}), \
+             patch('ci_workflow_diagnostics.inspect_github',return_value=expected):
+            status,data,_=self.request('GET',
+                '/api/ci/workflow?provider=github&repo=Raebu/repo',cookie=self.session())
+        self.assertEqual(status,200)
+        self.assertEqual(data['code'], 'trigger_not_allowlisted')
+        with patch('ci_failure_diagnostics.diagnose',return_value={'code':'native_job_failed'}):
+            status,data,_=self.request('GET',
+                '/api/ci/failure?provider=github&repo=Raebu/repo&run=12',cookie=self.session())
+        self.assertEqual(status,200)
+        self.assertEqual(data['code'],'native_job_failed')
+
+
+if __name__ == '__main__':
+    unittest.main()
