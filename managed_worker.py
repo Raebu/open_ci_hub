@@ -3,8 +3,8 @@
 
 Host owner installs handlers. API payload is JSON passed to stdin; no shell.
 Linux cgroups v2 enforce MemoryMax/MemorySwapMax when systemd permits scope
-creation. GPU VRAM is NOT hard-capped; an nvidia-smi watchdog stops unhealthy
-GPU jobs and the scheduler reserves VRAM before admission.
+creation. GPU VRAM is NOT hard-capped; GPU jobs use the applicable vendor probe
+and scheduler reservations. Child stdout is bounded without restricting app files.
 """
 from __future__ import annotations
 import argparse
