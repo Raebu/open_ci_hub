@@ -130,31 +130,10 @@ def _active():
     return {x.strip() for x in output.splitlines() if x.strip().startswith(PREFIX)}
 
 def _trusted_workflow(repo, branch):
-    # Recheck all workflows before allowing persistent personal-PC execution.
-    tree = fleet._json_object(['gh','api',f'repos/{repo}/git/trees/{quote(branch,safe="")}?recursive=1'])
-    if tree.get('truncated') is not False or not isinstance(tree.get('tree'), list):
-        return False
-    paths = [x.get('path') for x in tree['tree'] if isinstance(x,dict) and
-             isinstance(x.get('path'),str) and x['path'].startswith('.github/workflows/') and
-             x['path'].endswith(('.yml','.yaml'))]
-    if not paths or len(paths) > fleet.MAX_FILES:
-        return False
-    found = False
-    for path in paths:
-        try:
-            contents, _ = fleet._file(repo,branch,path)
-            if not fleet.event_is_trusted_main(contents,branch):
-                return False
-            jobs = re.findall(r'(?m)^ {4}runs-on:\s*([^\n#]+)', contents)
-            if re.search(r'(?m)^ {4}(?:uses|container|services):', contents):
-                return False
-            if any(job.strip() != '[self-hosted, linux, local-ci]' for job in jobs):
-                return False
-            if any(job.strip() == '[self-hosted, linux, local-ci]' for job in jobs):
-                found = True
-        except RuntimeError:
-            return False
-    return found
+    """Maintain the strict gate but retain precise reasons in the diagnostics API."""
+    from ci_workflow_diagnostics import inspect_github
+    return inspect_github(repo, branch)['verified']
+
 
 def register(repo,branch):
     repo = safe_repo(repo)
@@ -162,7 +141,10 @@ def register(repo,branch):
     if not approved(owner):
         raise PermissionError('Runner registrations require a separately approved owner scope.')
     if not _trusted_workflow(repo,branch):
-        raise RuntimeError('Only default-branch-only self-hosted workflows may use the personal runner pool.')
+        from ci_workflow_diagnostics import inspect_github
+        report = inspect_github(repo, branch)
+        raise RuntimeError('Runner workflow rejected [' + report['code'] + ']: ' +
+                           report['message'] + ' Next: ' + report['suggestion'])
     rows = _state()
     name, volume = worker_names(repo)
     if repo in rows:
