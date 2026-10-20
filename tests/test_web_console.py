@@ -142,13 +142,16 @@ class DashboardHTTPTests(unittest.TestCase):
         headers={'Host':'runner.tail.ts.net', 'Tailscale-User-Login':user,
                  'X-Forwarded-Proto':'https'}
         # GET via the actual local listener with Tailscale Serve-style forwarded headers
-        conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
-        try:
-            conn.request('GET', '/api/overview', headers=headers)
-            response=conn.getresponse(); data=json.loads(response.read()); self.assertEqual(response.status, 200)
-            self.assertEqual(data['mode'],'mobile'); self.assertEqual(data['role'],'viewer')
-        finally:
-            conn.close()
+        # This checks mobile authentication, not provider CLI responsiveness.
+        # Avoid launching Docker / external providers during the HTTP identity test.
+        with patch('hub.docker_ready', return_value=False), patch.dict('web_console.ADAPTERS', {}, clear=True):
+            conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
+            try:
+                conn.request('GET', '/api/overview', headers=headers)
+                response=conn.getresponse(); data=json.loads(response.read()); self.assertEqual(response.status, 200)
+                self.assertEqual(data['mode'],'mobile'); self.assertEqual(data['role'],'viewer')
+            finally:
+                conn.close()
         def remote_create():
             conn=http.client.HTTPConnection('127.0.0.1',self.port,timeout=5)
             try:
