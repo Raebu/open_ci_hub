@@ -269,6 +269,33 @@ async function terminalClose(){
   }catch(err){notice(err.message,true);}
 }
 
+async function loadMachines(){
+  const root=$('machine-items');root.replaceChildren(el('p','Loading trusted PCs…'));
+  try{
+    const data=await api('/api/machines');
+    root.replaceChildren();
+    if(!data.machines.length)root.append(el('p','No additional computers enrolled yet.','small'));
+    for(const machine of data.machines){
+      const card=el('article',undefined,'result-row'),details=el('div');
+      details.append(el('strong',machine.name),el('p',machine.host,'small'));
+      const note=el('p','Reachability not checked; runner state unknown.','small');
+      details.append(note);
+      const actions=el('div',undefined,'controls');
+      actions.append(safeLink(machine.url,'Open this PC dashboard'));
+      actions.append(btn('Check HTTPS',async()=>{
+        const result=await api('/api/machines/probe?host='+encodeURIComponent(machine.host));
+        note.textContent=result.reachability+' · '+result.note;
+      }));
+      if(state.role==='owner'&&state.mode==='desktop')actions.append(btn('Remove',async()=>{
+        if(!confirm('Remove '+machine.name+' from this PC inventory? No remote data is deleted.'))return;
+        await api('/api/machines/remove',{host:machine.host,confirm:true});
+        await loadMachines();
+      }));
+      card.append(details,actions);root.append(card);
+    }
+  }catch(err){root.replaceChildren(el('p',err.message));}
+}
+
 function configureOnboarding(){
   const provider=$('onboard-provider').value;
   show('circleci-class-label',provider==='circleci');
@@ -303,7 +330,16 @@ async function init(){
     try{await api('/api/logout',{});notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();});
+  $('machines-refresh').addEventListener('click',loadMachines);
+  $('machine-enroll').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const name=$('machine-name').value.trim(),host=$('machine-host').value.trim().toLowerCase();
+    if(!confirm('Trust the exact machine address '+host+'? It will only become a navigation/health entry.'))return;
+    try{await api('/api/machines/add',{name,host,confirm:true});
+      $('machine-enroll').reset();await loadMachines();}
+    catch(err){notice(err.message,true)}
+  });
   $('host-refresh').addEventListener('click',loadHost);
   $('terminal-open').addEventListener('click',async()=>{try{await terminalOpen()}catch(err){notice(err.message,true)}});
   $('terminal-close').addEventListener('click',terminalClose);
@@ -326,7 +362,8 @@ async function init(){
   });
   configureOnboarding();
   await refresh();
-  if(state.ready){await loadDiagnostics();await loadHost();}
+  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();
+    show('machine-enroll',state.role==='owner'&&state.mode==='desktop');}
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }
 document.addEventListener('DOMContentLoaded',init);

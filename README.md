@@ -154,3 +154,7 @@ A separate **Terminal** tab can create an actor-scoped interactive Linux pseudo-
 [Signed deployments guide](docs/SIGNED-DEPLOYMENTS.md) explains immutable staged .tar.gz releases approved with an **offline OpenSSH signing key**, source commit and mandatory test/build/database check metadata. The unprivileged release manager validates SHA-256 and signature, rejects malicious archive members, verifies release files again before activation, atomically switches the user-service current pointer and health-checks the release. If the service fails to restart or reports unhealthy, the last pointer is restored; explicit rollback is also supported.
 
 This is a host-local user-service deployment primitive, **not** cross-PC zero-downtime deployment, database rollback or independently attested CI. No signed release can be created by mere green status; a separate reviewer holding the private key must approve the release after evaluating evidence.
+
+## Private multi-PC navigation
+
+The mobile dashboard can now show an explicitly approved [Tailscale multi-PC inventory](docs/MULTI-PC.md), inspect each remote dashboard's HTTPS /health through certificate validation and open that machine's *own* private Open CI Hub dashboard. Devices, CI runners, host terminals and deployment approvals remain independent on each PC. **This is private navigation/health discovery**, not yet automatic distributed build scheduling or central cross-machine terminal execution.
