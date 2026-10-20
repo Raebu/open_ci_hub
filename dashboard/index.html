@@ -107,7 +107,18 @@
             <p>Monitor several projects concurrently, their RAM/VRAM reservations, available system headroom and durable worker queues. API tokens never appear here.</p></div>
             <button type="button" class="btn secondary" id="apps-refresh">↻ Refresh</button>
           </div>
+          <div class="controls" id="apps-controls">
+            <label for="apps-mode">Operating mode
+              <select id="apps-mode"><option value="quiet">Quiet</option><option value="balanced">Balanced</option><option value="performance">Performance (local owner)</option></select>
+            </label>
+            <button class="btn secondary" id="apps-mode-apply" type="button">Apply mode</button>
+            <button class="btn secondary" id="apps-pause" type="button">Pause new work</button>
+            <button class="btn secondary" id="apps-resume" type="button">Resume</button>
+            <button class="btn secondary" id="apps-emergency" type="button">Emergency stop managed app jobs</button>
+          </div>
           <div id="apps-items" class="results" aria-live="polite"></div>
+          <h3>Queued projects</h3>
+          <div id="apps-queue" class="results" aria-live="polite"></div>
           <p class="small">Register app IDs and issue separate submitter/worker API tokens locally on the host. Jobs are executed by independently deployed application workers, never by the host terminal or CI runner.</p>
         </section>
         <section id="machines">
