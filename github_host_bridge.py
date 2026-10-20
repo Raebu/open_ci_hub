@@ -143,7 +143,7 @@ def validate_task(issue, cfg):
         or not isinstance(task.get('description'), str)
         or not 1 <= len(task['description']) <= 180):
         raise ValueError('Invalid host-task metadata.')
-    if set(task) == ROUTINE_FIELDS:
+    if set(task) == ROUTINE_FIELDS | {'attestation'}:
         if (task['operation'] != 'create_document'
             or not isinstance(task['filename'], str)
             or not DOCUMENT.fullmatch(task['filename'])
@@ -209,7 +209,7 @@ def approve(number, digest, *, confirm=False):
     cfg = config()
     verify_control_repo(cfg)
     issue = get_issue(cfg, number)
-    if set(issue['task']) == ROUTINE_FIELDS:
+    if set(issue['task']) == ROUTINE_FIELDS | {'attestation'}:
         raise PermissionError('Routine document tasks use standing policy, not shell approval.')
     if digest != issue['digest']:
         raise PermissionError('Issue changed or supplied digest does not match.')
@@ -224,7 +224,7 @@ def approve(number, digest, *, confirm=False):
 
 
 def is_routine(request):
-    return set(request['task']) == ROUTINE_FIELDS
+    return set(request['task']) == ROUTINE_FIELDS | {'attestation'}
 
 
 def recent_after_configuration(request, cfg):
@@ -240,10 +240,24 @@ def recent_after_configuration(request, cfg):
 
 def stage_standing_requests(cfg):
     """No arbitrary shell job ever enters this branch; cap discovery volume."""
+    from request_attestation import verify_attestation
     items = pending()
     count = 0
+    used_jtis = set()
+    if JOBS.is_dir():
+        for recorded in JOBS.glob('*.json'):
+            if recorded.stem.isdecimal():
+                existing = read_private(recorded)
+                if isinstance(existing.get('attestation_jti'), str):
+                    used_jtis.add(existing['attestation_jti'])
     for request in items:
         if not is_routine(request) or not recent_after_configuration(request, cfg):
+            continue
+        try:
+            verified = verify_attestation(request['task'])
+        except (PermissionError, ValueError):
+            continue
+        if verified['jti'] in used_jtis:
             continue
         path = job_path(request['number'])
         if path.exists() or path.is_symlink():
@@ -251,9 +265,12 @@ def stage_standing_requests(cfg):
         record = {'issue': request['number'], 'digest': request['digest'],
                   'repo_id': cfg['repo_id'], 'status': 'approved',
                   'approved_at': int(time.time()),
-                  'authorisation': 'standing_create_document'}
+                  'authorisation': 'standing_create_document',
+                  'attestation_jti': verified['jti'],
+                  'attestation_subject': verified['subject']}
         # The caller holds the cross-process lock. Write exactly once.
         secure_write(path, json.dumps(record, sort_keys=True) + '\n')
+        used_jtis.add(verified['jti'])
         count += 1
         if count == 10:
             break
@@ -262,7 +279,7 @@ def stage_standing_requests(cfg):
 
 def create_document(task, number):
     """Create-only native filesystem operation, no subprocess or shell involved."""
-    if set(task) != ROUTINE_FIELDS:
+    if set(task) != ROUTINE_FIELDS | {'attestation'}:
         raise PermissionError('Not an approved routine document operation.')
     # Revalidate at use time, independent of the GitHub JSON parser.
     if (task['operation'] != 'create_document'
@@ -386,7 +403,14 @@ def run_once(executor=execute_native, document_writer=create_document):
             secure_write(path, json.dumps(record, sort_keys=True) + '\n')
             continue
         if record.get('authorisation') == 'standing_create_document':
-            if not is_routine(request) or not recent_after_configuration(request, cfg):
+            from request_attestation import verify_attestation
+            try:
+                verified = verify_attestation(request['task'])
+            except (PermissionError, ValueError):
+                verified = None
+            if (not verified or verified['jti'] != record.get('attestation_jti')
+                or verified['subject'] != record.get('attestation_subject')
+                or not is_routine(request) or not recent_after_configuration(request, cfg)):
                 record['status'] = 'rejected_policy'
                 secure_write(path, json.dumps(record, sort_keys=True) + '\n')
                 continue
@@ -451,6 +475,11 @@ def main(argv=None):
     a.add_argument('--confirm', action='store_true')
     commands.add_parser('run-once')
     commands.add_parser('status')
+    signer = commands.add_parser('trust-issuer')
+    signer.add_argument('--issuer', required=True)
+    signer.add_argument('--subject', required=True)
+    signer.add_argument('--public-key', required=True)
+    signer.add_argument('--confirm', action='store_true')
     args = p.parse_args(argv)
     try:
         require_user()
@@ -460,6 +489,10 @@ def main(argv=None):
             result = pending()
         elif args.command == 'approve':
             result = approve(args.number, args.digest, confirm=args.confirm)
+        elif args.command == 'trust-issuer':
+            from request_attestation import pin_signer
+            result = pin_signer(args.issuer, args.subject, args.public_key,
+                                confirm=args.confirm)
         elif args.command == 'run-once':
             with setup_lock(STATE):
                 result = run_once()
