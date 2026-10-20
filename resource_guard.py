@@ -11,6 +11,9 @@ from pathlib import Path
 import re
 import subprocess
 
+from machine_policy import admission, sample as machine_sample
+from native_runner_observer import runner_reservations
+
 DEFAULT_MAX_PARALLEL=4
 DEFAULT_MAX_PER_APP=2
 DEFAULT_RAM_MB=512
@@ -108,9 +111,18 @@ def gpu_memory_inventory():
     return intel_iris_xe_shared_gpu()
 
 class ResourceGate:
-    def __init__(self, memory_reader=memory_available_mb, gpu_reader=gpu_memory_inventory):
+    def __init__(self,memory_reader=memory_available_mb,gpu_reader=gpu_memory_inventory,
+                 policy_reader=None,runner_reader=None):
         self.memory_reader=memory_reader
         self.gpu_reader=gpu_reader
+        # Fake sensor-based tests must not depend on unrelated CI host pressure.
+        self.policy_reader=(policy_reader if policy_reader is not None else
+                            machine_sample if memory_reader is memory_available_mb and
+                            gpu_reader is gpu_memory_inventory else lambda:{})
+        self.runner_reader=(runner_reader if runner_reader is not None else
+                            runner_reservations if memory_reader is memory_available_mb and
+                            gpu_reader is gpu_memory_inventory else lambda:{
+                                'reserved_ram_mb':0,'active_runners':0,'reserved_cpus':0})
 
     @staticmethod
     def setup(db):
@@ -127,6 +139,13 @@ class ResourceGate:
                 gpu_index INTEGER,
                 PRIMARY KEY(app,task)
             );
+            CREATE TABLE IF NOT EXISTS runtime_controls(
+                id INTEGER PRIMARY KEY CHECK(id=1),
+                mode TEXT NOT NULL CHECK(mode IN ('quiet','balanced','performance')),
+                paused INTEGER NOT NULL CHECK(paused IN (0,1))
+            );
+            INSERT OR IGNORE INTO runtime_controls(id,mode,paused)
+                VALUES(1,'balanced',0);
         ''')
 
     @staticmethod
@@ -149,6 +168,24 @@ class ResourceGate:
             db.execute('INSERT INTO resource_config(name,value) VALUES(?,?) '
                        'ON CONFLICT(name) DO UPDATE SET value=excluded.value',
                        (key,value))
+
+    @staticmethod
+    def controls(db):
+        row=db.execute('SELECT mode,paused FROM runtime_controls WHERE id=1').fetchone()
+        return {'mode':row['mode'],'paused':bool(row['paused'])}
+
+    @staticmethod
+    def set_controls(db,mode=None,paused=None):
+        if mode is not None and mode not in ('quiet','balanced','performance'):
+            raise ValueError('Invalid operating mode.')
+        if paused is not None and type(paused) is not bool:
+            raise ValueError('paused must be boolean.')
+        current=ResourceGate.controls(db)
+        next_mode=mode if mode is not None else current['mode']
+        next_paused=paused if paused is not None else current['paused']
+        db.execute('UPDATE runtime_controls SET mode=?,paused=? WHERE id=1',
+                   (next_mode,int(next_paused)))
+        return {'mode':next_mode,'paused':next_paused}
 
     @staticmethod
     def profile(db,app,task):
@@ -206,6 +243,12 @@ class ResourceGate:
             if 'max_parallel' not in configured:
                 cfg['max_parallel']=INTEL_DESKTOP_MAX_PARALLEL
         active=self._active(db)
+        native=self.runner_reader()
+        controls=self.controls(db)
+        observed=self.policy_reader()
+        policy=admission(controls['mode'],observed,cfg['max_parallel'])
+        if native is None:
+            native={'reserved_ram_mb':None,'active_runners':None,'reserved_cpus':None}
         used_ram=0
         shared_ram=0
         reserved_vram={}
@@ -226,7 +269,10 @@ class ResourceGate:
                     active_integrated+=1
             used_apps[row['app']]=used_apps.get(row['app'],0)+1
         return {'capacity':cfg,'memory_available_mb':self.memory_reader(),
-                'reserved_ram_mb':used_ram,'reserved_shared_gpu_ram_mb':shared_ram,
+                'reserved_ram_mb':used_ram,'reserved_native_runner_ram_mb':native['reserved_ram_mb'],
+                'native_runners':native['active_runners'],'native_cpu_slots':native['reserved_cpus'],
+                'policy':{**policy,'mode':controls['mode'],'paused':controls['paused']},
+                'reserved_shared_gpu_ram_mb':shared_ram,
                 'gpu':gpu,'reserved_vram_mb':reserved_vram,
                 'active_integrated_gpu_jobs':active_integrated,
                 'max_integrated_gpu_jobs':MAX_INTEGRATED_GPU_JOBS,
@@ -238,13 +284,20 @@ class ResourceGate:
         s=snapshot or self.snapshot(db)
         profile=self.profile(db,app,task)
         cfg=s['capacity']
-        if s['active_jobs']>=cfg['max_parallel']:
+        if s['policy']['paused']:
+            return None,'admissions_paused'
+        if not s['policy']['max_parallel']:
+            return None,s['policy']['reason']
+        if s['active_jobs']>=s['policy']['max_parallel']:
             return None,'global_parallel_limit'
         if s['active_by_app'].get(app,0)>=self.app_limit(db,app):
             return None,'project_parallel_limit'
         available=s['memory_available_mb']
         if available is None:
             return None,'ram_sensor_unavailable'
+        native_ram=s['reserved_native_runner_ram_mb']
+        if native_ram is None:
+            return None,'native_runner_telemetry_unavailable'
         # Subtract reservations even though some may already be physically used:
         # deliberately conservative rather than double-spending system headroom.
         reading=s['gpu'].get(profile['gpu_index']) if profile['vram_mb'] else None
@@ -253,7 +306,7 @@ class ResourceGate:
         if profile['vram_mb'] and mode=='shared':
             # Integrated GPU allocations draw from the SAME physical RAM.
             required_ram+=profile['vram_mb']
-        if available-s['reserved_ram_mb']-cfg['min_free_ram_mb']<required_ram:
+        if available-s['reserved_ram_mb']-native_ram-cfg['min_free_ram_mb']<required_ram:
             return None,'ram_headroom'
         if profile['vram_mb']:
             if not reading:
