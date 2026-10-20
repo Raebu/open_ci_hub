@@ -108,7 +108,8 @@ class UnifiedBrokerTests(unittest.TestCase):
         self.assertEqual(self.b.claim(self.worker)['job']['job_id'],second)
         with self.assertRaises(RuntimeError):
             self.b.reprioritize(second,0,confirm=True)
-        self.assertEqual(self.b.queue_preview()['jobs'][0]['job_id'],first)
+        self.assertEqual([x for x in self.b.queue_preview()['jobs']
+                          if x['status']=='queued'][0]['job_id'],first)
 
     def test_invalid_priority_and_mode_require_confirmation(self):
         self.enqueue('build')
@@ -182,6 +183,7 @@ class UnifiedBrokerTests(unittest.TestCase):
         self.assertTrue(result['paused'])
         self.assertEqual(result['stop_results'][0]['job_id'],job)
         self.assertEqual(self.b.inspect(self.submit,job)['status'],'stranded')
+        self.enqueue('build')
         self.assertEqual(self.b.claim(self.worker)['reason'],'admissions_paused')
         self.assertEqual(stop.call_count,2)
 
