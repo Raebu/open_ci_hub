@@ -182,6 +182,8 @@ def start(repo):
         raise RuntimeError('Persistent runner configuration missing. Registration recovery required.')
     if len(_active()) >= MAX_ACTIVE:
         raise RuntimeError('Worker capacity is full. Queue jobs until a worker is available.')
+    from native_runner_observer import require_start_capacity
+    require_start_capacity(2048)
     prior = _existing_container(info['container'])
     if prior is not None:
         _docker(['start',info['container']])
