@@ -172,3 +172,7 @@ Open CI Hub now includes a [private application API](docs/APPLICATION-RUNTIME-AP
 ## Parallel workloads with RAM/VRAM safeguards
 
 The [parallel resource scheduler](docs/PARALLEL-RESOURCE-SCHEDULER.md) coordinates app workers across multiple projects using per-project and global parallelism limits, conservative RAM and NVIDIA VRAM reservations, hardware telemetry and fail-closed admission. An opt-in managed worker runs owner-approved handlers under systemd user cgroups with MemoryMax/MemorySwapMax limits and a VRAM headroom watchdog. Worker leases that expire remain reserved as stranded until the owner verifies process termination. View current capacity in the mobile **App Runtime** tab. VRAM admission/watchdog are *not hardware-enforced VRAM quotas*, and existing CI runner workloads are not yet included.
+
+### Intel Iris Xe on 16 GB Garuda
+
+On detected Tiger Lake Intel Iris Xe hardware, GPU working-memory reservations share the 16 GB system RAM rather than using an imaginary NVIDIA VRAM pool. The scheduler starts with 4 GiB reserved for KDE/OS, three app jobs at most, and one integrated-GPU job; explicit host-owner settings take precedence. The mobile App Runtime shows shared RAM instead of misleading dedicated VRAM values. Real hardware and worker cgroup behaviour must still be verified after local installation. See [parallel scheduler Intel guidance](docs/PARALLEL-RESOURCE-SCHEDULER.md#intel-iris-xe-razer-book-13-16-gb-system-ram).
