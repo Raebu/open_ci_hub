@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from application_client import ApplicationClient
@@ -68,8 +69,11 @@ def build_command(job,handler):
           '--collect','--pipe','--unit='+unit,
           '-p','MemoryMax='+str(ram)+'M',
           '-p','MemorySwapMax=0',
+          '-p','MemoryHigh='+str(max(64,ram*85//100))+'M',
+          '-p','CPUQuota=150%',
+          '-p','CPUWeight=50',
           '-p','TasksMax=128',
-          '--',*handler['argv']]
+          '--','/usr/bin/prlimit','--fsize=8192:8192','--',*handler['argv']]
     return unit+'.scope',args
 
 def stop_scope(unit,process):
@@ -129,6 +133,7 @@ def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
     elif reserve and gpu_mode=='shared':
         env['OPEN_CI_INTEL_SHARED_GPU']='1'
     process=None;stop=threading.Event();failure=[]
+    capture=tempfile.TemporaryFile(mode='w+b')
     def watch():
         next_heartbeat=time.monotonic()+60
         while not stop.wait(1):
@@ -154,7 +159,9 @@ def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
                 next_heartbeat=time.monotonic()+60
 
     try:
-        process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+        if not Path('/usr/bin/prlimit').is_file():
+            return client.complete(jid,token,False,{'error':'Kernel file-size limit wrapper unavailable.'})
+        process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=capture,
                                  stderr=subprocess.STDOUT,env=env,cwd=str(Path.home()),
                                  start_new_session=True)
     except OSError:
@@ -170,6 +177,14 @@ def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
     finally:
         stop.set()
         supervisor.join(timeout=5)
+        capture.flush()
+        capture.seek(0)
+        bounded=capture.read(4097)
+        capture.close()
+        # Production subprocess returns None when stdout points to a file.
+        # Tests may return a small in-memory mock value.
+        if output is None:
+            output=bounded
     if failure:
         return client.complete(jid,token,False,{'error':failure[0]})
     if process.returncode:
