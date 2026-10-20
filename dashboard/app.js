@@ -285,6 +285,21 @@ async function loadApps(){
           ' · Queue: '+Object.entries(app.queues).map(([k,v])=>k+' '+v).join(', '),'small'));
       card.append(details);root.append(card);
     }
+    if(inventory.nodes&&inventory.nodes.length){
+      root.append(el('h3','Approved worker PCs · reserved capacity'));
+      for(const node of inventory.nodes){
+        const box=el('article',undefined,'result-row');
+        const name=el('strong',node.node+' · '+node.active_jobs+' running');
+        const remaining=el('p',
+          'RAM '+node.available_memory_mb+' MB free of budget · VRAM '+
+          node.available_vram_mb+' MB free of budget · CPU slots '+
+          node.available_cpu_slots+' · job slots '+node.available_job_slots,'small');
+        box.append(name,remaining);root.append(box);
+      }
+      root.append(el('p','Reservations are scheduler estimates, not enforced process limits or independent hardware measurements.','small'));
+    } else {
+      root.append(el('p','Resource-safe parallel scheduling is not enabled: register an owner-approved worker node and task profiles.','small'));
+    }
   }catch(e){root.replaceChildren(el('p','App runtime unavailable: '+e.message));}
 }
 
