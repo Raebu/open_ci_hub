@@ -1,5 +1,8 @@
 """Failure diagnostics retain actionable reasons and deny unsafe workflows."""
 import unittest
+import shutil
+import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
 import ci_workflow_diagnostics as workflows
@@ -134,6 +137,16 @@ class FailedJobTests(unittest.TestCase):
             result=failures.diagnose('github','Raebu/repo','10')
         self.assertEqual(result['code'],'jobs_not_finished')
         self.assertFalse(result['failures'])
+
+
+class DashboardSyntaxTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('node'), 'Node not installed on this test worker')
+    def test_pipeline_error_renderer_javascript_parses(self):
+        script=Path(__file__).resolve().parents[1] / 'dashboard' / 'app.js'
+        result=subprocess.run([shutil.which('node'), '--check', str(script)],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 from tests.test_web_console import DashboardHTTPTests
