@@ -5,7 +5,8 @@ name: Open CI Hub tests (self-hosted)
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: ['**']
+    tags: ['v*']
   pull_request:
     branches: [main]
 concurrency:
@@ -17,7 +18,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' &&
-       github.ref == 'refs/heads/main' && github.actor == 'Raebu') ||
+       github.actor == 'Raebu') ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
