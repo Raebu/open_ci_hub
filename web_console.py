@@ -334,7 +334,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -342,6 +342,10 @@ class WebConsole:
                         return self.output(400, {'error': 'Duplicate query parameters are not allowed.'})
                     def param(key): return params.get(key, [''])[0]
                     try:
+                        if path == '/api/apps/inventory':
+                            if console.role(self) not in ('owner','editor'):
+                                return self.output(403, {'error':'Application inventory requires management access.'})
+                            return self.output(200,console.apps.inventory())
                         if path == '/api/host':
                             from host_agent import client_request
                             try:
