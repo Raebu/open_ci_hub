@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {mode:'desktop', ready:false, pipelineBusy:false, pipelineSelected:false, statuses:new Map()};
+const state = {mode:'desktop', ready:false, pipelineBusy:false, pipelineSelected:false, statuses:new Map(), failureCache:new Map(), failurePromises:new Map()};
 const show = (id,on) => $(id).classList.toggle('hidden',!on);
 function notice(msg,error=false){const x=$('notice');x.textContent=msg;x.classList.toggle('error',error);show('notice',!!msg)}
 async function api(path, body){
@@ -66,6 +66,54 @@ async function browseRepositories(){
     }
   }catch(e){root.replaceChildren();notice(e.message,true)}
 }
+async function explainCiWorkflow(){
+  const provider=$('pipeline-provider').value, repo=$('pipeline-repo').value.trim();
+  const root=$('ci-workflow-report');
+  root.replaceChildren(el('p','Checking workflow policy…'));
+  if(provider!=='github'){
+    root.replaceChildren(el('p','This workflow-file allowlist applies to the GitHub personal runner pool. GitLab failure reasons are shown under failed native jobs.'));
+    return;
+  }
+  try{
+    const report=await api('/api/ci/workflow?provider=github&repo='+encodeURIComponent(repo));
+    root.replaceChildren(el('strong',report.verified?'GitHub workflow is eligible':'Workflow rejected — '+report.code),
+                         el('p',report.message),el('p','Next: '+report.suggestion,'small'));
+    for(const issue of report.issues||[]){
+      const line=el('article',undefined,'result-row');
+      line.append(el('strong',issue.workflow+' — '+issue.code),
+                  el('p',issue.reason),el('p','Fix: '+issue.next_step,'small'));
+      root.append(line);
+    }
+  }catch(e){root.replaceChildren(el('p','Workflow diagnostics unavailable: '+e.message));}
+}
+async function showFailurePreview(provider,repo,run,root){
+  const key=provider+':'+repo+':'+run;
+  let cached=state.failureCache.get(key);
+  if(!cached || Date.now()-cached.at>120000){
+    let inFlight=state.failurePromises.get(key);
+    if(!inFlight){
+      inFlight=api('/api/ci/failure?provider='+encodeURIComponent(provider)+
+        '&repo='+encodeURIComponent(repo)+'&run='+encodeURIComponent(run));
+      state.failurePromises.set(key,inFlight);
+      inFlight.finally(()=>state.failurePromises.delete(key)).catch(()=>{});
+    }
+    try{
+      const data=await inFlight;
+      cached={at:Date.now(),data};
+      state.failureCache.set(key,cached);
+    }catch(e){
+      if(root.isConnected)root.replaceChildren(el('p','Failure details unavailable: '+e.message,'small'));
+      return;
+    }
+  }
+  if(!root.isConnected)return;
+  const data=cached.data;
+  root.replaceChildren(el('p',data.message,'small'));
+  for(const job of data.failures||[]){
+    root.append(el('p',job.job+': '+job.reason,'small'));
+    if(job.url)root.append(safeLink(job.url,'View failed job'));
+  }
+}
 async function browsePipelines(){
   if(state.pipelineBusy)return;state.pipelineBusy=true;state.pipelineSelected=true;
   const provider=$('pipeline-provider').value,repo=$('pipeline-repo').value.trim(),root=$('pipeline-items');
@@ -73,10 +121,23 @@ async function browsePipelines(){
   try{
     const data=await api(`/api/pipelines?provider=${encodeURIComponent(provider)}&repo=${encodeURIComponent(repo)}`);
     root.replaceChildren();if(!data.items.length){root.append(el('p','No pipeline runs returned.'));return;}
+    let failurePreviews=0;
     for(const x of data.items){const row=el('article',undefined,'result-row'),left=el('div'),actions=el('div',undefined,'controls');
       const name=el('strong',x.title||'Pipeline');
       left.append(name,el('p',`#${x.id} · ${x.status} · ${x.branch||'unknown branch'} · ${x.created||''}`));
       if(x.url)left.append(safeLink(x.url,'Open in provider'));
+      if(['failure','failed','timed_out'].includes(String(x.status).toLowerCase()) &&
+         provider!=='circleci'){
+        const details=el('div',undefined,'ci-failure-summary');
+        if(failurePreviews<3){
+          failurePreviews++;
+          details.append(el('p','Checking provider job failure reasons…','small'));
+          void showFailurePreview(provider,repo,x.id,details);
+        }else{
+          details.append(el('p','Failed — choose Jobs, logs & artifacts to inspect.','small'));
+        }
+        left.append(details);
+      }
       if(state.role!=='viewer')for(const action of ['retry','cancel'])actions.append(btn(action==='retry'?'Retry':'Cancel',async()=>{
         if(!confirm(`Are you sure you want to ${action} pipeline #${x.id} for ${repo}?`))return;
         const out=await api('/api/pipeline',{provider,repo,id:x.id,action,confirm:true});notice(out.message);
@@ -441,6 +502,7 @@ async function init(){
   terminalControls();
   $('host-action').addEventListener('change',hostTargets);
   $('host-form').addEventListener('submit',async e=>{e.preventDefault();const button=$('host-prepare');button.disabled=true;try{await requestHostAction();}catch(err){notice(err.message,true)}finally{hostTargets();}});
+  $('ci-explain').addEventListener('click',explainCiWorkflow);
   $('browse-repos').addEventListener('click',browseRepositories);
   $('onboard-provider').addEventListener('change',configureOnboarding);
   $('onboard-form').addEventListener('submit',async e=>{e.preventDefault();await previewOnboarding();});
