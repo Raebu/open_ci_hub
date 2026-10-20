@@ -275,6 +275,22 @@ async function loadApps(){
   try{
     const inventory=await api('/api/apps/inventory');
     root.replaceChildren();
+    const res=inventory.resources;
+    if(res){
+      const c=res.capacity;
+      root.append(el('h3','Parallel work and resource safeguards'),
+        el('p','Active jobs: '+res.active_jobs+'/'+c.max_parallel+
+          ' · Reserved RAM: '+res.reserved_ram_mb+' MiB'+
+          ' · Available RAM: '+(res.memory_available_mb===null?'unknown':res.memory_available_mb+' MiB')+
+          ' · System RAM reserve: '+c.min_free_ram_mb+' MiB','small'));
+      const gpus=Object.entries(res.gpu);
+      if(!gpus.length)root.append(el('p','GPU VRAM telemetry unavailable: GPU jobs pause automatically.','small'));
+      for(const [id,gpu] of gpus)root.append(el('p','GPU '+id+
+        ' · VRAM free: '+gpu.free_mb+'/'+gpu.total_mb+' MiB'+
+        ' · Reserved: '+(res.reserved_vram_mb[id]||0)+' MiB'+
+        ' · Minimum free: '+c.min_free_vram_mb+' MiB','small'));
+      root.append(el('p','Resource reservations are admission controls; RAM hard limits require protected worker cgroups. VRAM is monitored, not hardware-enforced.','small'));
+    }
     if(!inventory.apps.length){root.append(el('p','No applications registered yet. Use the local owner CLI to authorise one.'));return;}
     for(const app of inventory.apps){
       const card=el('article',undefined,'result-row');
@@ -282,6 +298,7 @@ async function loadApps(){
       details.append(el('strong',app.app),
         el('p','Approved tasks: '+app.tasks.join(', '),'small'),
         el('p','State: '+(app.enabled?'enabled':'disabled')+
+          ' · Max parallel: '+app.max_parallel+
           ' · Queue: '+Object.entries(app.queues).map(([k,v])=>k+' '+v).join(', '),'small'));
       card.append(details);root.append(card);
     }
@@ -349,7 +366,7 @@ async function init(){
     try{await api('/api/logout',{});notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadApps();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();});
   $('apps-refresh').addEventListener('click',loadApps);
   $('machines-refresh').addEventListener('click',loadMachines);
   $('machine-enroll').addEventListener('submit',async e=>{
