@@ -60,8 +60,11 @@ class ApplicationClient:
             raise ValueError('Invalid job ID.')
         return self._request('GET','/api/v1/jobs/'+job_id)
 
-    def claim(self):
-        return self._request('POST','/api/v1/workers/claim',{})
+    def claim(self,*,telemetry=None,gpu_index=0):
+        if telemetry is None:
+            from resource_probe import sample
+            telemetry=sample(gpu_index=gpu_index)
+        return self._request('POST','/api/v1/workers/claim',{'telemetry':telemetry})
 
     def heartbeat(self,job_id,lease_token):
         return self._request('POST','/api/v1/workers/heartbeat',
