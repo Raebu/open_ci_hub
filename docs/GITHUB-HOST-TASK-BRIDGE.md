@@ -33,10 +33,12 @@ supported identity provider instead of writing a custom login service.
 
 The gateway must:
 
-1. Authenticate the **ChatGPT MCP client** using the OpenAI-managed mTLS
-   certificate, verifying its CA chain, clientAuth EKU and certificate SAN
-   `mtls.prod.connectors.openai.com` (or a documented equivalent supported
-   trusted transport that establishes the same client identity).
+1. Authenticate the **ChatGPT MCP client**. For a directly exposed HTTPS
+   MCP service, verify OpenAI-managed mTLS client certificate chain, clientAuth
+   EKU and SAN `mtls.prod.connectors.openai.com`. For Secure MCP Tunnel,
+   authenticate the trusted OpenAI tunnel control path and authorisation
+   separately; **do not assume the ChatGPT client certificate is forwarded to
+   the local MCP service**. Do not trust spoofable forwarded identity headers.
 2. Validate the **user OAuth token** signature, issuer, intended audience,
    expiry, required scopes and stable subject; bind access to the authorised
    owner's account. PKCE + resource-indicated OAuth is required for linking.
