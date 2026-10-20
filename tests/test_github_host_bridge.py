@@ -173,6 +173,11 @@ class BridgeTests(unittest.TestCase):
             resources['reserved_native_runner_ram_mb'] = None
             with self.assertRaisesRegex(RuntimeError, 'telemetry'):
                 bridge.safe_capacity()
+            resources['reserved_native_runner_ram_mb'] = 4096
+            resources['memory_available_mb'] = 9300
+            resources['policy'] = {'paused': True, 'max_parallel': 1}
+            with self.assertRaisesRegex(RuntimeError, 'admissions paused'):
+                bridge.safe_capacity()
 
     def test_host_capacity_blocks_unknown_thermal_readings(self):
         with patch('machine_policy.sample', return_value={'temperature_c': None}):
