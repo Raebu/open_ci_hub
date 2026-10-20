@@ -162,3 +162,9 @@ The mobile dashboard can now show an explicitly approved [Tailscale multi-PC inv
 ## Reproducible signed source distribution
 
 Use `python3 scripts/build_distribution.py HEAD` to produce deterministic Git-commit-pinned source archives and a SHA-256 digest. An owner may sign them separately with the existing offline `scripts/sign-distribution.sh` script. Recipients can verify the exact bytes and signer identity with `python3 scripts/verify_distribution.py ARCHIVE ARCHIVE.sig SIGNER APPROVED_PUBLIC_SIGNERS`. Automated CI has no release signing key and never claims an unsigned archive is signed. See [signed deployments](docs/SIGNED-DEPLOYMENTS.md).
+
+## Private application runtime API (Phase 1)
+
+Open CI Hub now includes a [private application API](docs/APPLICATION-RUNTIME-API.md) for your own services to submit typed JSON work to a bounded, durable SQLite queue. App-scoped submitter and worker tokens are separate and issued only by a host-owner CLI, never through browser JavaScript. Worker leases, heartbeats, bounded retries, idempotency keys and status/results are supported. Other applications can integrate through the included Python standard-library application_client.py. An **App Runtime** tab shows worker queue metrics without exposing secrets.
+
+**Important:** The hub queues authorised work; separate application workers execute their own application logic under their own deployment/security boundary. This phase does not run untrusted commands, offer root access, install app containers, expose a public API, dispatch GPU tasks automatically, or activate remote services on Garuda. Full live integration requires host installation and protected Tailscale Serve configuration.
