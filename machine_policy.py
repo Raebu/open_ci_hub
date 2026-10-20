@@ -57,7 +57,8 @@ def system_load():
 def disk_state():
     """Observe writable root/home free space without guessing unknown mounts."""
     results=[]
-    for path in ('/',str(Path.home())):
+    # Checkout may be on a separate Kingston/project filesystem.
+    for path in ('/',str(Path.home()),str(Path(__file__).resolve().parent)):
         try:
             stats=os.statvfs(path)
             if stats.f_blocks<=0 or stats.f_frsize<=0:
