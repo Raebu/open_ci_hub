@@ -199,6 +199,9 @@ def start(repo):
         raise RuntimeError('Repository runner has not been registered.')
     info=rows[repo]
     if _existing_container(info['container']) == 'running':
+        if not _legacy_container_safe(info['container']):
+            raise RuntimeError('Running legacy pool container does not meet hard resource/security limits. '
+                               'Inspect and migrate it deliberately; no automatic state changes were made.')
         return 'running'
     if not _configured(info['volume']):
         raise RuntimeError('Persistent runner configuration missing. Registration recovery required.')
