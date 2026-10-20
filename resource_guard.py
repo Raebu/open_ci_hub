@@ -188,7 +188,7 @@ def physical_ram_total_mb():
             if p['vram_mb']:
                 idx=p['gpu_index']
                 info=gpu.get(idx)
-                if info is not None and info.get('mode')=='dedicated':
+                if info is not None and info.get('mode','dedicated')=='dedicated':
                     reserved_vram[idx]=reserved_vram.get(idx,0)+p['vram_mb']
                 else:
                     # Even if a shared-GPU sensor disappears during a lease,
