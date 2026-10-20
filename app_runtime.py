@@ -282,6 +282,57 @@ class Broker:
             db.commit()
         return result
 
+    def reconcile_stranded(self):
+        """Release stranded capacity only after host systemd proves scope inactive.
+
+        Never auto-retry side-effecting jobs: mark failed. Workers must submit
+        idempotent new work if/when an owner or application decides to retry.
+        """
+        import subprocess
+        with self._db() as db:
+            rows=db.execute('SELECT id FROM jobs WHERE status="stranded" LIMIT 100').fetchall()
+        cleared=[];unverified=[]
+        for row in rows:
+            job=row['id']
+            unit='open-ci-app-'+job+'.scope'
+            try:
+                observed=subprocess.run(['/usr/bin/systemctl','--user','--no-ask-password',
+                    'show',unit,'--property=ActiveState','--property=ControlGroup',
+                    '--property=LoadState','--no-pager'],
+                    capture_output=True,text=True,timeout=5,check=False)
+                props=dict(line.split('=',1) for line in observed.stdout.splitlines() if '=' in line)
+                safe=(observed.returncode==0 and
+                    props.get('ActiveState') in ('inactive','failed') and
+                    props.get('ControlGroup')=='' and
+                    props.get('LoadState') in ('loaded','not-found'))
+            except (OSError,subprocess.TimeoutExpired,ValueError):
+                safe=False
+            if not safe:
+                unverified.append(job)
+                continue
+            with self._db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                changed=db.execute('UPDATE jobs SET status="failed",lease_hash=NULL,'
+                    'lease_until=NULL,updated=?,result=? WHERE id=? AND status="stranded"',
+                    (time.time(),json.dumps({'error':'Original systemd app scope confirmed '
+                    'inactive. Side effects not retried automatically.'}),job)).rowcount
+                db.commit()
+            if changed:cleared.append(job)
+        return {'verified_failed':cleared,'still_stranded':unverified,
+                'automatic_retry':False,'reason':'At-least-once effects require app-level idempotency.'}
+
+    def watchdog_once(self):
+        """No new work under critical laptop pressure, without touch to CI jobs."""
+        snapshot=self.resource_status()
+        policy=snapshot['policy']
+        if policy['max_parallel']==0 and policy['reason'] in (
+            'critical_thermal','critical_memory_pressure','low_battery'
+        ) and not policy['paused']:
+            return {'critical':policy['reason'],
+                    'stop':self.emergency_stop(confirm=True),
+                    'recovery':self.reconcile_stranded()}
+        return {'critical':None,'recovery':self.reconcile_stranded()}
+
     def emergency_stop(self,*,confirm=False):
         """Stop all *managed application scope units*; do not touch CI jobs or desktop.
 
@@ -478,6 +529,8 @@ def main(argv=None):
     recover=sub.add_parser('recover-stranded');recover.add_argument('job_id')
     recover.add_argument('--confirm',action='store_true')
     sub.add_parser('resources')
+    sub.add_parser('reconcile')
+    sub.add_parser('watchdog')
     pause=sub.add_parser('pause');pause.add_argument('--confirm',action='store_true')
     resume=sub.add_parser('resume');resume.add_argument('--confirm',action='store_true')
     mode=sub.add_parser('mode');mode.add_argument('name',choices=['quiet','balanced','performance'])
@@ -503,6 +556,8 @@ def main(argv=None):
         elif args.cmd=='mode':out=broker.control(mode=args.name,confirm=args.confirm)
         elif args.cmd=='priority':out=broker.reprioritize(args.job_id,args.value,confirm=args.confirm)
         elif args.cmd=='emergency-stop':out=broker.emergency_stop(confirm=args.confirm)
+        elif args.cmd=='reconcile':out=broker.reconcile_stranded()
+        elif args.cmd=='watchdog':out=broker.watchdog_once()
         else:out=broker.resource_status()
         print(json.dumps(out,indent=2));return 0
     except (PermissionError,RuntimeError,ValueError,OSError,sqlite3.Error) as exc:
