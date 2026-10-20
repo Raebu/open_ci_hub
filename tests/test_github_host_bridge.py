@@ -76,8 +76,8 @@ class BridgeTests(unittest.TestCase):
     @patch('github_host_bridge.require_user')
     def test_explicit_approval_digest_and_no_replay(self, user):
         with tempfile.TemporaryDirectory() as temp:
-            with patch.object(bridge, 'JOBS', Path(temp)), \\
-                 patch('github_host_bridge.config', return_value=CFG), \\
+            with patch.object(bridge, 'JOBS', Path(temp)), \
+                 patch('github_host_bridge.config', return_value=CFG), \
                  patch('github_host_bridge.get_issue', return_value=bridge.validate_task(issue(), CFG)):
                 digest = bridge.validate_task(issue(), CFG)['digest']
                 with self.assertRaises(PermissionError):
@@ -109,10 +109,10 @@ class BridgeTests(unittest.TestCase):
                 self.assertEqual(kwargs['method'], 'POST')
                 self.assertNotIn('secret-local-output', kwargs['fields']['body'])
                 return {'id': 1}
-            with patch.object(bridge, 'JOBS', Path(temp)), \\
-                 patch('github_host_bridge.config', return_value=CFG), \\
-                 patch('github_host_bridge.get_issue', return_value=request), \\
-                 patch('github_host_bridge.safe_capacity'), \\
+            with patch.object(bridge, 'JOBS', Path(temp)), \
+                 patch('github_host_bridge.config', return_value=CFG), \
+                 patch('github_host_bridge.get_issue', return_value=request), \
+                 patch('github_host_bridge.safe_capacity'), \
                  patch('github_host_bridge.gh', side_effect=github):
                 first = bridge.run_once(stub)
                 second = bridge.run_once(stub)
@@ -129,9 +129,9 @@ class BridgeTests(unittest.TestCase):
                             'repo_id': CFG['repo_id'],
                             'approved_at': int(time.time()), 'status': 'approved'}))
             path.chmod(0o600)
-            with patch.object(bridge, 'JOBS', Path(temp)), \\
-                 patch('github_host_bridge.config', return_value=CFG), \\
-                 patch('github_host_bridge.get_issue', return_value=bridge.validate_task(issue(), CFG)), \\
+            with patch.object(bridge, 'JOBS', Path(temp)), \
+                 patch('github_host_bridge.config', return_value=CFG), \
+                 patch('github_host_bridge.get_issue', return_value=bridge.validate_task(issue(), CFG)), \
                  patch('github_host_bridge.safe_capacity') as gate:
                 self.assertEqual(bridge.run_once()['status'], 'idle')
                 gate.assert_not_called()
@@ -146,10 +146,10 @@ class BridgeTests(unittest.TestCase):
                             'repo_id': CFG['repo_id'],
                             'approved_at': int(time.time()), 'status': 'approved'}))
             path.chmod(0o600)
-            with patch.object(bridge, 'JOBS', Path(temp)), \\
-                 patch('github_host_bridge.config', return_value=CFG), \\
-                 patch('github_host_bridge.get_issue', return_value=request), \\
-                 patch('github_host_bridge.safe_capacity', side_effect=RuntimeError('hot')), \\
+            with patch.object(bridge, 'JOBS', Path(temp)), \
+                 patch('github_host_bridge.config', return_value=CFG), \
+                 patch('github_host_bridge.get_issue', return_value=request), \
+                 patch('github_host_bridge.safe_capacity', side_effect=RuntimeError('hot')), \
                  self.assertRaisesRegex(RuntimeError, 'hot'):
                 bridge.run_once()
             self.assertEqual(json.loads(path.read_text())['status'], 'approved')
