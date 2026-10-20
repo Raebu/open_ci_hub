@@ -54,11 +54,32 @@ def system_load():
     except (OSError,ValueError,ZeroDivisionError):
         return None
 
+def disk_state():
+    """Observe writable root/home free space without guessing unknown mounts."""
+    results=[]
+    for path in ('/',str(Path.home())):
+        try:
+            stats=os.statvfs(path)
+            if stats.f_blocks<=0 or stats.f_frsize<=0:
+                continue
+            free_mb=stats.f_bavail*stats.f_frsize//(1024*1024)
+            free_percent=100*stats.f_bavail/stats.f_blocks
+            results.append({'path':path,'free_mb':free_mb,
+                            'free_percent':round(free_percent,2)})
+        except (OSError,ValueError,ZeroDivisionError):
+            continue
+    if not results:
+        return None
+    return {'min_free_mb':min(x['free_mb'] for x in results),
+            'min_free_percent':min(x['free_percent'] for x in results),
+            'mounts':results}
+
 def sample():
     return {'temperature_c':package_temperature_c(),
             'memory_pressure_pct':linux_pressure(),
             'load_per_cpu':system_load(),
-            'battery':battery_state()}
+            'battery':battery_state(),
+            'disk':disk_state()}
 
 def admission(mode,telemetry,base_limit):
     if mode not in MODES:raise ValueError('Invalid operating mode.')
@@ -69,9 +90,19 @@ def admission(mode,telemetry,base_limit):
     pressure=data.get('memory_pressure_pct')
     load=data.get('load_per_cpu')
     battery=data.get('battery')
+    disk=data.get('disk')
     ceiling=1 if mode=='quiet' else base_limit
     reason='normal'
     # Performance mode may use the owner's configured base ceiling, not override it.
+    if isinstance(disk,dict):
+        free=disk.get('min_free_mb')
+        pct=disk.get('min_free_percent')
+        if type(free) in (int,float) and type(pct) in (int,float):
+            if free<2048 or pct<5:
+                return {'max_parallel':0,'reason':'critical_disk_pressure','disk':disk}
+            if free<4096 or pct<10:
+                ceiling=min(ceiling,1)
+                reason='disk_pressure_throttle'
     if isinstance(temperature,(int,float)) and temperature>=90:
         return {'max_parallel':0,'reason':'critical_thermal','temperature_c':temperature}
     if isinstance(pressure,(int,float)) and pressure>=25:
@@ -91,4 +122,4 @@ def admission(mode,telemetry,base_limit):
         reason='quiet_mode' if reason=='normal' else reason
     return {'max_parallel':ceiling,'reason':reason,
             'temperature_c':temperature,'memory_pressure_pct':pressure,
-            'load_per_cpu':load,'battery':battery}
+            'load_per_cpu':load,'battery':battery,'disk':disk}
