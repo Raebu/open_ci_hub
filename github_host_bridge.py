@@ -195,13 +195,24 @@ def approve(number, digest, *, confirm=False):
 
 def safe_capacity():
     from machine_policy import sample, admission
-    from resource_guard import memory_available_mb
-    policy = admission('quiet', sample(), 1)
+    from app_runtime import Broker
+    sensors = sample()
+    # On this Garuda PC the CPU package sensor is available. An unexpected
+    # loss of this critical telemetry must not silently unlock host tasks.
+    if sensors.get('temperature_c') is None:
+        raise RuntimeError('Host task deferred: CPU thermal sensor unavailable.')
+    policy = admission('quiet', sensors, 1)
     if policy['max_parallel'] < 1:
         raise RuntimeError('Host task deferred due to PC resource pressure: ' + policy['reason'])
-    available = memory_available_mb()
-    if available is None or available < 5120:
-        raise RuntimeError('Host task deferred: insufficient verified desktop RAM headroom.')
+    resources = Broker().resource_status()
+    available = resources.get('memory_available_mb')
+    native = resources.get('reserved_native_runner_ram_mb')
+    active = resources.get('reserved_ram_mb')
+    minimum = resources.get('capacity', {}).get('min_free_ram_mb')
+    if any(type(v) != int or v < 0 for v in (available, native, active, minimum)):
+        raise RuntimeError('Host task deferred: native runner or RAM telemetry unavailable.')
+    if available - native - active - minimum < 1024:
+        raise RuntimeError('Host task deferred: cannot reserve 1 GiB while protecting desktop and CI.')
     return True
 
 
