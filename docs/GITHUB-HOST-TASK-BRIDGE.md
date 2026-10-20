@@ -19,6 +19,102 @@ permissions and network access as the Linux user, constrained by
 systemd RAM, CPU and task limits. Normal sudo authentication is never bypassed.
 Do not run unknown/untrusted code or treat local approval as a malware sandbox.
 
+## Cryptographic provenance protocol (implementation in this branch)
+
+`request_attestation.py` verifies a **gateway-signed MCP tool invocation**.
+It does not claim to sign or independently retrieve the original ChatGPT
+conversation. The gateway's attestation is an independently verifiable proof
+that its authentication and authorisation policy approved the exact tool task.
+
+### ChatGPT-side gateway (not yet deployed)
+
+Create a dedicated OAuth-protected MCP tool (e.g. `submit_host_task`). Use a
+supported identity provider instead of writing a custom login service.
+
+The gateway must:
+
+1. Authenticate the **ChatGPT MCP client** using the OpenAI-managed mTLS
+   certificate, verifying its CA chain, clientAuth EKU and certificate SAN
+   `mtls.prod.connectors.openai.com` (or a documented equivalent supported
+   trusted transport that establishes the same client identity).
+2. Validate the **user OAuth token** signature, issuer, intended audience,
+   expiry, required scopes and stable subject; bind access to the authorised
+   owner's account. PKCE + resource-indicated OAuth is required for linking.
+3. Accept narrowly typed tool arguments, decide whether the requested action
+   fits the owner's delegated standing permissions, then sign the **canonical
+   JSON of the entire task and claims** using an issuer-held Ed25519 key.
+4. Forward the signed task through the designated **private GitHub control
+   repository** (ID `1427302798`), never put the private signing key in
+   GitHub, ChatGPT chat history or the host's working repository.
+5. Record a private issuer audit receipt linking authenticated user,
+   policy version, request/nonce, exact task hash and timestamp. Any claim
+   about the user's *original ChatGPT words* requires additional authenticated
+   transcript data from the host; the current standard MCP call does not
+   supply a ChatGPT-signed copy of those words.
+
+OpenAI's **Secure MCP Tunnel** is an option for reaching this private gateway
+with outbound-only HTTPS. A standalone remote MCP server with correctly
+configured HTTPS + mTLS + OAuth is an alternative. Do not assume that the
+existing Tailscale-only dashboard is directly reachable from ChatGPT.
+
+### Host verification
+
+Host **standing-authorised** requests must contain an `attestation` map:
+
+```json
+{
+  "schema": "open-ci-hub.request-attestation.v1",
+  "alg": "Ed25519",
+  "issuer": "https://YOUR-VERIFIED-MCP-ISSUER",
+  "subject": "STABLE-VERIFIED-OAUTH-SUBJECT",
+  "audience": "open-ci-hub:1427302798",
+  "client": "chatgpt-mcp",
+  "issued_at": 0,
+  "expires_at": 0,
+  "jti": "UNIQUE-URLSAFE-RANDOM-REQUEST-ID",
+  "signature": "BASE64URL-ED25519-SIGNATURE"
+}
+```
+
+These are **schema placeholders**, not production credentials or a valid
+signed task. The issuer signs a canonical JSON object with keys `task`
+(all task fields except `attestation`) and `claims` (all attestation
+fields except `signature`). Canonicalisation uses UTF-8 JSON,
+`sort_keys=True`, `separators=(',', ':')`, `ensure_ascii=False` and
+`allow_nan=False`. The host requires a valid signature and exact configured
+issuer/user match, 120-second maximum lifetime, freshness and unique JTI.
+Altered/unsigned issues are ignored and never become approved work.
+
+A public key is pinned **locally by the ordinary Garuda user**, not issued
+by GitHub or self-enrolled from a request:
+
+```fish
+# Only after validating the actual OAuth issuer and obtaining its authentic
+# Ed25519 PUBLIC key through a separate trusted administrative channel:
+python3 github_host_bridge.py trust-issuer \
+  --issuer https://YOUR-VERIFIED-MCP-ISSUER \
+  --subject YOUR-STABLE-VERIFIED-OAUTH-SUBJECT \
+  --public-key ~/Documents/verified-mcp-issuer-public-key.pem \
+  --confirm
+```
+
+**Never place the private Ed25519 key in this directory.** Rotation is
+intentional and separately audited. The local verification module requires
+the standard Python `cryptography` package and fails closed if unavailable.
+Don't install packages or activate this integration until its self-hosted CI
+and host tests have passed.
+
+### Evidence limits
+
+- mTLS identifies the calling ChatGPT client; OAuth identifies the linked user.
+- The issuer's Ed25519 signature proves that **that issuer** attested to the
+  tool request, subject and scope, and that nobody changed them in transit.
+- It is **not** an OpenAI-issued signature over the natural-language prompt
+  or proof the human saw/approved every model-composed subcommand.
+- GitHub authorship remains only a transport signal, never proof of consent.
+- Privileged/destructive/external-commitment tasks stay outside routine
+  standing approval; the signer and host both enforce that boundary.
+
 ## Approval model — no duplicate prompts for routine work
 
 **Your explicit ChatGPT instruction is authorisation for routine work.** Once
@@ -132,7 +228,7 @@ The **entire** body must be JSON (no Markdown fencing):
 }
 ```
 
-The next poll queues this request automatically and attempts to write a new
+**The request must also include the live gateway-generated `attestation` object.** The JSON example below illustrates only the task fields; a bare issue containing those fields will be rejected.\n\nThe next poll queues a correctly signed request automatically and attempts to write a new
 `~/Documents/OpenCIHubTasks/chatgpt-approved.md`, subject to pressure limits
 and duplicate protection. No command-line digest approval is needed for this
 limited operation. **No claim of live delivery until the host file is verified.**
