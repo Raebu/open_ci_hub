@@ -203,9 +203,51 @@ async function requestHostAction(){
   }catch(err){results.replaceChildren(el('p',err.message));notice(err.message,true);}
 }
 
+// The mobile UI is a bounded text transcript, not an xterm emulator.
+// Fish/bash prompts and colourised tools send ANSI CSI/OSC sequences. Strip
+// them across poll boundaries so escape fragments never appear as literal text.
+class TerminalTextFilter {
+  constructor(){this.reset();}
+  reset(){this.mode='text';this.previous='';this.sequenceLength=0;}
+  push(chunk){
+    let out='';
+    for(const ch of chunk){
+      const code=ch.charCodeAt(0);
+      if(this.mode==='text'){
+        if(code===27){this.mode='escape';this.sequenceLength=0;}
+        else if(code===10||code===9||code>=32){if(code!==127&&!(code>=128&&code<=159))out+=ch;}
+        // Ignore BEL, CR, backspace and other nonprintable controls. This
+        // plain-text view does not emulate cursor movement or full-screen apps.
+      }else{
+        this.sequenceLength++;
+        if(this.sequenceLength>8192){this.mode='text';continue;}
+        if(this.mode==='escape'){
+          if(ch==='[')this.mode='csi';
+          else if(ch===']')this.mode='osc';
+          else if(ch==='P'||ch==='^'||ch==='_')this.mode='string';
+          else if('()*+-./'.includes(ch))this.mode='charset';
+          else if(code!==27)this.mode='text';
+        }else if(this.mode==='csi'){
+          // CSI parameters and intermediates end at the final 0x40..0x7e.
+          if(code>=64&&code<=126||code<32||code>63)this.mode='text';
+        }else if(this.mode==='osc'||this.mode==='string'){
+          if(code===27){this.previous=this.mode;this.mode='string-escape';}
+          else if(code===7&&this.mode==='osc')this.mode='text';
+        }else if(this.mode==='string-escape'){
+          if(ch==='\\')this.mode='text'; // ESC backslash = ST
+          else if(code!==27)this.mode=this.previous;
+        }else if(this.mode==='charset'){
+          this.mode='text';
+        }
+      }
+    }
+    return out;
+  }
+}
 let terminalSession=null;
 let terminalPolling=false;
-const terminalDecoder=new TextDecoder('utf-8');
+let terminalDecoder=new TextDecoder('utf-8');
+const terminalTextFilter=new TerminalTextFilter();
 function terminalControls(){
   const connected=!!terminalSession;
   $('terminal-open').disabled=connected||!(hostInfo?.available&&hostInfo?.terminal_enabled)||(state.role!=='owner'&&state.role!=='editor');
@@ -226,7 +268,7 @@ async function terminalRead(){
     const data=await api('/api/host/terminal/read',{session_id:terminalSession});
     if(data.data_b64){
       const bytes=Uint8Array.from(atob(data.data_b64),c=>c.charCodeAt(0));
-      terminalMessage(terminalDecoder.decode(bytes,{stream:true}));
+      terminalMessage(terminalTextFilter.push(terminalDecoder.decode(bytes,{stream:true})));
     }
     if(!data.running){
       terminalMessage('\n[Shell exited; session no longer running]\n');
@@ -245,6 +287,8 @@ async function terminalOpen(){
       '\n\nThis session can read and change your files. Only continue on your trusted device.'))return;
   const opened=await api('/api/host/terminal/open',{preview_token:p.preview_token,confirm:true});
   terminalSession=opened.session_id;
+  terminalDecoder=new TextDecoder('utf-8');
+  terminalTextFilter.reset();
   $('terminal-output').textContent='';
   $('terminal-status').textContent='Interactive user shell · idle expiry '+opened.idle_timeout+'s';
   terminalControls();
