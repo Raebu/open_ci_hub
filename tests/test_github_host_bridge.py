@@ -27,8 +27,8 @@ def issue(number=17, author='Raebu', body=None):
     }
 
 
-CFG = {'repo': 'Raebu/PrivateControl', 'sender': 'Raebu',
-       'repo_id': 742, 'configured_at': int(time.time()) - 120}
+CFG = {'repo': bridge.TRUSTED_REPO, 'sender': 'Raebu',
+       'repo_id': bridge.TRUSTED_REPO_ID, 'configured_at': int(time.time()) - 120}
 
 
 class BridgeTests(unittest.TestCase):
@@ -91,6 +91,19 @@ class BridgeTests(unittest.TestCase):
             'owner': {'login': CFG['sender']}
         }):
             self.assertTrue(bridge.verify_control_repo(CFG))
+
+    @patch('github_host_bridge.require_user')
+    def test_dedicated_control_repo_only(self, unused):
+        with patch('github_host_bridge.gh') as api:
+            with self.assertRaises(PermissionError):
+                bridge.configure('Raebu/other-private-repo', 'Raebu', confirm=True)
+            api.assert_not_called()
+        with patch('github_host_bridge.gh', return_value={
+            'id': 999, 'private': True,
+            'full_name': CFG['repo'], 'owner': {'login': CFG['sender']}
+        }):
+            with self.assertRaises(PermissionError):
+                bridge.configure(CFG['repo'], 'Raebu', confirm=True)
 
     @patch('github_host_bridge.require_user')
     def test_explicit_approval_digest_and_no_replay(self, user):
