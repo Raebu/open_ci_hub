@@ -30,6 +30,8 @@ REPO = re.compile(r'^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$')
 LOGIN = re.compile(r'^[A-Za-z0-9-]{1,39}$')
 DIGEST = re.compile(r'^[a-f0-9]{64}$')
 SCHEMA = 'open-ci-hub.host-task.v1'
+TRUSTED_REPO = 'Raebu/open-ci-chatgpt-control'
+TRUSTED_REPO_ID = 1427302798
 DOCUMENT = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\.(?:txt|md)$')
 ROUTINE_FIELDS = {'schema', 'description', 'operation', 'filename', 'content'}
 MAX_ROUTINE_CONTENT = 4000
@@ -75,7 +77,11 @@ def config():
     data = read_private(CONFIG)
     if (not isinstance(data, dict) or not isinstance(data.get('repo'), str)
         or not REPO.fullmatch(data['repo']) or not isinstance(data.get('sender'), str)
-        or not LOGIN.fullmatch(data['sender']) or type(data.get('repo_id')) != int
+        or not LOGIN.fullmatch(data['sender'])
+        or data['repo'].lower() != TRUSTED_REPO.lower()
+        or data['sender'].lower() != 'raebu'
+        or data.get('repo_id') != TRUSTED_REPO_ID
+        or type(data.get('repo_id')) != int
         or type(data.get('configured_at')) != int or data['configured_at'] <= 0):
         raise RuntimeError('Invalid bridge configuration.')
     return data
@@ -83,12 +89,13 @@ def config():
 
 def configure(repo, sender, *, confirm=False):
     require_user()
-    if not confirm or not REPO.fullmatch(repo) or not LOGIN.fullmatch(sender):
+    if (not confirm or not REPO.fullmatch(repo) or not LOGIN.fullmatch(sender)
+        or repo.lower() != TRUSTED_REPO.lower() or sender.lower() != 'raebu'):
         raise PermissionError('Explicit local confirmation, exact repository and GitHub login required.')
     info = gh('repos/' + repo)
     if (not isinstance(info, dict) or info.get('private') is not True
         or str(info.get('full_name', '')).lower() != repo.lower()
-        or type(info.get('id')) != int
+        or type(info.get('id')) != int or info['id'] != TRUSTED_REPO_ID
         or str(info.get('owner', {}).get('login', '')).lower() != sender.lower()):
         raise PermissionError('Control repository must be private and owned by the named sender.')
     if CONFIG.exists():
@@ -108,6 +115,8 @@ def verify_control_repo(cfg):
     """Fail closed if the private repo is transferred, replaced or exposed."""
     info = gh('repos/' + cfg['repo'])
     if (not isinstance(info, dict) or info.get('private') is not True
+        or cfg['repo'].lower() != TRUSTED_REPO.lower()
+        or cfg['repo_id'] != TRUSTED_REPO_ID
         or info.get('id') != cfg['repo_id']
         or str(info.get('full_name', '')).lower() != cfg['repo'].lower()
         or str(info.get('owner', {}).get('login', '')).lower() != cfg['sender'].lower()):
