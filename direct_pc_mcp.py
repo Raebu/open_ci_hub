@@ -69,6 +69,46 @@ TOOLS = [
             'additionalProperties': False,
         },
     },
+
+    {
+        'name': 'list_coding_workspaces',
+        'description': 'List only coding folders explicitly enrolled by the local PC owner.',
+        'inputSchema': {'type': 'object', 'properties': {}, 'additionalProperties': False},
+    },
+    {
+        'name': 'list_coding_files',
+        'description': 'List non-hidden files and directories beneath an enrolled workspace; no symlinks.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'workspace': {'type': 'string'}, 'path': {'type': 'string'}},
+            'required': ['workspace'], 'additionalProperties': False},
+    },
+    {
+        'name': 'read_coding_file',
+        'description': 'Read one bounded UTF-8 source file under an enrolled workspace; returns SHA-256.',
+        'inputSchema': {'type': 'object', 'properties': {
+            'workspace': {'type': 'string'}, 'path': {'type': 'string'}},
+            'required': ['workspace', 'path'], 'additionalProperties': False},
+    },
+    {
+        'name': 'write_coding_file',
+        'description': ('Atomically write one bounded source file in an owner-enabled workspace; '
+                        'requires the prior SHA-256 to overwrite, or empty hash for a new file. '
+                        'Returns a disk-verified SHA-256 and private audit receipt.'),
+        'inputSchema': {'type': 'object', 'properties': {
+            'workspace': {'type': 'string'}, 'path': {'type': 'string'},
+            'content': {'type': 'string'}, 'expected_sha256': {'type': 'string'}},
+            'required': ['workspace', 'path', 'content', 'expected_sha256'],
+            'additionalProperties': False},
+    },
+    {
+        'name': 'run_coding_check',
+        'description': ('Run exactly one local-owner-registered command array in an enrolled '
+                        'workspace, with finite timeout and exit-code/hash receipt; no shell. '
+                        'Project scripts run as the ordinary Linux user, not a sandbox.'),
+        'inputSchema': {'type': 'object', 'properties': {
+            'workspace': {'type': 'string'}, 'check': {'type': 'string'}},
+            'required': ['workspace', 'check'], 'additionalProperties': False},
+    },
 ]
 
 
@@ -212,6 +252,23 @@ def invoke_tool(name: str, arguments: dict) -> dict:
         except ImportError:
             raise RuntimeError('Failure inspection requires Open CI Hub main including PR #35.') from None
         return diagnose(provider,repo,run,include_logs=True)
+    if name in ('list_coding_workspaces', 'list_coding_files', 'read_coding_file',
+                'write_coding_file', 'run_coding_check'):
+        from coding_workspace import workspaces, list_files, read_file, write_file, run_check
+        if name == 'list_coding_workspaces' and not arguments:
+            return workspaces()
+        if name == 'list_coding_files' and set(arguments) in (
+                {'workspace'}, {'workspace', 'path'}):
+            return list_files(arguments['workspace'], arguments.get('path', ''))
+        if name == 'read_coding_file' and set(arguments) == {'workspace', 'path'}:
+            return read_file(arguments['workspace'], arguments['path'])
+        if name == 'write_coding_file' and set(arguments) == {
+                'workspace', 'path', 'content', 'expected_sha256'}:
+            return write_file(arguments['workspace'], arguments['path'],
+                              arguments['content'], arguments['expected_sha256'])
+        if name == 'run_coding_check' and set(arguments) == {'workspace', 'check'}:
+            return run_check(arguments['workspace'], arguments['check'])
+        raise ValueError('Invalid coding tool arguments.')
     raise ValueError('Unknown MCP tool.')
 
 
