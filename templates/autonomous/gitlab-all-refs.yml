@@ -1,0 +1,18 @@
+# Opt-in GitLab CI template. Add to a project only after verifying a
+# dedicated disposable, unprotected, zero-secret runner with the tag below.
+# Never attach this to a persistent host shell executor or a protected runner.
+stages: [test]
+
+open-ci-hub-all-refs:
+  stage: test
+  tags: [local-ci-isolated]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID'
+      when: on_success
+    - when: never
+  timeout: 30m
+  script:
+    - test -f .open-ci-hub/ci.sh || { echo "Missing approved CI recipe"; exit 2; }
+    - sh .open-ci-hub/ci.sh
