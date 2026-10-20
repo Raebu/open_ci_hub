@@ -17,18 +17,16 @@ MAX_LOG_JOBS = 3
 MAX_EXCERPT_CHARS = 6000
 MAX_ERROR_MARKERS = 8
 MARKER = re.compile(
-    r'(?i)(::error::|(?:^|\\s)(?:error:|fatal:|FAIL(?:ED)?(?:\\s|:)|'
-    r'AssertionError|Traceback \\(most recent call last\\)|'
-    r'[A-Z_]*Exception:|npm ERR!|error TS[0-9]{4}|'
-    r'Process completed with exit code [1-9][0-9]*|'
-    r'command returned [1-9][0-9]*|Job failed|'
-    r'ERROR:)))'
+    r'(?i)(::error::|\berror:|\bfatal:|\bFAIL(?:ED)?(?:\s|:)|'
+    r'AssertionError|Traceback \(most recent call last\)|'
+    r'[A-Z_]*Exception:|npm ERR!|\berror TS[0-9]{4}|'
+    r'Process completed with exit code [1-9]\d*|'
+    r'command returned [1-9]\d*|Job failed)'
 )
 EXIT = re.compile(
     r'(?i)(?:process completed with exit code|(?:command )?returned|'
-    r'exited? with (?:exit )?(?:status|code))\\s*:?\\s*([1-9][0-9]{0,3})\\b'
+    r'exited? with (?:exit )?(?:status|code))\s*:?\s*([1-9][0-9]{0,3})\b'
 )
-
 
 def _evidence_excerpt(transcript: str) -> dict:
     """Use the provider's real lines, with the same redaction as /api/job-log."""
@@ -40,7 +38,7 @@ def _evidence_excerpt(transcript: str) -> dict:
     if not chosen:
         chosen.update(range(max(0, len(lines)-15), len(lines)))
     selected = [f'{i + 1}: {lines[i]}' for i in sorted(chosen)]
-    excerpt = '\\n'.join(selected)
+    excerpt = '\n'.join(selected)
     if len(excerpt) > MAX_EXCERPT_CHARS:
         excerpt = excerpt[-MAX_EXCERPT_CHARS:]
     code = EXIT.search(clean_log(transcript))
