@@ -228,7 +228,7 @@ class BridgeTests(unittest.TestCase):
     def test_standing_document_is_valid_but_shell_is_not_standing_approved(self):
         task = {'schema': bridge.SCHEMA, 'description': 'Save document',
                 'operation': 'create_document', 'filename': 'proposal.md',
-                'content': 'Document contents'}
+                'content': 'Document contents', 'attestation': {'placeholder': True}}
         request = bridge.validate_task(issue(body=json.dumps(task)), CFG)
         self.assertTrue(bridge.is_routine(request))
         self.assertTrue(bridge.recent_after_configuration(request, CFG))
@@ -242,7 +242,7 @@ class BridgeTests(unittest.TestCase):
     def test_standing_document_runs_once_without_manual_approval(self, unused):
         routine = {'schema': bridge.SCHEMA, 'description': 'Create test',
                    'operation': 'create_document', 'filename': 'auto-test.md',
-                   'content': 'Authorised routine document'}
+                   'content': 'Authorised routine document', 'attestation': {'placeholder': True}}
         request = bridge.validate_task(issue(body=json.dumps(routine)), CFG)
         with tempfile.TemporaryDirectory() as directory:
             executor_calls = []
@@ -260,7 +260,10 @@ class BridgeTests(unittest.TestCase):
                  patch('github_host_bridge.pending', return_value=[request]), \
                  patch('github_host_bridge.get_issue', return_value=request), \
                  patch('github_host_bridge.safe_capacity'), \
-                 patch('github_host_bridge.gh', return_value={'id': 1}):
+                 patch('github_host_bridge.gh', return_value={'id': 1}), \
+                 patch('request_attestation.verify_attestation',
+                       return_value={'jti':'abcDEF123abcDEF123abcDEF123',
+                                     'subject':'authenticated-user'}):
                 first = bridge.run_once(no_shell, write_document)
                 second = bridge.run_once(no_shell, write_document)
             self.assertEqual(first['status'], 'completed')
@@ -269,6 +272,18 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(executor_calls, [])
             journal = json.loads((Path(directory) / '17.json').read_text())
             self.assertEqual(journal['authorisation'], 'standing_create_document')
+
+    @patch('github_host_bridge.require_user')
+    def test_unsigned_issues_are_never_automatically_staged(self, unused):
+        routine = {'schema': bridge.SCHEMA, 'description': 'Create test',
+                   'operation': 'create_document', 'filename': 'unsigned.md',
+                   'content': 'No signature', 'attestation': {'placeholder': True}}
+        request = bridge.validate_task(issue(body=json.dumps(routine)), CFG)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(bridge, 'JOBS', Path(directory)), \
+                 patch('github_host_bridge.pending', return_value=[request]):
+                self.assertEqual(bridge.stage_standing_requests(CFG), 0)
+                self.assertFalse((Path(directory) / '17.json').exists())
 
     @patch('github_host_bridge.require_user')
     def test_legacy_shell_never_staged_for_automatic_execution(self, unused):
@@ -284,7 +299,7 @@ class BridgeTests(unittest.TestCase):
     def test_native_document_creation_is_create_only(self):
         doc = {'schema': bridge.SCHEMA, 'description': 'create test',
                'operation': 'create_document', 'filename': 'safe.md',
-               'content': 'hello local world'}
+               'content': 'hello local world', 'attestation': {'placeholder': True}}
         with tempfile.TemporaryDirectory() as root:
             home = Path(root)
             (home / 'Documents').mkdir()
