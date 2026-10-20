@@ -19,6 +19,7 @@ import sys
 import time
 
 from hub import LOCAL
+from resource_guard import ResourceGate
 
 APP = re.compile(r'^[a-z][a-z0-9-]{1,48}$')
 TASK = re.compile(r'^[a-z][a-z0-9_.-]{1,64}$')
@@ -67,6 +68,8 @@ class Broker:
                 CREATE INDEX IF NOT EXISTS idx_app_jobs
                     ON jobs(app, status, created);
             ''')
+            ResourceGate.setup(db)
+        self.resource_gate=ResourceGate()
         if os.name != 'nt':
             os.chmod(self.path, 0o600)
 
@@ -204,30 +207,109 @@ class Broker:
                 'created':r['created'],'updated':r['updated'],
                 'result':json.loads(r['result']) if r['result'] is not None else None}
 
+    def set_task_budget(self,app,task,ram_mb,vram_mb=0,gpu_index=None,*,confirm=False):
+        app=self._check_app(app)
+        if confirm is not True:
+            raise PermissionError('Only local host owner can approve a task resource budget.')
+        ResourceGate.validate_profile(ram_mb,vram_mb,gpu_index)
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT tasks FROM apps WHERE app=?',(app,)).fetchone()
+            if not row or task not in json.loads(row['tasks']):
+                raise PermissionError('Only pre-registered app tasks may have resource budgets.')
+            active=db.execute('SELECT COUNT(*) FROM jobs WHERE app=? AND task=? '
+                              'AND status IN ("leased","stranded")',(app,task)).fetchone()[0]
+            if active:
+                raise RuntimeError('Wait for task leases and stranded reservations to clear before changing budgets.')
+            ResourceGate.set_profile(db,app,task,ram_mb,vram_mb,gpu_index)
+            db.commit()
+        return {'app':app,'task':task,'ram_mb':ram_mb,
+                'vram_mb':vram_mb,'gpu_index':gpu_index}
+
+    def set_parallel(self,app,parallel,*,confirm=False):
+        app=self._check_app(app)
+        if confirm is not True:
+            raise PermissionError('Owner must approve app parallel capacity.')
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute('SELECT 1 FROM apps WHERE app=?',(app,)).fetchone():
+                raise PermissionError('App not registered.')
+            ResourceGate.set_app_limit(db,app,parallel)
+            db.commit()
+        return {'app':app,'max_parallel':parallel}
+
+    def set_global_resources(self,max_parallel,min_free_ram_mb,min_free_vram_mb,*,confirm=False):
+        if confirm is not True:
+            raise PermissionError('Host owner must approve global memory and GPU headroom.')
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            ResourceGate.set_config(db,max_parallel=max_parallel,
+                min_free_ram_mb=min_free_ram_mb,min_free_vram_mb=min_free_vram_mb)
+            db.commit()
+        return {'max_parallel':max_parallel,'min_free_ram_mb':min_free_ram_mb,
+                'min_free_vram_mb':min_free_vram_mb}
+
+    def resource_status(self):
+        with self._db() as db:
+            return self.resource_gate.snapshot(db)
+
+    def recover_stranded(self,job,*,confirm=False):
+        if confirm is not True:
+            raise PermissionError('The host owner must confirm the original worker process has stopped.')
+        if not isinstance(job,str) or not JOB.fullmatch(job):
+            raise ValueError('Invalid job ID.')
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT attempts,status FROM jobs WHERE id=?',(job,)).fetchone()
+            if not row or row['status']!='stranded':
+                raise RuntimeError('No stranded reservation with this ID.')
+            new_status='queued' if row['attempts']<MAX_ATTEMPTS else 'failed'
+            db.execute('UPDATE jobs SET status=?,lease_hash=NULL,lease_until=NULL,updated=?,'
+                       'result=? WHERE id=?',(new_status,time.time(),
+                       json.dumps({'message':'Host owner confirmed stranded worker stopped.'}),job))
+            db.commit()
+        return {'job_id':job,'status':new_status}
+
     def claim(self,who):
         self._require(who,'worker')
         now=time.time();app=who['app']
         with self._db() as db:
             db.execute('BEGIN IMMEDIATE')
-            db.execute('UPDATE jobs SET status="failed",updated=?,lease_hash=NULL,lease_until=NULL,'
-                       'result=? WHERE app=? AND status="leased" AND lease_until<? AND attempts>=?',
-                       (now,json.dumps({'error':'Retry limit exceeded after worker lease expiry.'}),
-                        app,now,MAX_ATTEMPTS))
-            db.execute('UPDATE jobs SET status="queued",updated=?,lease_hash=NULL,lease_until=NULL '
-                       'WHERE app=? AND status="leased" AND lease_until<? AND attempts<?',
-                       (now,app,now,MAX_ATTEMPTS))
-            row=db.execute('SELECT id,task,payload,attempts FROM jobs WHERE app=? AND status="queued" '
-                           'ORDER BY created,id LIMIT 1',(app,)).fetchone()
-            if not row:
+            # Expired worker may STILL be running. Never reassign RAM/VRAM or
+            # repeat side effects until host owner confirms process termination.
+            db.execute('UPDATE jobs SET status="stranded",updated=?,'
+                       'result=? WHERE status="leased" AND lease_until<=?',
+                       (now,json.dumps({'error':'Lease expired; original worker may still be running. '
+                           'Host owner must verify termination before recovery.'}),now))
+            snapshot=self.resource_gate.snapshot(db)
+            candidates=db.execute('SELECT id,task,payload,attempts FROM jobs '
+                                  'WHERE app=? AND status="queued" '
+                                  'ORDER BY created,id LIMIT 100',(app,)).fetchall()
+            if not candidates:
                 db.commit()
-                return {'job':None}
+                return {'job':None,'reason':'queue_empty'}
+            selected=None;budget=None;blocked='capacity_exhausted'
+            for row in candidates:
+                profile,reason=self.resource_gate.admit(db,app,row['task'],snapshot)
+                if profile:
+                    selected,budget=row,profile
+                    break
+                blocked=reason
+            if selected is None:
+                db.commit()
+                return {'job':None,'reason':blocked}
             secret=secrets.token_urlsafe(36)
             db.execute('UPDATE jobs SET status="leased",attempts=attempts+1,lease_hash=?,'
                        'lease_until=?,updated=? WHERE id=?',
-                       (hashlib.sha256(secret.encode()).hexdigest(),now+LEASE_SECONDS,now,row['id']))
+                       (hashlib.sha256(secret.encode()).hexdigest(),
+                        now+LEASE_SECONDS,now,selected['id']))
             db.commit()
-        return {'job':{'job_id':row['id'],'task':row['task'],'payload':json.loads(row['payload']),
-                       'attempt':row['attempts']+1,'lease_token':secret,'lease_seconds':LEASE_SECONDS}}
+        return {'job':{'job_id':selected['id'],'task':selected['task'],
+                       'payload':json.loads(selected['payload']),
+                       'attempt':selected['attempts']+1,'lease_token':secret,
+                       'lease_seconds':LEASE_SECONDS,'resources':budget,
+                       'requires_ram_enforcement':True,
+                       'vram_guard':'reservation-and-telemetry-not-hardware-limit'}}
 
     def _leased(self,db,who,job,lease_token):
         self._require(who,'worker')
@@ -278,15 +360,25 @@ class Broker:
                 'tasks':json.loads(row['tasks']),'enabled':bool(row['enabled']),'queues':{}})
             if row['status']:
                 item['queues'][row['status']]=row['amount']
-        return {'apps':list(apps.values()),'runtime':'app-worker-broker',
+        with self._db() as db:
+            for item in apps.values():
+                item['max_parallel']=self.resource_gate.app_limit(db,item['app'])
+            resources=self.resource_gate.snapshot(db)
+        return {'apps':list(apps.values()),'resources':resources,
+                'runtime':'parallel-admission-broker',
                 'execute_untrusted_code':False}
 
     def overview(self,who):
         with self._db() as db:
             rows=db.execute('SELECT status,COUNT(*) AS count FROM jobs WHERE app=? GROUP BY status',
                             (who['app'],)).fetchall()
+        with self._db() as db:
+            resources=self.resource_gate.snapshot(db)
+            app_limit=self.resource_gate.app_limit(db,who['app'])
         return {'app':who['app'],'scope':who['role'],'tasks':who['tasks'],
                 'queues':{row['status']:row['count'] for row in rows},
+                'max_parallel':app_limit,
+                'capacity':resources['capacity'],
                 'execution':'external-approved-workers',
                 'arbitrary_host_commands':False}
 
@@ -299,12 +391,36 @@ def main(argv=None):
     issue=sub.add_parser('issue');issue.add_argument('app');issue.add_argument('role',choices=sorted(ROLE))
     issue.add_argument('--confirm',action='store_true')
     revoke=sub.add_parser('revoke');revoke.add_argument('sha256');revoke.add_argument('--confirm',action='store_true')
+    budget=sub.add_parser('budget');budget.add_argument('app');budget.add_argument('task')
+    budget.add_argument('--ram-mb',type=int,required=True)
+    budget.add_argument('--vram-mb',type=int,default=0)
+    budget.add_argument('--gpu-index',type=int)
+    budget.add_argument('--confirm',action='store_true')
+    parallel=sub.add_parser('parallel');parallel.add_argument('app')
+    parallel.add_argument('--max-parallel',type=int,required=True)
+    parallel.add_argument('--confirm',action='store_true')
+    global_policy=sub.add_parser('global-resources')
+    global_policy.add_argument('--max-parallel',type=int,required=True)
+    global_policy.add_argument('--min-free-ram-mb',type=int,required=True)
+    global_policy.add_argument('--min-free-vram-mb',type=int,required=True)
+    global_policy.add_argument('--confirm',action='store_true')
+    recover=sub.add_parser('recover-stranded');recover.add_argument('job_id')
+    recover.add_argument('--confirm',action='store_true')
+    sub.add_parser('resources')
     args=parser.parse_args(argv)
     try:
         broker=Broker(args.state)
         if args.cmd=='register':out=broker.register(args.app,args.tasks.split(','),confirm=args.confirm)
         elif args.cmd=='issue':out=broker.issue(args.app,args.role,confirm=args.confirm)
-        else:out=broker.revoke(args.sha256,confirm=args.confirm)
+        elif args.cmd=='revoke':out=broker.revoke(args.sha256,confirm=args.confirm)
+        elif args.cmd=='budget':out=broker.set_task_budget(args.app,args.task,
+            args.ram_mb,args.vram_mb,args.gpu_index,confirm=args.confirm)
+        elif args.cmd=='parallel':out=broker.set_parallel(args.app,args.max_parallel,
+            confirm=args.confirm)
+        elif args.cmd=='global-resources':out=broker.set_global_resources(
+            args.max_parallel,args.min_free_ram_mb,args.min_free_vram_mb,confirm=args.confirm)
+        elif args.cmd=='recover-stranded':out=broker.recover_stranded(args.job_id,confirm=args.confirm)
+        else:out=broker.resource_status()
         print(json.dumps(out,indent=2));return 0
     except (PermissionError,RuntimeError,ValueError,OSError,sqlite3.Error) as exc:
         print('App broker:',str(exc)[:200],file=sys.stderr);return 1

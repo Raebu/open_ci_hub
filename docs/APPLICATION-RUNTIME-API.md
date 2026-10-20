@@ -80,3 +80,7 @@ The Python standard-library client is in application_client.py; it validates loc
 **Pending before production:** authenticated cross-PC integration tests; API key rotation and per-request usage auditing; rate limits beyond queue quotas; optional webhook event delivery; separately sandboxed app worker lifecycle and deployment; HTTPS/OIDC and security audit; monitoring, backups and credential revocation drill. The operational host agent, runners and signing key distribution remain separate.
 
 Use HTTPS on your tailnet and do not use Tailscale Funnel for any API with a persistent token.
+
+## Parallel execution and budget controls
+
+The broker now enforces global and per-project concurrent lease quotas and per-task owner-defined RAM/GPU VRAM reservations when workers claim jobs. Claims provide the approved resources to the worker. A managed systemd user worker, managed_worker.py, can enforce RAM via MemoryMax and inspect NVIDIA VRAM with a watchdog. This does not automatically govern existing provider-native CI jobs. Worker leases that expire are held in a stranded state until verified dead rather than reassigned while they might still be consuming RAM/VRAM. See [parallel resource scheduler](PARALLEL-RESOURCE-SCHEDULER.md) for activation, hardware and GPU limitations.

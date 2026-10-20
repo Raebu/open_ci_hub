@@ -15,6 +15,8 @@ class BrokerTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.b=runtime.Broker(Path(self.tmp.name)/'state')
+        from resource_guard import ResourceGate
+        self.b.resource_gate=ResourceGate(memory_reader=lambda:8192,gpu_reader=lambda:{})
         self.b.register('raeburnemailer',['dispatch','prepare'],confirm=True)
         self.b.register('trg-recruitment',['cv-process'],confirm=True)
         self.submit_token=self.b.issue('raeburnemailer','submit',confirm=True)['token']
@@ -82,11 +84,16 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(self.b.inspect(self.submit,j['job_id'])['attempts'],3)
         self.assertIsNone(self.b.claim(self.worker)['job'])
 
-    def test_expired_lease_may_be_reassigned_and_old_claim_invalid(self):
+    def test_expired_lease_quarantined_until_owner_confirms_worker_dead(self):
         j=self.b.submit(self.submit,'prepare',{'id':7})
         claim=self.b.claim(self.worker)['job']
         with self.b._db() as db:
             db.execute('UPDATE jobs SET lease_until=? WHERE id=?',(time.time()-5,j['job_id']))
+        self.assertIsNone(self.b.claim(self.worker)['job'])
+        self.assertEqual(self.b.inspect(self.submit,j['job_id'])['status'],'stranded')
+        with self.assertRaises(PermissionError):
+            self.b.recover_stranded(j['job_id'])
+        self.b.recover_stranded(j['job_id'],confirm=True)
         retry=self.b.claim(self.worker)['job']
         self.assertEqual(retry['attempt'],2)
         with self.assertRaises(PermissionError):
@@ -122,6 +129,8 @@ class BrokerHTTPTests(DashboardHTTPTests):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        from resource_guard import ResourceGate
+        cls.console.apps.resource_gate=ResourceGate(memory_reader=lambda:8192,gpu_reader=lambda:{})
         cls.console.apps.register('integration-app',['doc-process'],confirm=True)
         cls.submit_key=cls.console.apps.issue('integration-app','submit',confirm=True)['token']
         cls.worker_key=cls.console.apps.issue('integration-app','worker',confirm=True)['token']
