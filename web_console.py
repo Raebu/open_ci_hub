@@ -373,7 +373,11 @@ class WebConsole:
                             return self.output(200, inspect_github(repo, branch))
                         if path == '/api/ci/failure':
                             from ci_failure_diagnostics import diagnose
-                            return self.output(200, diagnose(param('provider'), param('repo'), param('run')))
+                            logs = param('logs')
+                            if logs not in ('', '0', '1'):
+                                raise ValueError('logs must be 0 or 1.')
+                            return self.output(200, diagnose(param('provider'), param('repo'),
+                                                             param('run'), include_logs=logs=='1'))
                         if path == '/api/machines':
                             from machines import inventory
                             return self.output(200, inventory())
