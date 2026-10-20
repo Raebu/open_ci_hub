@@ -334,7 +334,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -357,6 +357,23 @@ class WebConsole:
                             return self.output(200, {'items': list_repositories(param('provider'), param('owner'))})
                         if path == '/api/pipelines':
                             return self.output(200, {'items': list_pipelines(param('provider'), param('repo'))})
+                        if path == '/api/ci/workflow':
+                            if param('provider') != 'github':
+                                return self.output(400, {'error':'GitHub workflow policy is supported in this check; GitLab job failures are shown separately.'})
+                            from operations import safe_repo
+                            from ci_workflow_diagnostics import inspect_github
+                            from fleet import _json_object
+                            repo = safe_repo(param('repo'))
+                            if len(repo.split('/')) != 2:
+                                raise ValueError('Specify exact GitHub OWNER/REPO.')
+                            meta = _json_object(['gh', 'api', f'repos/{repo}'])
+                            branch = meta.get('default_branch')
+                            if not isinstance(branch, str):
+                                raise RuntimeError('Cannot establish repository default branch; workflow is unverified.')
+                            return self.output(200, inspect_github(repo, branch))
+                        if path == '/api/ci/failure':
+                            from ci_failure_diagnostics import diagnose
+                            return self.output(200, diagnose(param('provider'), param('repo'), param('run')))
                         if path == '/api/machines':
                             from machines import inventory
                             return self.output(200, inventory())
