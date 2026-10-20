@@ -3,7 +3,7 @@
 This independent hardening update extends workload policy to include Linux free disk space and protects previously persisted GitHub personal-runner Docker containers.
 
 ## Disk admission
-The control engine samples writable capacity at / and the current user's home. It uses the lowest available MB/percentage of those two locations:
+The control engine samples writable capacity at /, the current user's home and the filesystem holding the Open CI Hub source checkout. It uses the lowest available MB/percentage of those two locations:
 
 - Less than 2048 MiB or less than 5% free: **admit no new app jobs and refuse new native CI runner starts**. Existing app and CI work is not automatically terminated solely for a low-disk condition, because doing so can corrupt data.
 - Less than 4096 MiB or less than 10% free: reduce new app-job parallelism to one.
@@ -21,7 +21,7 @@ If any assertion fails, the start is denied and the existing container, its cred
 New personal-runner-pool containers are created with these caps and no unattended Docker restart policy; the opt-in runner-pool systemd timer remains responsible for restarting them through admission checks. The separate GitHub/GitLab/CircleCI Compose runner containers have their own resource policies; deployment or recreation requires host-level validation.
 
 ## Verification on your 16GB Intel Iris Xe Garuda PC
-- Check root and home partition capacity, and whether project storage under /mnt/kingston is a separate filesystem requiring its own threshold.
+- Check root, home and the current Open CI Hub checkout partition (including /mnt/kingston when applicable); no guesswork about whether storage is a separate mount.
 - Test low-space admission with synthetic telemetry; do not actually fill the disk.
 - Inspect existing runner containers before any restart; save volume backups first.
 - Confirm the Open CI Hub dashboard and scheduler are on the same host and security boundary.
