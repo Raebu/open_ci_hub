@@ -26,6 +26,12 @@ def inspect_github(repo: str, branch: str) -> dict:
     repo = safe_repo(repo)
     if len(repo.split('/')) != 2 or not isinstance(branch, str) or not fleet.BRANCH.fullmatch(branch) or '..' in branch:
         raise ValueError('Provide GitHub OWNER/REPO and an existing safe branch name.')
+    if repo.casefold() == 'raebu/open-ci-chatgpt-control':
+        return {'repo':repo, 'branch':branch, 'verified':False,
+                'code':'control_channel_not_ci',
+                'message':'This is the private ChatGPT command/control queue, not a CI source repository.',
+                'workflows':[], 'issues':[],
+                'suggestion':'Do not create GitHub Actions in the control repository. Diagnose the signed host-bridge request and service instead.'}
     result = {'repo': repo, 'branch': branch, 'verified': False,
               'code': '', 'message': '', 'workflows': [], 'issues': [],
               'suggestion': ''}
