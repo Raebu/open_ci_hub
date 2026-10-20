@@ -15,6 +15,9 @@ DEFAULT_MAX_PARALLEL=4
 DEFAULT_MAX_PER_APP=2
 DEFAULT_RAM_MB=512
 DEFAULT_MIN_FREE_RAM_MB=2048
+INTEL_DESKTOP_MIN_FREE_RAM_MB=4096
+INTEL_DESKTOP_MAX_PARALLEL=3
+MAX_INTEGRATED_GPU_JOBS=1
 DEFAULT_MIN_FREE_VRAM_MB=1024
 MAX_MEMORY_MB=262144
 MAX_GPU_INDEX=15
@@ -71,8 +74,41 @@ def nvidia_vram_mb():
     except (OSError,subprocess.TimeoutExpired,ValueError):
         return {}
 
+def physical_ram_total_mb():
+    try:
+        data=Path('/proc/meminfo').read_text(encoding='ascii')
+        match=re.search(r'^MemTotal:\s+(\d+)\s+kB$',data,re.M)
+        return int(match.group(1))//1024 if match else None
+    except (OSError,ValueError):
+        return None
+
+def intel_iris_xe_shared_gpu():
+    """Detect known Intel Tiger Lake Iris Xe iGPUs without inventing dedicated VRAM."""
+    tiger_lake_ids={0x9A40,0x9A49,0x9A59,0x9A60,0x9A68,0x9A70,0x9A78}
+    try:
+        for card in sorted(Path('/sys/class/drm').glob('card[0-9]*')):
+            device=card/'device'
+            vendor=int((device/'vendor').read_text(encoding='ascii').strip(),16)
+            ident=int((device/'device').read_text(encoding='ascii').strip(),16)
+            if vendor==0x8086 and ident in tiger_lake_ids:
+                return {0:{'mode':'shared','vendor':'intel',
+                    'model':'Intel Iris Xe integrated (Tiger Lake)',
+                    'total_mb':None,'free_mb':None,
+                    'note':'No dedicated VRAM pool. GPU allocations share system RAM.'}}
+    except (OSError,ValueError):
+        return {}
+    return {}
+
+def gpu_memory_inventory():
+    """Expose dedicated NVIDIA telemetry, or known Intel shared-memory graphics."""
+    dedicated=nvidia_vram_mb()
+    if dedicated:
+        return {idx:{**info,'mode':'dedicated','vendor':'nvidia'}
+                for idx,info in dedicated.items()}
+    return intel_iris_xe_shared_gpu()
+
 class ResourceGate:
-    def __init__(self, memory_reader=memory_available_mb, gpu_reader=nvidia_vram_mb):
+    def __init__(self, memory_reader=memory_available_mb, gpu_reader=gpu_memory_inventory):
         self.memory_reader=memory_reader
         self.gpu_reader=gpu_reader
 
@@ -158,25 +194,44 @@ class ResourceGate:
         return db.execute('SELECT app,task FROM jobs WHERE status IN ("leased","stranded")').fetchall()
 
     def snapshot(self,db):
-        cfg=self.config(db)
-        live_ram=self.memory_reader()
         gpu=self.gpu_reader()
+        cfg=self.config(db)
+        intel=any(isinstance(info,dict) and info.get('mode')=='shared'
+                  and info.get('vendor')=='intel' for info in gpu.values())
+        total=physical_ram_total_mb() if intel else None
+        if intel and total is not None and total<=24576:
+            configured={row['name'] for row in db.execute('SELECT name FROM resource_config')}
+            if 'min_free_ram_mb' not in configured:
+                cfg['min_free_ram_mb']=INTEL_DESKTOP_MIN_FREE_RAM_MB
+            if 'max_parallel' not in configured:
+                cfg['max_parallel']=INTEL_DESKTOP_MAX_PARALLEL
         active=self._active(db)
         used_ram=0
+        shared_ram=0
         reserved_vram={}
         used_apps={}
+        active_integrated=0
         for row in active:
-            p=self.profile(db,row['app'],row['task'])
-            used_ram+=p['ram_mb']
-            if p['vram_mb']:
-                idx=p['gpu_index']
-                reserved_vram[idx]=reserved_vram.get(idx,0)+p['vram_mb']
+            profile=self.profile(db,row['app'],row['task'])
+            used_ram+=profile['ram_mb']
+            if profile['vram_mb']:
+                idx=profile['gpu_index']
+                info=gpu.get(idx)
+                if info is not None and info.get('mode','dedicated')=='dedicated':
+                    reserved_vram[idx]=reserved_vram.get(idx,0)+profile['vram_mb']
+                else:
+                    # A vanished GPU sensor must never release an in-use RAM budget.
+                    used_ram+=profile['vram_mb']
+                    shared_ram+=profile['vram_mb']
+                    active_integrated+=1
             used_apps[row['app']]=used_apps.get(row['app'],0)+1
-        return {'capacity':cfg,'memory_available_mb':live_ram,
-                'reserved_ram_mb':used_ram,
+        return {'capacity':cfg,'memory_available_mb':self.memory_reader(),
+                'reserved_ram_mb':used_ram,'reserved_shared_gpu_ram_mb':shared_ram,
                 'gpu':gpu,'reserved_vram_mb':reserved_vram,
+                'active_integrated_gpu_jobs':active_integrated,
+                'max_integrated_gpu_jobs':MAX_INTEGRATED_GPU_JOBS,
                 'active_jobs':len(active),'active_by_app':used_apps,
-                'trust':'admission-only; external workers must enforce memory limits'}
+                'trust':'admission-only; host workers must enforce memory limits'}
 
     def admit(self,db,app,task,snapshot=None):
         """Only call inside a SQLite BEGIN IMMEDIATE transaction."""
@@ -192,14 +247,26 @@ class ResourceGate:
             return None,'ram_sensor_unavailable'
         # Subtract reservations even though some may already be physically used:
         # deliberately conservative rather than double-spending system headroom.
-        if available-s['reserved_ram_mb']-cfg['min_free_ram_mb']<profile['ram_mb']:
+        reading=s['gpu'].get(profile['gpu_index']) if profile['vram_mb'] else None
+        mode=reading.get('mode','dedicated') if reading else None
+        required_ram=profile['ram_mb']
+        if profile['vram_mb'] and mode=='shared':
+            # Integrated GPU allocations draw from the SAME physical RAM.
+            required_ram+=profile['vram_mb']
+        if available-s['reserved_ram_mb']-cfg['min_free_ram_mb']<required_ram:
             return None,'ram_headroom'
         if profile['vram_mb']:
-            idx=profile['gpu_index']
-            reading=s['gpu'].get(idx)
-            if reading is None:
+            if not reading:
                 return None,'gpu_sensor_unavailable'
-            if (reading['free_mb']-s['reserved_vram_mb'].get(idx,0)
-                -cfg['min_free_vram_mb']<profile['vram_mb']):
-                return None,'vram_headroom'
-        return profile,None
+            if mode=='shared':
+                if s['active_integrated_gpu_jobs']>=MAX_INTEGRATED_GPU_JOBS:
+                    return None,'integrated_gpu_busy'
+            elif mode=='dedicated':
+                if (reading['free_mb']-s['reserved_vram_mb'].get(profile['gpu_index'],0)
+                    -cfg['min_free_vram_mb']<profile['vram_mb']):
+                    return None,'vram_headroom'
+            else:
+                return None,'gpu_sensor_unavailable'
+        return {**profile,'gpu_memory_mode':mode,
+                'effective_ram_mb':required_ram,
+                'min_free_ram_mb':cfg['min_free_ram_mb']},None

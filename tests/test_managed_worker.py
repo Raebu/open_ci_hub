@@ -55,7 +55,7 @@ class ManagedWorkerTests(unittest.TestCase):
                 return {'status':'queued','error':args[-1]['error']}
         with patch('managed_worker.subprocess.Popen') as proc:
             result=m.run_one(Client(),{'job':self.job},self.handlers,telemetry=lambda:{})
-        self.assertIn('GPU memory',result['error'])
+        self.assertIn('GPU vendor/mode',result['error'])
         proc.assert_not_called()
 
     def test_systemd_scope_unavailable_does_not_execute_unbounded(self):

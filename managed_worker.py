@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 from application_client import ApplicationClient
-from resource_guard import nvidia_vram_mb
+from resource_guard import gpu_memory_inventory, memory_available_mb
 
 MAX_HANDLER_BYTES=16384
 MAX_HANDLER_SECONDS=1800
@@ -55,6 +55,12 @@ def build_command(job,handler):
     ram=budget['ram_mb']
     if type(ram)!=int or not 64<=ram<=262144:
         raise RuntimeError('Claim lacks valid RAM reservation.')
+    if budget.get('gpu_memory_mode')=='shared':
+        shared=budget.get('vram_mb')
+        if type(shared)!=int or not 1<=shared<=262144 or ram+shared>262144:
+            raise RuntimeError('Invalid Intel integrated GPU shared-RAM allocation.')
+        ram+=shared
+    # The same MemoryMax applies to CPU and Intel GPU shared-RAM work.
     unit='open-ci-app-'+job['job_id']
     if not re.fullmatch(r'open-ci-app-[a-f0-9]{32}',unit):
         raise RuntimeError('Invalid unique worker scope.')
@@ -80,7 +86,8 @@ def stop_scope(unit,process):
         try:process.wait(timeout=3)
         except subprocess.TimeoutExpired:process.kill()
 
-def run_one(client,claim,handlers,*,telemetry=nvidia_vram_mb):
+def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
+            ram_telemetry=memory_available_mb):
     job=claim.get('job')
     if not job:return {'status':'idle','reason':claim.get('reason')}
     task=job['task'];jid=job['job_id']
@@ -93,16 +100,34 @@ def run_one(client,claim,handlers,*,telemetry=nvidia_vram_mb):
     unit,args=build_command(job,handler)
     gpu=budget['gpu_index']
     reserve=budget['vram_mb']
+    gpu_mode=budget.get('gpu_memory_mode','dedicated') if reserve else None
+    ram_floor=budget.get('min_free_ram_mb',2048)
+    if type(ram_floor)!=int or ram_floor<256 or ram_floor>262144:
+        return client.complete(jid,token,False,{'error':'Invalid machine RAM reserve.'})
     if reserve:
         live=telemetry().get(gpu)
-        if not live or live['free_mb'] < reserve+1024:
-            return client.complete(jid,token,False,{'error':'GPU memory or telemetry unavailable.'})
+        if not live or live.get('mode','dedicated')!=gpu_mode:
+            return client.complete(jid,token,False,{'error':'GPU vendor/mode sensor unavailable or mismatched.'})
+        if gpu_mode=='shared':
+            # Never ask for NVIDIA VRAM on an Intel integrated GPU.
+            # The reservation is backed entirely by physical system memory.
+            available=ram_telemetry()
+            if available is None or available < ram_floor+budget['ram_mb']+reserve:
+                return client.complete(jid,token,False,{'error':'Intel shared GPU would breach system RAM headroom.'})
+        elif gpu_mode=='dedicated':
+            if live['free_mb'] < reserve+1024:
+                return client.complete(jid,token,False,{'error':'Dedicated GPU memory or telemetry unavailable.'})
+        else:
+            return client.complete(jid,token,False,{'error':'Unsupported GPU memory type.'})
     payload=json.dumps({'job_id':jid,'task':task,'payload':job['payload'],
                         'attempt':job['attempt']},separators=(',',':'))
     env={k:v for k,v in os.environ.items() if k not in (
-        'OPEN_CI_WORKER_TOKEN','OPEN_CI_APP_TOKEN','GITHUB_TOKEN','CI_JOB_TOKEN')}
-    if reserve:
+        'OPEN_CI_WORKER_TOKEN','OPEN_CI_APP_TOKEN','GITHUB_TOKEN','CI_JOB_TOKEN',
+        'CUDA_VISIBLE_DEVICES','OPEN_CI_INTEL_SHARED_GPU')}
+    if reserve and gpu_mode=='dedicated':
         env['CUDA_VISIBLE_DEVICES']=str(gpu)
+    elif reserve and gpu_mode=='shared':
+        env['OPEN_CI_INTEL_SHARED_GPU']='1'
     process=None;stop=threading.Event();failure=[]
     def watch():
         next_heartbeat=time.monotonic()+60
@@ -110,8 +135,16 @@ def run_one(client,claim,handlers,*,telemetry=nvidia_vram_mb):
             if process.poll() is not None:return
             if reserve:
                 reading=telemetry().get(gpu)
-                if reading is None or reading['free_mb']<1024:
-                    failure.append('GPU VRAM headroom/telemetry breach')
+                if reading is None or reading.get('mode','dedicated')!=gpu_mode:
+                    failure.append('GPU telemetry or vendor changed')
+                    stop_scope(unit,process);return
+                if gpu_mode=='shared':
+                    available=ram_telemetry()
+                    if available is None or available<ram_floor:
+                        failure.append('Intel shared GPU exhausted safe system RAM headroom')
+                        stop_scope(unit,process);return
+                elif reading['free_mb']<1024:
+                    failure.append('Dedicated GPU VRAM headroom breach')
                     stop_scope(unit,process);return
             if time.monotonic()>=next_heartbeat:
                 try:client.heartbeat(jid,token)

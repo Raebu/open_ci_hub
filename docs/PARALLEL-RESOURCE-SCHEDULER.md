@@ -8,13 +8,21 @@ Open CI Hub's app runtime can admit **multiple projects concurrently** on the sa
 - By default: at most **four parallel app jobs globally**, **two per project**. Host owner can change both.
 - Each task has an owner-approved RAM allocation (default 512 MiB). GPU tasks must have an explicitly configured VRAM reservation and GPU ID.
 - Admission requires at least **2,048 MiB remaining RAM headroom** and **1,024 MiB free VRAM headroom** *after conservative existing reservations*. Linux RAM telemetry also respects the process cgroup-v2 memory capacity when available.
-- Nvidia GPU VRAM total/free readings use a bounded 3-second nvidia-smi probe. AMD, Intel and GPU setups without supported telemetry **fail closed for GPU tasks** (CPU tasks continue). VRAM reservations do not constitute hardware-enforced VRAM limits.
+- For dedicated NVIDIA GPUs, bounded nvidia-smi telemetry enforces admission headroom. **For known Intel Iris Xe Tiger Lake integrated graphics, there is no separate VRAM pool**: the task's vram_mb parameter means *additional shared system-memory working-set budget* and counts against RAM headroom and the worker's cgroup MemoryMax. One integrated GPU task may run at a time; CPU-only tasks can continue. Unknown GPU devices fail closed for GPU work. Neither Intel nor NVIDIA GPU allocations have a universal hard GPU-memory cap.
 - An unavailable RAM sensor prevents admission rather than assuming unlimited memory.
 - Jobs that lose their lease become **stranded** rather than auto-reclaimed. Their resource reservations remain held until the host owner verifies that the old worker process has exited and explicitly clears the stranded job. This avoids quietly doubling resource usage and side effects.
 - For CPU/RAM jobs, the optional managed_worker.py invokes fixed, local-owner-approved handlers through a **systemd --user --scope** unit with MemoryMax, MemorySwapMax=0 and TasksMax; if the systemd user manager/cgroup enforcement isn't available, it does not launch unbounded work.
-- For GPU tasks on NVIDIA, managed_worker.py checks free VRAM before launch and continuously monitors a minimum 1 GiB free buffer; it requests the systemd scope stop if the buffer falls too low or telemetry fails. This is a *software watchdog*: allocation spikes and external applications can still OOM a GPU before the next sample. Use separate GPUs or process isolation if stricter guarantees are needed.
+- For dedicated NVIDIA jobs, managed_worker.py checks dedicated free VRAM and monitors its 1 GiB buffer. **For Intel integrated jobs**, the worker verifies the Intel GPU device, checks system RAM against the combined RAM+shared-GPU reservation and preserves the configured 4 GiB desktop reserve, including during the job. It requests termination if telemetry fails or RAM headroom is breached. This is a *software watchdog*: allocation spikes and external applications can still OOM a GPU before the next sample. Use separate GPUs or process isolation if stricter guarantees are needed.
 
 **This scheduler does not claim to isolate an arbitrary executable running outside managed_worker.py**, and does not manage existing CI runner container resource usage. Worker participation is essential.
+
+## Intel Iris Xe (Razer Book 13, 16 GB system RAM)
+
+A Core i7-1165G7 with Intel Iris Xe does **not** have an independent 6–12 GB NVIDIA VRAM pool. Its graphics allocations consume the same physical RAM used by Garuda, KDE, CI and applications.
+
+The scheduler checks Linux DRM PCI vendor/device IDs to identify supported Intel Tiger Lake Iris Xe integrated GPU devices. If those IDs or DRM interfaces aren't visible (for example from inside a CI runner container), it refuses GPU admissions instead of inventing memory. On a confirmed 16 GB Intel desktop, default admission reserves **4096 MiB for the system** and limits the queue to **three concurrent app jobs**, of which **one** can be an integrated-GPU task. Explicit owner-configured limits still override these defaults. Before running, read `python3 app_runtime.py resources` on the actual host to confirm detected memory/GPU. Worker limits cannot protect unmanaged CI runner containers; account for them when setting budgets.
+
+**Terminology:** the existing `--vram-mb` option remains for compatibility, but on Intel Iris Xe it is an extra shared-RAM budget rather than dedicated VRAM. Example: `--ram-mb 2048 --vram-mb 2048 --gpu-index 0` reserves 4096 MiB *total system RAM* and sets `MemoryMax=4096M` for an opted-in managed worker. GPU allocations are not always charged to cgroups, so monitoring and real-host testing remain essential.
 
 ## Owner configuration (only after updating the PC)
 
@@ -23,19 +31,19 @@ cd /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
 git pull --ff-only origin main
 
 # Global queue concurrency and OS memory headroom.
-python3 app_runtime.py global-resources --max-parallel 4 --min-free-ram-mb 2048 --min-free-vram-mb 1024 --confirm
+python3 app_runtime.py global-resources --max-parallel 3 --min-free-ram-mb 4096 --min-free-vram-mb 0 --confirm
 
 # Existing apps should first be registered as in docs/APPLICATION-RUNTIME-API.md
 python3 app_runtime.py parallel raeburnemailer --max-parallel 2 --confirm
 python3 app_runtime.py budget raeburnemailer prepare --ram-mb 512 --confirm
 
 python3 app_runtime.py parallel clientmotive --max-parallel 1 --confirm
-python3 app_runtime.py budget clientmotive video --ram-mb 4096 --vram-mb 6144 --gpu-index 0 --confirm
+python3 app_runtime.py budget clientmotive video --ram-mb 2048 --vram-mb 2048 --gpu-index 0 --confirm
 
 python3 app_runtime.py resources
 ~~~
 
-These are examples, not measurements of your actual Garuda hardware. Check memory_available_mb and nvidia-smi results before approving values. Do not set VRAM budgets to the entire advertised GPU capacity.
+These are examples, not measurements of your actual Garuda hardware. Confirm the integrated Intel GPU appears as `mode: shared` in the resource inventory and check available RAM before approving values. Do not use nvidia-smi as a prerequisite on this laptop. No dedicated GPU memory total should be displayed for Iris Xe.
 
 The mobile **App Runtime** dashboard shows active jobs, reserved RAM/VRAM, per-app concurrency and whether GPU telemetry is available.
 
@@ -72,7 +80,7 @@ Under systemd user sessions, enabling MemoryMax can require cgroup-v2 delegation
 3. Add an independent fleet-wide scheduler to coordinate jobs on **multiple PCs**. Currently admission is central only to one app-runtime SQLite store.
 4. Integrate GitHub/GitLab/CircleCI runner capacity into global accounting. Existing runner jobs are outside this admission gate and could still compete for RAM/VRAM.
 5. Add a supervisor with durable process ownership and automated orphan termination before unattended retries. Until then, lease expiry intentionally strands tasks for explicit safe recovery.
-6. Install VRAM probes for other GPU vendors and verify CUDA_VISIBLE_DEVICES behaviour. NVIDIA VRAM is not hard-isolated even with a watchdog.
+6. Expand Intel GPU support beyond the known Tiger Lake IDs and add AMD/other vendor probes without guessing GPU memory totals. NVIDIA dedicated VRAM is not hard-isolated by the watchdog, and Intel shares host RAM.
 
 For a stranded job after confirming that its original handler scope is no longer running:
 
