@@ -168,3 +168,9 @@ Use `python3 scripts/build_distribution.py HEAD` to produce deterministic Git-co
 Open CI Hub now includes a [private application API](docs/APPLICATION-RUNTIME-API.md) for your own services to submit typed JSON work to a bounded, durable SQLite queue. App-scoped submitter and worker tokens are separate and issued only by a host-owner CLI, never through browser JavaScript. Worker leases, heartbeats, bounded retries, idempotency keys and status/results are supported. Other applications can integrate through the included Python standard-library application_client.py. An **App Runtime** tab shows worker queue metrics without exposing secrets.
 
 **Important:** The hub queues authorised work; separate application workers execute their own application logic under their own deployment/security boundary. This phase does not run untrusted commands, offer root access, install app containers, expose a public API, dispatch GPU tasks automatically, or activate remote services on Garuda. Full live integration requires host installation and protected Tailscale Serve configuration.
+
+## Parallel projects with RAM/VRAM safeguards
+
+The [Parallel Scheduling guide](docs/PARALLEL-SCHEDULING.md) describes multi-project job concurrency with per-PC shared RAM/VRAM/CPU budgets, safety reserves for the desktop, application concurrency caps, owner-approved task resource profiles, node-bound worker identities and live worker-reported memory/GPU telemetry. Transactional SQLite job claims prevent cooperating workers from over-reserving configured capacity. The App Runtime dashboard shows remaining reservation budgets.
+
+**Important:** This is *resource-aware admission control*, not hard OS memory or GPU enforcement. Resource usage can exceed declared requests if a worker is faulty; systemd/cgroups hard memory limits, GPU process monitoring and lease-driven process termination still need to be implemented and proven on the real host.
