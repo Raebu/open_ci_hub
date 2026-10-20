@@ -282,6 +282,42 @@ class Broker:
             db.commit()
         return result
 
+    def emergency_stop(self,*,confirm=False):
+        """Stop all *managed application scope units*; do not touch CI jobs or desktop.
+
+        This is a host-local systemd operation. Incomplete kills remain visibly
+        unresolved and all leases stay stranded until verified safe recovery.
+        """
+        if confirm is not True:
+            raise PermissionError('Explicit emergency action approval required.')
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            ResourceGate.set_controls(db,paused=True)
+            jobs=db.execute('SELECT id FROM jobs WHERE status IN ("leased","stranded")').fetchall()
+            db.execute('UPDATE jobs SET status="stranded" WHERE status="leased"')
+            db.commit()
+        import subprocess
+        outcomes=[]
+        for row in jobs:
+            unit='open-ci-app-'+row['id']+'.scope'
+            try:
+                stopped=subprocess.run(['/usr/bin/systemctl','--user','--no-ask-password',
+                    'stop',unit],timeout=12,stdin=subprocess.DEVNULL,
+                    capture_output=True,check=False)
+                # A successful stop request is not proof that children are dead.
+                probe=subprocess.run(['/usr/bin/systemctl','--user','--no-ask-password',
+                    'is-active',unit],timeout=5,stdin=subprocess.DEVNULL,
+                    capture_output=True,check=False)
+                confirmed=stopped.returncode==0 and probe.returncode!=0
+            except (OSError,subprocess.TimeoutExpired):
+                confirmed=False
+            outcomes.append({'job_id':row['id'],'stop_confirmed':confirmed})
+        return {'paused':True,'target':'managed_app_scopes_only',
+                'stop_results':outcomes,
+                'unconfirmed':sum(not x['stop_confirmed'] for x in outcomes),
+                'leases_stranded':True,
+                'message':'New app jobs are paused. All running leases remain stranded until separately recovered.'}
+
     def reprioritize(self,job,priority,*,confirm=False):
         if confirm is not True:
             raise PermissionError('Explicit job priority confirmation required.')
@@ -446,6 +482,7 @@ def main(argv=None):
     resume=sub.add_parser('resume');resume.add_argument('--confirm',action='store_true')
     mode=sub.add_parser('mode');mode.add_argument('name',choices=['quiet','balanced','performance'])
     mode.add_argument('--confirm',action='store_true')
+    emergency=sub.add_parser('emergency-stop');emergency.add_argument('--confirm',action='store_true')
     priority=sub.add_parser('priority');priority.add_argument('job_id')
     priority.add_argument('value',type=int);priority.add_argument('--confirm',action='store_true')
     args=parser.parse_args(argv)
@@ -465,6 +502,7 @@ def main(argv=None):
         elif args.cmd=='resume':out=broker.control(paused=False,confirm=args.confirm)
         elif args.cmd=='mode':out=broker.control(mode=args.name,confirm=args.confirm)
         elif args.cmd=='priority':out=broker.reprioritize(args.job_id,args.value,confirm=args.confirm)
+        elif args.cmd=='emergency-stop':out=broker.emergency_stop(confirm=args.confirm)
         else:out=broker.resource_status()
         print(json.dumps(out,indent=2));return 0
     except (PermissionError,RuntimeError,ValueError,OSError,sqlite3.Error) as exc:
