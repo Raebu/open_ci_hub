@@ -30,7 +30,10 @@ REPO = re.compile(r'^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$')
 LOGIN = re.compile(r'^[A-Za-z0-9-]{1,39}$')
 DIGEST = re.compile(r'^[a-f0-9]{64}$')
 SCHEMA = 'open-ci-hub.host-task.v1'
-DOCUMENT = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\\.(?:txt|md)MAX_ISSUE_BYTES = 6000
+DOCUMENT = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\.(?:txt|md)$')
+ROUTINE_FIELDS = {'schema', 'description', 'operation', 'filename', 'content'}
+MAX_ROUTINE_CONTENT = 4000
+MAX_ISSUE_BYTES = 6000
 MAX_GH_BYTES = 200000
 
 
@@ -241,7 +244,7 @@ def stage_standing_requests(cfg):
                   'approved_at': int(time.time()),
                   'authorisation': 'standing_create_document'}
         # The caller holds the cross-process lock. Write exactly once.
-        secure_write(path, json.dumps(record, sort_keys=True) + '\\n')
+        secure_write(path, json.dumps(record, sort_keys=True) + '\n')
         count += 1
         if count == 10:
             break
