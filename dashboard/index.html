@@ -56,7 +56,8 @@
         <section id="pipelines"><div class="section-head"><div><h2>Pipeline cockpit</h2><p>Inspect recent runs and explicitly retry or cancel. All operations happen on the provider.</p></div></div>
           <div class="form-grid"><label>Provider<select id="pipeline-provider"><option value="github">GitHub</option><option value="gitlab">GitLab</option><option value="circleci">CircleCI workflows</option></select></label>
             <label>Repository path<input id="pipeline-repo" placeholder="owner/repository or group/project" maxlength="300"></label>
-            <div class="wide"><button id="browse-pipelines" type="button" class="btn secondary">Load recent pipelines</button></div></div>
+            <div class="wide"><button id="browse-pipelines" type="button" class="btn secondary">Load recent pipelines</button> <button id="ci-explain" type="button" class="btn secondary">Explain CI workflow rejection</button></div></div>
+          <div id="ci-workflow-report" class="results" role="status" aria-live="polite"></div>
           <div id="pipeline-items" class="results" aria-live="polite"></div>
           <div id="job-details" class="results" aria-live="polite"></div>
         </section>

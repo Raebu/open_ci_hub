@@ -32,12 +32,18 @@ def list_jobs(provider: str, repo: str, run_id: str) -> list[dict]:
         return [{'id': str(x.get('id', '')), 'name': x.get('name', ''),
                  'status': x.get('conclusion') or x.get('status', 'unknown'),
                  'runner': x.get('runner_name') or 'Waiting for worker',
-                 'url': x.get('html_url', '')} for x in rows]
+                 'url': x.get('html_url', ''),
+                 'failed_steps': [str(step.get('name', ''))[:120]
+                                  for step in (x.get('steps') if isinstance(x.get('steps'), list) else [])[:50]
+                                  if isinstance(step, dict) and step.get('conclusion') == 'failure'][:3],
+                 'failure_reason': str(x.get('failure_reason') or '')[:160]} for x in rows]
     if provider == 'gitlab':
         rows = _list(invoke_json(['glab', 'api', f'projects/{quote(repo, safe="")}/pipelines/{run_id}/jobs?per_page=100']))
         return [{'id': str(x.get('id', '')), 'name': x.get('name', ''), 'status': x.get('status', 'unknown'),
                  'runner': (x.get('runner') or {}).get('description', 'Waiting for worker'),
-                 'url': x.get('web_url', '')} for x in rows]
+                 'url': x.get('web_url', ''),
+                 'failure_reason': str(x.get('failure_reason') or '')[:160],
+                 'failed_steps': []} for x in rows]
     raise ValueError('Job details currently support GitHub and GitLab.')
 
 
