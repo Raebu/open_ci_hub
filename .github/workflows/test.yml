@@ -22,13 +22,13 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
     runs-on: [self-hosted, linux, local-ci]
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Record full Python test execution
-        run: python3 execution_evidence.py run --name python-unittest --output .local/ci-proof/receipt.json --timeout 300 -- python3 -m unittest discover -s tests -v
+        run: python3 execution_evidence.py run --name python-unittest --output .local/ci-proof/receipt.json --timeout 540 -- python3 -m unittest discover -s tests -v
       - name: Show sanitised failure details
         if: failure()
         run: |

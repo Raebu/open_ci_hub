@@ -1,6 +1,7 @@
 """Protected, host-owned memory-scoped workers and GPU watchdog regression tests."""
 from pathlib import Path
 import json
+import io
 import os
 import subprocess
 import tempfile
@@ -70,14 +71,18 @@ class ManagedWorkerTests(unittest.TestCase):
     def test_success_uses_preapproved_handler_and_reports_json(self):
         self.job['resources'].update({'vram_mb':0,'gpu_index':None})
         calls=[]
+        class CaptureStdin(io.BytesIO):
+            def close(self):
+                calls.append(('input',json.loads(self.getvalue())))
+                super().close()
         class FakeProc:
             returncode=0
             def __init__(self,cmd,**kwargs):
                 calls.append((cmd,kwargs))
-            def poll(self):return None
-            def communicate(self,input=None,timeout=None):
-                calls.append(('input',json.loads(input)))
-                return b'{"status":"ok"}',None
+                self.stdin=CaptureStdin()
+                self.stdout=io.BytesIO(b'{"status":"ok"}')
+            def poll(self):return 0
+            def wait(self,timeout=None):return 0
         class Client:
             def complete(self,*args):
                 calls.append(('complete',args))

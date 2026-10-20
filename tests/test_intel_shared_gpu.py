@@ -1,5 +1,6 @@
 """Intel Iris Xe shared-RAM accounting and user memory safeguard regression tests."""
 import json
+import io
 from pathlib import Path
 import subprocess
 import tempfile
@@ -161,10 +162,12 @@ class IntelManagedWorkerTests(unittest.TestCase):
         calls=[]
         class FakeProc:
             returncode=0
-            def __init__(self,args,**kwargs):calls.append(('start',args,kwargs))
+            def __init__(self,args,**kwargs):
+                calls.append(('start',args,kwargs))
+                self.stdin=io.BytesIO()
+                self.stdout=io.BytesIO(b'{"success":true}')
             def poll(self):return 0
-            def communicate(self,input=None,timeout=None):
-                return b'{"success":true}',None
+            def wait(self,timeout=None):return 0
         class Client:
             def complete(self,*args):return {'status':'completed'}
         with patch('managed_worker.subprocess.Popen',FakeProc):

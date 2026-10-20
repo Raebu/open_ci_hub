@@ -3,8 +3,8 @@
 
 Host owner installs handlers. API payload is JSON passed to stdin; no shell.
 Linux cgroups v2 enforce MemoryMax/MemorySwapMax when systemd permits scope
-creation. GPU VRAM is NOT hard-capped; an nvidia-smi watchdog stops unhealthy
-GPU jobs and the scheduler reserves VRAM before admission.
+creation. GPU VRAM is NOT hard-capped; GPU jobs use the applicable vendor probe
+and scheduler reservations. Child stdout is bounded without restricting app files.
 """
 from __future__ import annotations
 import argparse
@@ -14,10 +14,10 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from application_client import ApplicationClient
+from bounded_output import exchange
 from resource_guard import gpu_memory_inventory, memory_available_mb
 
 MAX_HANDLER_BYTES=16384
@@ -73,7 +73,7 @@ def build_command(job,handler):
           '-p','CPUQuota=150%',
           '-p','CPUWeight=50',
           '-p','TasksMax=128',
-          '--','/usr/bin/prlimit','--fsize=8192:8192','--',*handler['argv']]
+          '--',*handler['argv']]
     return unit+'.scope',args
 
 def stop_scope(unit,process):
@@ -89,6 +89,22 @@ def stop_scope(unit,process):
         process.terminate()
         try:process.wait(timeout=3)
         except subprocess.TimeoutExpired:process.kill()
+
+def scope_confirmed_inactive(unit):
+    """A wrapper exiting is not evidence every systemd scope child has exited."""
+    if not re.fullmatch(r'open-ci-app-[a-f0-9]{32}\.scope',unit):
+        return False
+    try:
+        r=subprocess.run(['/usr/bin/systemctl','--user','--no-ask-password',
+              'show',unit,'--property=ActiveState','--property=ControlGroup',
+              '--property=LoadState','--no-pager'],capture_output=True,
+              text=True,timeout=5,check=False)
+        props=dict(line.split('=',1) for line in r.stdout.splitlines() if '=' in line)
+        return (r.returncode==0 and props.get('ActiveState') in ('inactive','failed')
+                and props.get('ControlGroup')==''
+                and props.get('LoadState') in ('loaded','not-found'))
+    except (OSError,subprocess.TimeoutExpired,ValueError):
+        return False
 
 def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
             ram_telemetry=memory_available_mb):
@@ -133,7 +149,6 @@ def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
     elif reserve and gpu_mode=='shared':
         env['OPEN_CI_INTEL_SHARED_GPU']='1'
     process=None;stop=threading.Event();failure=[]
-    capture=tempfile.TemporaryFile(mode='w+b')
     def watch():
         next_heartbeat=time.monotonic()+60
         while not stop.wait(1):
@@ -159,36 +174,27 @@ def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
                 next_heartbeat=time.monotonic()+60
 
     try:
-        if not Path('/usr/bin/prlimit').is_file():
-            capture.close()
-            return client.complete(jid,token,False,{'error':'Kernel file-size limit wrapper unavailable.'})
-        process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=capture,
+        process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT,env=env,cwd=str(Path.home()),
                                  start_new_session=True)
     except OSError:
-        capture.close()
         return client.complete(jid,token,False,{'error':'systemd user scope unavailable.'})
     supervisor=threading.Thread(target=watch,daemon=True)
     supervisor.start()
     try:
-        output,_=process.communicate(input=payload.encode(),timeout=handler['timeout'])
-    except subprocess.TimeoutExpired:
-        failure.append('Task timed out')
-        stop_scope(unit,process)
-        output=b''
+        exchange_result=exchange(process,payload.encode(),handler['timeout'],
+                                  terminate=lambda:stop_scope(unit,process))
     finally:
         stop.set()
         supervisor.join(timeout=5)
-        capture.flush()
-        capture.seek(0)
-        bounded=capture.read(4097)
-        capture.close()
-        # Production subprocess returns None when stdout points to a file.
-        # Tests may return a small in-memory mock value.
-        if output is None:
-            output=bounded
-    if failure:
-        return client.complete(jid,token,False,{'error':failure[0]})
+    output=exchange_result['output']
+    reason=exchange_result['reason']
+    if failure or reason:
+        # Never acknowledge and release a lease after a kill unless the
+        # systemd scope really ended. It remains reserved/stranded otherwise.
+        if not scope_confirmed_inactive(unit):
+            return {'status':'stranded','reason':'scope_termination_unverified'}
+        return client.complete(jid,token,False,{'error':(failure[0] if failure else reason)})
     if process.returncode:
         return client.complete(jid,token,False,{'error':'Approved application handler returned nonzero.'})
     if len(output)>4096:
