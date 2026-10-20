@@ -10,7 +10,7 @@ import app_runtime
 import parallel_scheduler as parallel
 import resource_probe
 
-def telemetry(ram=12000,vram=6000,now=None):
+def telemetry(ram=12000,vram=7000,now=None):
     return {'memory_available_mb':ram,'vram_available_mb':vram,
             'observed_at':now if now is not None else time.time()}
 
@@ -136,8 +136,14 @@ class ParallelSchedulingTests(unittest.TestCase):
         claim=self.b.claim(self.worker['raeburnemailer'],telemetry())['job']
         with self.assertRaises(RuntimeError):
             self.b.configure_task('raeburnemailer','prepare',3000,0,1,confirm=True)
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             self.b.configure_app_limit('raeburnemailer',0,confirm=True)
+        self.b.submit(self.send['raeburnemailer'],'prepare',{'second':True})
+        second=self.b.claim(self.worker['raeburnemailer'],telemetry())['job']
+        self.assertIsNotNone(second)
+        with self.assertRaises(RuntimeError):
+            self.b.configure_app_limit('raeburnemailer',1,confirm=True)
+        self.b.complete(self.worker['raeburnemailer'],second['job_id'],second['lease_token'],True,{})
         self.b.complete(self.worker['raeburnemailer'],claim['job_id'],claim['lease_token'],True,{})
         self.b.configure_task('raeburnemailer','prepare',3000,0,1,confirm=True)
 
@@ -190,12 +196,12 @@ class ParallelHTTPTests(DashboardHTTPTests):
 
     def test_http_worker_claim_requires_real_observations(self):
         header={'Authorization':'Bearer '+self.worker}
-        status,body,_=self.request('POST','/api/v1/workers/claim',{},headers=header)
-        self.assertEqual(status,400)
         submit={'Authorization':'Bearer '+self.submit}
         status,job,_=self.request('POST','/api/v1/jobs',
                   {'task':'run','payload':{'action':'sample'}},headers=submit)
         self.assertEqual(status,201)
+        status,body,_=self.request('POST','/api/v1/workers/claim',{},headers=header)
+        self.assertEqual(status,400)
         status,data,_=self.request('POST','/api/v1/workers/claim',
                 {'telemetry':telemetry(ram=9000,vram=0)},headers=header)
         self.assertEqual(status,200)
