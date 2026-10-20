@@ -160,11 +160,13 @@ def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
 
     try:
         if not Path('/usr/bin/prlimit').is_file():
+            capture.close()
             return client.complete(jid,token,False,{'error':'Kernel file-size limit wrapper unavailable.'})
         process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=capture,
                                  stderr=subprocess.STDOUT,env=env,cwd=str(Path.home()),
                                  start_new_session=True)
     except OSError:
+        capture.close()
         return client.complete(jid,token,False,{'error':'systemd user scope unavailable.'})
     supervisor=threading.Thread(target=watch,daemon=True)
     supervisor.start()
