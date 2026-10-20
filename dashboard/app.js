@@ -93,7 +93,7 @@ async function showFailurePreview(provider,repo,run,root){
     let inFlight=state.failurePromises.get(key);
     if(!inFlight){
       inFlight=api('/api/ci/failure?provider='+encodeURIComponent(provider)+
-        '&repo='+encodeURIComponent(repo)+'&run='+encodeURIComponent(run));
+        '&repo='+encodeURIComponent(repo)+'&run='+encodeURIComponent(run)+'&logs=1');
       state.failurePromises.set(key,inFlight);
       inFlight.finally(()=>state.failurePromises.delete(key)).catch(()=>{});
     }
@@ -109,9 +109,27 @@ async function showFailurePreview(provider,repo,run,root){
   if(!root.isConnected)return;
   const data=cached.data;
   root.replaceChildren(el('p',data.message,'small'));
+  if(data.commit)root.append(el('p','Commit: '+data.commit+' · Attempt: '+(data.attempt||'?'),'small'));
+  if(data.run_url)root.append(safeLink(data.run_url,'Open original workflow run'));
   for(const job of data.failures||[]){
-    root.append(el('p',job.job+': '+job.reason,'small'));
-    if(job.url)root.append(safeLink(job.url,'View failed job'));
+    const line=el('div',undefined,'result-row');
+    line.append(el('strong',job.job+' · '+job.state),
+                el('p',job.reason,'small'),
+                el('p','Runner: '+(job.runner_assigned?job.runner:'NOT ASSIGNED')+
+                  ' · Job #'+job.job_id+
+                  (job.exit_code_from_log!==null&&job.exit_code_from_log!==undefined
+                    ?' · Observed exit code: '+job.exit_code_from_log:''),
+                  'small'));
+    if(job.log_state==='available'){
+      line.append(el('p',job.excerpt_kind==='error_context'
+        ?'Actual failing log lines (redacted):':'End of job log (no error marker found):','small'),
+        el('pre',job.log_excerpt||'No log text returned.','job-log'),
+        el('p','Selected excerpt only; full provider log and artifacts retain more details.','small'));
+    }else{
+      line.append(el('p','Exact error text unavailable: '+(job.log_note||'Provider did not return a transcript.'),'small'));
+    }
+    if(job.url)line.append(safeLink(job.url,'Open original job and logs'));
+    root.append(line);
   }
 }
 async function browsePipelines(){
@@ -157,6 +175,9 @@ async function showJobDetails(provider,repo,run){
   const root=$('job-details');root.replaceChildren(el('h3',`Pipeline #${run}: native jobs`));
   root.append(btn('Close job details',async()=>root.replaceChildren()));
   const query=`provider=${encodeURIComponent(provider)}&repo=${encodeURIComponent(repo)}&run=${encodeURIComponent(run)}`;
+  const failureRoot=el('div',undefined,'ci-failure-report');
+  root.append(failureRoot);
+  await showFailurePreview(provider,repo,run,failureRoot);
   try{
     const proof=await api('/api/execution-evidence?'+query);
     const label=proof.verification==='runner-reported'?'Receipt available — not independently attested':'Execution unproven';
