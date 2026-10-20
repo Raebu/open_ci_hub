@@ -266,6 +266,21 @@ class Broker:
             db.commit()
         return {'job_id':job,'status':status,'attempts':state['attempts']}
 
+    def inventory(self):
+        """Dashboard-only safe metadata: never expose tokens or queued payloads."""
+        with self._db() as db:
+            rows=db.execute('SELECT a.app,a.tasks,a.enabled,j.status,COUNT(j.id) AS amount '
+                            'FROM apps a LEFT JOIN jobs j ON j.app=a.app '
+                            'GROUP BY a.app,j.status ORDER BY a.app').fetchall()
+        apps={}
+        for row in rows:
+            item=apps.setdefault(row['app'],{'app':row['app'],
+                'tasks':json.loads(row['tasks']),'enabled':bool(row['enabled']),'queues':{}})
+            if row['status']:
+                item['queues'][row['status']]=row['amount']
+        return {'apps':list(apps.values()),'runtime':'app-worker-broker',
+                'execute_untrusted_code':False}
+
     def overview(self,who):
         with self._db() as db:
             rows=db.execute('SELECT status,COUNT(*) AS count FROM jobs WHERE app=? GROUP BY status',
