@@ -359,12 +359,41 @@ def main(argv=None):
     reg.add_argument('--confirm',action='store_true')
     issue=sub.add_parser('issue');issue.add_argument('app');issue.add_argument('role',choices=sorted(ROLE))
     issue.add_argument('--confirm',action='store_true')
+    issue.add_argument('--node',help='Preapproved compute node (required for parallel workers)')
+    node=sub.add_parser('node')
+    node.add_argument('id')
+    node.add_argument('--memory-mb',required=True,type=int)
+    node.add_argument('--vram-mb',required=True,type=int)
+    node.add_argument('--cpu-slots',type=int,default=4)
+    node.add_argument('--max-parallel',type=int,default=3)
+    node.add_argument('--reserve-memory-mb',type=int)
+    node.add_argument('--reserve-vram-mb',type=int)
+    node.add_argument('--confirm',action='store_true')
+    task=sub.add_parser('task-resources')
+    task.add_argument('app');task.add_argument('task')
+    task.add_argument('--memory-mb',required=True,type=int)
+    task.add_argument('--vram-mb',type=int,default=0)
+    task.add_argument('--cpu-slots',type=int,default=1)
+    task.add_argument('--confirm',action='store_true')
+    limit=sub.add_parser('app-limit')
+    limit.add_argument('app');limit.add_argument('--max-parallel',type=int,required=True)
+    limit.add_argument('--confirm',action='store_true')
+    status=sub.add_parser('resources')
     revoke=sub.add_parser('revoke');revoke.add_argument('sha256');revoke.add_argument('--confirm',action='store_true')
     args=parser.parse_args(argv)
     try:
         broker=Broker(args.state)
         if args.cmd=='register':out=broker.register(args.app,args.tasks.split(','),confirm=args.confirm)
-        elif args.cmd=='issue':out=broker.issue(args.app,args.role,confirm=args.confirm)
+        elif args.cmd=='issue':out=broker.issue(args.app,args.role,confirm=args.confirm,node=args.node)
+        elif args.cmd=='node':out=broker.configure_node(
+            args.id,args.memory_mb,args.vram_mb,args.cpu_slots,args.max_parallel,
+            reserve_memory_mb=args.reserve_memory_mb,
+            reserve_vram_mb=args.reserve_vram_mb,confirm=args.confirm)
+        elif args.cmd=='task-resources':out=broker.configure_task(
+            args.app,args.task,args.memory_mb,args.vram_mb,args.cpu_slots,confirm=args.confirm)
+        elif args.cmd=='app-limit':out=broker.configure_app_limit(
+            args.app,args.max_parallel,confirm=args.confirm)
+        elif args.cmd=='resources':out=broker.inventory()
         else:out=broker.revoke(args.sha256,confirm=args.confirm)
         print(json.dumps(out,indent=2));return 0
     except (PermissionError,RuntimeError,ValueError,OSError,sqlite3.Error) as exc:
