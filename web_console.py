@@ -334,7 +334,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -342,10 +342,11 @@ class WebConsole:
                         return self.output(400, {'error': 'Duplicate query parameters are not allowed.'})
                     def param(key): return params.get(key, [''])[0]
                     try:
-                        if path == '/api/apps/inventory':
+                        if path in ('/api/apps/inventory','/api/apps/queue'):
                             if console.role(self) not in ('owner','editor'):
-                                return self.output(403, {'error':'Application inventory requires management access.'})
-                            return self.output(200,console.apps.inventory())
+                                return self.output(403, {'error':'Application management access required.'})
+                            return self.output(200,console.apps.inventory() if path.endswith('inventory')
+                                               else console.apps.queue_preview())
                         if path == '/api/host':
                             from host_agent import client_request
                             try:
@@ -440,6 +441,34 @@ class WebConsole:
                         return self.output(202, {'message': 'Approval requested. Open the desktop dashboard to approve this identity.'})
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Sign in or request mobile approval first.'})
+                    if path in ('/api/apps/control','/api/apps/priority'):
+                        if console.role(self) not in ('owner','editor'):
+                            return self.output(403, {'error':'Approved management identity required.'})
+                        if data.get('confirm') is not True:
+                            return self.output(400, {'error':'Explicit operation confirmation required.'})
+                        actor=console.remote_identity(self) or 'local-owner'
+                        if path.endswith('priority'):
+                            result=console.apps.reprioritize(data.get('job_id'),
+                                                              data.get('priority'),confirm=True)
+                            console.audit.add(actor,'apps.priority',str(data.get('job_id'))[:32],'success')
+                            return self.output(200,result)
+                        action=data.get('action')
+                        if action=='pause':
+                            result=console.apps.control(paused=True,confirm=True)
+                        elif action=='resume':
+                            result=console.apps.control(paused=False,confirm=True)
+                        elif action in ('quiet','balanced'):
+                            result=console.apps.control(mode=action,confirm=True)
+                        elif action=='performance':
+                            if not console.local(self) or console.role(self)!='owner':
+                                return self.output(403, {'error':'Performance mode requires local owner approval.'})
+                            result=console.apps.control(mode=action,confirm=True)
+                        elif action=='emergency_stop':
+                            result=console.apps.emergency_stop(confirm=True)
+                        else:
+                            return self.output(400,{'error':'Unsupported application control.'})
+                        console.audit.add(actor,'apps.'+action,'app-runtime','requested')
+                        return self.output(200,result)
                     if path.startswith('/api/host/terminal/'):
                         from host_agent import client_request
                         operation=path.rsplit('/',1)[-1]

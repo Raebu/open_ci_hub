@@ -15,6 +15,8 @@ services:
     security_opt: [no-new-privileges:true]
     pids_limit: 256
     mem_limit: 2g
+    cpus: 1.5
+    memswap_limit: 2g
 
   gitlab:
     profiles: [gitlab]
@@ -30,6 +32,8 @@ services:
     security_opt: [no-new-privileges:true]
     pids_limit: 256
     mem_limit: 2g
+    cpus: 1.5
+    memswap_limit: 2g
 
   circleci:
     profiles: [circleci]
@@ -42,6 +46,8 @@ services:
     security_opt: [no-new-privileges:true]
     pids_limit: 256
     mem_limit: 2g
+    cpus: 1.5
+    memswap_limit: 2g
 
 volumes:
   github-runner-state:

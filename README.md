@@ -176,3 +176,7 @@ The [parallel resource scheduler](docs/PARALLEL-RESOURCE-SCHEDULER.md) coordinat
 ### Intel Iris Xe on 16 GB Garuda
 
 On detected Tiger Lake Intel Iris Xe hardware, GPU working-memory reservations share the 16 GB system RAM rather than using an imaginary NVIDIA VRAM pool. The scheduler starts with 4 GiB reserved for KDE/OS, three app jobs at most, and one integrated-GPU job; explicit host-owner settings take precedence. The mobile App Runtime shows shared RAM instead of misleading dedicated VRAM values. Real hardware and worker cgroup behaviour must still be verified after local installation. See [parallel scheduler Intel guidance](docs/PARALLEL-RESOURCE-SCHEDULER.md#intel-iris-xe-razer-book-13-16-gb-system-ram).
+
+## Unified resource and operating controls
+
+The private [Workload Control](docs/WORKLOAD-CONTROL.md) layer observes the Docker memory reservations for managed native GitHub/GitLab/CircleCI runners and GitHub personal runner pool, and deducts them before admitting more application jobs. CPU-limited native runner starts use the same safety check. Managed app workers add bounded output capture, cgroup MemoryHigh/MemoryMax and CPUQuota. Host memory pressure, thermal conditions and battery can reduce new-job concurrency. The mobile App Runtime provides pause/resume, Quiet/Balanced mode, queue priority and app-only emergency-stop controls. Live Garuda enforcement remains pending owner host activation and validation.

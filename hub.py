@@ -218,6 +218,9 @@ def provider_action(provider: str, action: str) -> None:
             raise RuntimeError(f'Set up {provider} first.')
         if provider == 'circleci' and not (LOCAL / 'circleci.env').is_file():
             raise RuntimeError('CircleCI agent token not found; reconnect the provider.')
+        if 'Up' not in runner_state(provider):
+            from native_runner_observer import require_start_capacity
+            require_start_capacity(2048)
         compose('--profile', provider, 'up', '-d', provider)
     elif action == 'stop':
         compose('--profile', provider, 'stop', provider)

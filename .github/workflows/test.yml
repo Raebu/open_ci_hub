@@ -8,6 +8,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+concurrency:
+  group: open-ci-hub-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     if: >-
