@@ -180,3 +180,5 @@ On detected Tiger Lake Intel Iris Xe hardware, GPU working-memory reservations s
 ## Unified resource and operating controls
 
 The private [Workload Control](docs/WORKLOAD-CONTROL.md) layer observes the Docker memory reservations for managed native GitHub/GitLab/CircleCI runners and GitHub personal runner pool, and deducts them before admitting more application jobs. CPU-limited native runner starts use the same safety check. Managed app workers add bounded output capture, cgroup MemoryHigh/MemoryMax and CPUQuota. Host memory pressure, thermal conditions and battery can reduce new-job concurrency. The mobile App Runtime provides pause/resume, Quiet/Balanced mode, queue priority and app-only emergency-stop controls. Live Garuda enforcement remains pending owner host activation and validation.
+
+**Worker output hardening:** Worker responses are bounded independently from file creation. Abnormal scope termination requires verified systemd inactive state before releasing reservations. See [WORKLOAD-CONTROL](docs/WORKLOAD-CONTROL.md).
