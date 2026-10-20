@@ -25,6 +25,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Record full Python test execution
         run: python3 execution_evidence.py run --name python-unittest --output .local/ci-proof/receipt.json --timeout 300 -- python3 -m unittest discover -s tests -v
+      - name: Show sanitised failure details
+        if: failure()
+        run: |
+          if test -f .local/ci-proof/python-unittest.log; then
+            tail -n 160 .local/ci-proof/python-unittest.log
+          else
+            echo 'No unittest transcript was produced'
+          fi
       - name: Verify receipt matches actual execution transcript
         if: always()
         run: python3 execution_evidence.py verify .local/ci-proof/receipt.json

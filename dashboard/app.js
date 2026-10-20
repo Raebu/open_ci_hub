@@ -269,6 +269,25 @@ async function terminalClose(){
   }catch(err){notice(err.message,true);}
 }
 
+async function loadApps(){
+  const root=$('apps-items');root.replaceChildren(el('p','Checking application job queues…'));
+  if(state.role==='viewer'){root.replaceChildren(el('p','Application monitoring requires an approved editor or owner session.'));return;}
+  try{
+    const inventory=await api('/api/apps/inventory');
+    root.replaceChildren();
+    if(!inventory.apps.length){root.append(el('p','No applications registered yet. Use the local owner CLI to authorise one.'));return;}
+    for(const app of inventory.apps){
+      const card=el('article',undefined,'result-row');
+      const details=el('div');
+      details.append(el('strong',app.app),
+        el('p','Approved tasks: '+app.tasks.join(', '),'small'),
+        el('p','State: '+(app.enabled?'enabled':'disabled')+
+          ' · Queue: '+Object.entries(app.queues).map(([k,v])=>k+' '+v).join(', '),'small'));
+      card.append(details);root.append(card);
+    }
+  }catch(e){root.replaceChildren(el('p','App runtime unavailable: '+e.message));}
+}
+
 async function loadMachines(){
   const root=$('machine-items');root.replaceChildren(el('p','Loading trusted PCs…'));
   try{
@@ -330,7 +349,8 @@ async function init(){
     try{await api('/api/logout',{});notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadApps();});
+  $('apps-refresh').addEventListener('click',loadApps);
   $('machines-refresh').addEventListener('click',loadMachines);
   $('machine-enroll').addEventListener('submit',async e=>{
     e.preventDefault();

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import sqlite3
 import shutil
 import subprocess
 import sys
@@ -140,6 +141,8 @@ class WebConsole:
         self.pending_file = self.local_state / 'mobile-pending.json'
         self.static = root / 'dashboard'
         self.audit = AuditLog(self.local_state / 'activity.db')
+        from app_runtime import Broker
+        self.apps = Broker(self.local_state)
 
     def approved(self) -> dict[str, str]:
         """The account ID is the verified Tailscale login, not an untrusted client claim."""
@@ -265,18 +268,73 @@ class WebConsole:
                     raise ValueError('Expected a JSON object.')
                 return data
 
+            def app_api_trusted(self):
+                # Requests must originate on loopback or through authenticated
+                # private Tailscale Serve. Do NOT use Tailscale Funnel.
+                if console.local(self):
+                    return self.client_address[0] in ('127.0.0.1', '::1')
+                user=console.remote_identity(self)
+                return bool(user and console.approved().get(user) in ('owner','editor'))
+
+            def app_api_actor(self):
+                if not self.app_api_trusted():
+                    raise PermissionError('Private application API transport unavailable.')
+                header=self.headers.get('Authorization','')
+                if not header.startswith('Bearer ') or header.count(' ')!=1:
+                    raise PermissionError('Bearer application token required.')
+                return console.apps.auth(header[len('Bearer '):])
+
+            def app_api(self,path,method,data=None):
+                if not self.app_api_trusted():
+                    return self.output(403, {'error':'Private Tailscale or local API connection required.'})
+                try:
+                    who=self.app_api_actor()
+                except (PermissionError,ValueError):
+                    return self.output(401,{'error':'Missing, invalid or revoked application token.'})
+                try:
+                    if method=='GET':
+                        if path=='/api/v1/apps/self':
+                            return self.output(200,console.apps.overview(who))
+                        if path.startswith('/api/v1/jobs/'):
+                            return self.output(200,console.apps.inspect(who,path[len('/api/v1/jobs/'):]))
+                    elif method=='POST':
+                        if path=='/api/v1/jobs':
+                            result=console.apps.submit(who,data.get('task'),data.get('payload'),
+                                                       data.get('idempotency_key'))
+                            return self.output(200 if result['duplicate'] else 201,result)
+                        if path=='/api/v1/workers/claim':
+                            return self.output(200,console.apps.claim(who))
+                        if path=='/api/v1/workers/complete':
+                            return self.output(200,console.apps.complete(
+                                who,data.get('job_id'),data.get('lease_token'),
+                                data.get('success'),data.get('result')))
+                        if path=='/api/v1/workers/heartbeat':
+                            return self.output(200,console.apps.heartbeat(
+                                who,data.get('job_id'),data.get('lease_token')))
+                    return self.output(404, {'error':'Unknown app API route.'})
+                except PermissionError:
+                    return self.output(403, {'error':'Not authorised for this application, task or job.'})
+                except RuntimeError as exc:
+                    return self.output(409, {'error':str(exc)[:250]})
+                except (ValueError,TypeError,sqlite3.Error) as exc:
+                    return self.output(400, {'error':str(exc)[:250]})
+
             def do_GET(self):
                 parsed = urlsplit(self.path)
                 path = parsed.path
                 if len(self.path) > 2048:
                     return self.output(414, {'error': 'URL too long.'})
+                if path.startswith('/api/v1/'):
+                    if parsed.query:
+                        return self.output(400, {'error':'Application API does not accept query strings.'})
+                    return self.app_api(path,'GET')
                 if path == '/health':
                     return self.output(200, {'ok': True})
                 static = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/style.css': ('style.css', 'text/css')}
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -284,6 +342,10 @@ class WebConsole:
                         return self.output(400, {'error': 'Duplicate query parameters are not allowed.'})
                     def param(key): return params.get(key, [''])[0]
                     try:
+                        if path == '/api/apps/inventory':
+                            if console.role(self) not in ('owner','editor'):
+                                return self.output(403, {'error':'Application inventory requires management access.'})
+                            return self.output(200,console.apps.inventory())
                         if path == '/api/host':
                             from host_agent import client_request
                             try:
@@ -346,7 +408,18 @@ class WebConsole:
                 self.output(404, {'error': 'Not found'})
 
             def do_POST(self):
-                path = urlsplit(self.path).path
+                parsed = urlsplit(self.path)
+                path = parsed.path
+                if len(self.path)>2048:
+                    return self.output(414, {'error':'URL too long.'})
+                if path.startswith('/api/v1/'):
+                    if parsed.query:
+                        return self.output(400, {'error':'Application API does not accept query strings.'})
+                    try:
+                        data=self.json_input()
+                    except (ValueError,TypeError,json.JSONDecodeError) as exc:
+                        return self.output(400,{'error':str(exc)[:200]})
+                    return self.app_api(path,'POST',data)
                 if not console.origin_valid(self) or self.headers.get('X-Open-CI-Request') != '1':
                     return self.output(403, {'error': 'Origin or CSRF check failed.'})
                 try:
