@@ -278,9 +278,9 @@ class Broker:
             # Expired worker may STILL be running. Never reassign RAM/VRAM or
             # repeat side effects until host owner confirms process termination.
             db.execute('UPDATE jobs SET status="stranded",updated=?,'
-                       'result=? WHERE app=? AND status="leased" AND lease_until<=?',
+                       'result=? WHERE status="leased" AND lease_until<=?',
                        (now,json.dumps({'error':'Lease expired; original worker may still be running. '
-                           'Host owner must verify termination before recovery.'}),app,now))
+                           'Host owner must verify termination before recovery.'}),now))
             snapshot=self.resource_gate.snapshot(db)
             candidates=db.execute('SELECT id,task,payload,attempts FROM jobs '
                                   'WHERE app=? AND status="queued" '
