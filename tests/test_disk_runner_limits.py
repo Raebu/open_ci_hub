@@ -102,6 +102,17 @@ class RunnerLimitsTests(unittest.TestCase):
                 pool.start(repo)
         self.assertFalse(any(cmd[0] in ('run','start','rm') for cmd in calls))
 
+    def test_running_legacy_pool_runner_does_not_report_healthy_if_unbounded(self):
+        repo='Raebu/running';name,volume=pool.worker_names(repo)
+        with patch('runner_pool._state',return_value={repo:{
+                'container':name,'volume':volume,'branch':'main'}}),\
+             patch('runner_pool._existing_container',return_value='running'),\
+             patch('runner_pool._legacy_container_safe',return_value=False),\
+             patch('runner_pool._docker') as docker:
+            with self.assertRaisesRegex(RuntimeError,'does not meet'):
+                pool.start(repo)
+        docker.assert_not_called()
+
     def test_pool_new_container_has_bounded_swap_and_no_implicit_restart(self):
         repo='Raebu/fresh';name,volume=pool.worker_names(repo)
         calls=[]
