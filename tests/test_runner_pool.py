@@ -155,6 +155,35 @@ class RunnerPoolTests(unittest.TestCase):
         self.assertEqual(out[0]['status'],'paused-unsafe')
         schedule.assert_called_once()
 
+    def test_scheduler_reports_block_reason_instead_of_silent_skip(self):
+        repo='Raebu/problem'
+        name,volume=pool.worker_names(repo)
+        details={'code':'trigger_not_allowlisted',
+                 'message':'Untrusted pull-request event.',
+                 'suggestion':'Use a default-branch push-only workflow.'}
+        state={repo:{'container':name,'volume':volume,'branch':'main'}}
+        with patch('runner_pool._state', return_value=state), \
+             patch('runner_pool._active', return_value=set()), \
+             patch('runner_pool._trusted_workflow', return_value=False), \
+             patch.dict(pool._LAST_WORKFLOW_REPORTS, {(repo,'main'):details}, clear=True):
+            report=pool.schedule()
+        self.assertEqual(report['blocked'][0]['code'],'trigger_not_allowlisted')
+        self.assertIn('push-only',report['blocked'][0]['next_step'])
+        self.assertEqual(report['active'],0)
+
+    def test_scheduler_explains_why_a_runner_start_is_deferred(self):
+        repo='Raebu/blocked'
+        name,volume=pool.worker_names(repo)
+        state={repo:{'container':name,'volume':volume,'branch':'main'}}
+        with patch('runner_pool._state',return_value=state), \
+             patch('runner_pool._active',return_value=set()), \
+             patch('runner_pool._trusted_workflow',return_value=True), \
+             patch('runner_pool.queued',return_value=True), \
+             patch('runner_pool.start',side_effect=RuntimeError('Memory pressure')):
+            result=pool.schedule()
+        self.assertEqual(result['deferred'][0]['code'],'runner_start_deferred')
+        self.assertIn('Memory pressure',result['deferred'][0]['reason'])
+
     def test_stop_preserves_registered_volume(self):
         name,volume=pool.worker_names('Raebu/app')
         with patch('runner_pool._state',return_value={
