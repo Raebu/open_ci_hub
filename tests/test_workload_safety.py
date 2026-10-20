@@ -131,6 +131,46 @@ class UnifiedBrokerTests(unittest.TestCase):
         self.enqueue('report')
         self.assertEqual(self.b.claim(self.worker)['reason'],'critical_thermal')
 
+    def test_reconcile_stranded_without_scope_proof_never_releases(self):
+        job=self.enqueue('report')
+        self.b.claim(self.worker)
+        with self.b._db() as db:
+            db.execute('UPDATE jobs SET status="stranded" WHERE id=?',(job,))
+        class Fake:
+            def __init__(self,returncode,stdout):
+                self.returncode=returncode;self.stdout=stdout
+        with patch('subprocess.run',return_value=Fake(0,
+                'ActiveState=active\nControlGroup=/user.slice/active\nLoadState=loaded\n')):
+            result=self.b.reconcile_stranded()
+        self.assertEqual(result['still_stranded'],[job])
+        self.assertEqual(self.b.inspect(self.submit,job)['status'],'stranded')
+
+    def test_reconcile_verified_inactive_scope_marks_failed_not_requeued(self):
+        job=self.enqueue('report')
+        self.b.claim(self.worker)
+        with self.b._db() as db:
+            db.execute('UPDATE jobs SET status="stranded" WHERE id=?',(job,))
+        class Fake:
+            returncode=0
+            stdout='ActiveState=inactive\nControlGroup=\nLoadState=loaded\n'
+        with patch('subprocess.run',return_value=Fake()):
+            result=self.b.reconcile_stranded()
+        self.assertEqual(result['verified_failed'],[job])
+        self.assertFalse(result['automatic_retry'])
+        self.assertEqual(self.b.inspect(self.submit,job)['status'],'failed')
+        self.assertEqual(self.b.resource_status()['reserved_ram_mb'],0)
+
+    def test_watchdog_emergency_only_under_critical_pressure(self):
+        self.b.resource_gate=rg.ResourceGate(memory_reader=lambda:12000,
+            gpu_reader=lambda:{},policy_reader=lambda:{'temperature_c':96},
+            runner_reader=lambda:{'reserved_ram_mb':0,'active_runners':0,'reserved_cpus':0})
+        with patch.object(self.b,'emergency_stop',return_value={'paused':True}) as emergency,\
+             patch.object(self.b,'reconcile_stranded',return_value={}) as reconcile:
+            result=self.b.watchdog_once()
+        self.assertEqual(result['critical'],'critical_thermal')
+        emergency.assert_called_once_with(confirm=True)
+        reconcile.assert_called_once_with()
+
     def test_emergency_pauses_and_never_releases_leases(self):
         job=self.enqueue('report')
         self.b.claim(self.worker)
