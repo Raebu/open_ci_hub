@@ -153,6 +153,32 @@ class BridgeTests(unittest.TestCase):
                 gate.assert_not_called()
             self.assertEqual(json.loads(path.read_text())['status'], 'rejected_changed')
 
+    def test_host_capacity_reserves_existing_native_runner_ram(self):
+        from unittest.mock import MagicMock
+        resources = {
+            'memory_available_mb': 9300,
+            'reserved_native_runner_ram_mb': 4096,
+            'reserved_ram_mb': 0,
+            'capacity': {'min_free_ram_mb': 4096},
+        }
+        broker = MagicMock()
+        broker.resource_status.return_value = resources
+        with patch('machine_policy.sample', return_value={'temperature_c': 65}), \
+             patch('machine_policy.admission', return_value={'max_parallel': 1}), \
+             patch('app_runtime.Broker', return_value=broker):
+            self.assertTrue(bridge.safe_capacity())
+            resources['memory_available_mb'] = 8900
+            with self.assertRaisesRegex(RuntimeError, 'protecting desktop'):
+                bridge.safe_capacity()
+            resources['reserved_native_runner_ram_mb'] = None
+            with self.assertRaisesRegex(RuntimeError, 'telemetry'):
+                bridge.safe_capacity()
+
+    def test_host_capacity_blocks_unknown_thermal_readings(self):
+        with patch('machine_policy.sample', return_value={'temperature_c': None}):
+            with self.assertRaisesRegex(RuntimeError, 'thermal sensor unavailable'):
+                bridge.safe_capacity()
+
     @patch('github_host_bridge.require_user')
     def test_unsafe_pressure_defers_without_consuming_approval(self, user):
         with tempfile.TemporaryDirectory() as temp:
