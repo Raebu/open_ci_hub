@@ -19,6 +19,7 @@ import sys
 import time
 
 from hub import LOCAL
+import parallel_scheduler as parallel
 
 APP = re.compile(r'^[a-z][a-z0-9-]{1,48}$')
 TASK = re.compile(r'^[a-z][a-z0-9_.-]{1,64}$')
@@ -67,6 +68,7 @@ class Broker:
                 CREATE INDEX IF NOT EXISTS idx_app_jobs
                     ON jobs(app, status, created);
             ''')
+            parallel.init_schema(db)
         if os.name != 'nt':
             os.chmod(self.path, 0o600)
 
@@ -117,7 +119,7 @@ class Broker:
             db.commit()
         return {'app':app,'tasks':tasks,'enabled':True}
 
-    def issue(self,app,role,*,confirm=False):
+    def issue(self,app,role,*,confirm=False,node=None):
         app=self._check_app(app)
         if role not in ROLE:raise ValueError('Only submit/worker scopes exist.')
         if confirm is not True:
@@ -128,10 +130,20 @@ class Broker:
             row=db.execute('SELECT enabled FROM apps WHERE app=?',(app,)).fetchone()
             if row is None or not row['enabled']:
                 raise PermissionError('Application not registered or disabled.')
-            db.execute('INSERT INTO credentials(token_hash,app,role,created) VALUES(?,?,?,?)',
-                       (hashlib.sha256(token.encode()).hexdigest(),app,role,time.time()))
+            if role=='worker':
+                if parallel.enabled(db):
+                    if not isinstance(node,str) or not parallel.NODE_ID.fullmatch(node):
+                        raise ValueError('Parallel workers require a locally approved --node.')
+                    if not db.execute('SELECT 1 FROM compute_nodes WHERE id=? AND enabled=1',(node,)).fetchone():
+                        raise PermissionError('Worker node not authorised.')
+                elif node is not None:
+                    raise PermissionError('Configure the worker node before binding its token.')
+            elif node is not None:
+                raise ValueError('Submitter keys cannot be bound to worker nodes.')
+            db.execute('INSERT INTO credentials(token_hash,app,role,created,node_id) VALUES(?,?,?,?,?)',
+                       (hashlib.sha256(token.encode()).hexdigest(),app,role,time.time(),node))
             db.commit()
-        return {'app':app,'scope':role,'token':token,
+        return {'app':app,'scope':role,'node':node,'token':token,
                 'notice':'Shown once. Never send this token to a browser, source code or CI log.'}
 
     def revoke(self,token_hash,*,confirm=False):
@@ -150,11 +162,11 @@ class Broker:
             raise PermissionError('Invalid application credential.')
         digest=hashlib.sha256(token.encode()).hexdigest()
         with self._db() as db:
-            row=db.execute('SELECT c.token_hash,c.app,c.role,a.tasks FROM credentials c JOIN apps a ON a.app=c.app '
+            row=db.execute('SELECT c.token_hash,c.app,c.role,c.node_id,a.tasks FROM credentials c JOIN apps a ON a.app=c.app '
                            'WHERE c.token_hash=? AND c.revoked=0 AND a.enabled=1',(digest,)).fetchone()
         if not row or not hmac.compare_digest(row['token_hash'],digest):
             raise PermissionError('Application credential was not recognised.')
-        return {'app':row['app'],'role':row['role'],'tasks':json.loads(row['tasks'])}
+        return {'app':row['app'],'role':row['role'],'tasks':json.loads(row['tasks']),'node':row['node_id']}
 
     @staticmethod
     def _require(who,role):
@@ -204,42 +216,59 @@ class Broker:
                 'created':r['created'],'updated':r['updated'],
                 'result':json.loads(r['result']) if r['result'] is not None else None}
 
-    def claim(self,who):
+    def claim(self,who,telemetry=None):
         self._require(who,'worker')
         now=time.time();app=who['app']
         with self._db() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute('UPDATE jobs SET status="failed",updated=?,lease_hash=NULL,lease_until=NULL,'
-                       'result=? WHERE app=? AND status="leased" AND lease_until<? AND attempts>=?',
+                       'result=?,reserved_node=NULL,reserved_memory_mb=0,reserved_vram_mb=0,'
+                       'reserved_cpu_slots=0 WHERE app=? AND status="leased" AND lease_until<? AND attempts>=?',
                        (now,json.dumps({'error':'Retry limit exceeded after worker lease expiry.'}),
                         app,now,MAX_ATTEMPTS))
-            db.execute('UPDATE jobs SET status="queued",updated=?,lease_hash=NULL,lease_until=NULL '
+            db.execute('UPDATE jobs SET status="queued",updated=?,lease_hash=NULL,lease_until=NULL,'
+                       'reserved_node=NULL,reserved_memory_mb=0,reserved_vram_mb=0,reserved_cpu_slots=0 '
                        'WHERE app=? AND status="leased" AND lease_until<? AND attempts<?',
                        (now,app,now,MAX_ATTEMPTS))
-            row=db.execute('SELECT id,task,payload,attempts FROM jobs WHERE app=? AND status="queued" '
-                           'ORDER BY created,id LIMIT 1',(app,)).fetchone()
+            reserved=None
+            if parallel.enabled(db):
+                row,reason,pool=parallel.select_job(db,app,who.get('node'),telemetry,now)
+                if row:
+                    reserved={'node':who['node'],'memory_mb':row['memory_mb'],
+                              'vram_mb':row['vram_mb'],'cpu_slots':row['cpu_slots']}
+            else:
+                row=db.execute('SELECT id,task,payload,attempts FROM jobs WHERE app=? AND status="queued" '
+                               'ORDER BY created,id LIMIT 1',(app,)).fetchone()
+                reason='empty'
             if not row:
                 db.commit()
-                return {'job':None}
+                return {'job':None,'reason':reason}
             secret=secrets.token_urlsafe(36)
             db.execute('UPDATE jobs SET status="leased",attempts=attempts+1,lease_hash=?,'
-                       'lease_until=?,updated=? WHERE id=?',
-                       (hashlib.sha256(secret.encode()).hexdigest(),now+LEASE_SECONDS,now,row['id']))
+                       'lease_until=?,updated=?,reserved_node=?,reserved_memory_mb=?,'
+                       'reserved_vram_mb=?,reserved_cpu_slots=? WHERE id=?',
+                       (hashlib.sha256(secret.encode()).hexdigest(),now+LEASE_SECONDS,now,
+                        reserved['node'] if reserved else None,
+                        reserved['memory_mb'] if reserved else 0,
+                        reserved['vram_mb'] if reserved else 0,
+                        reserved['cpu_slots'] if reserved else 0,row['id']))
             db.commit()
         return {'job':{'job_id':row['id'],'task':row['task'],'payload':json.loads(row['payload']),
-                       'attempt':row['attempts']+1,'lease_token':secret,'lease_seconds':LEASE_SECONDS}}
+                       'attempt':row['attempts']+1,'lease_token':secret,'lease_seconds':LEASE_SECONDS,
+                       'reservation':reserved}}
 
     def _leased(self,db,who,job,lease_token):
         self._require(who,'worker')
         if not isinstance(job,str) or not JOB.fullmatch(job) or (
             not isinstance(lease_token,str) or len(lease_token)<40 or len(lease_token)>100):
             raise PermissionError('Invalid job lease.')
-        row=db.execute('SELECT status,lease_until,lease_hash,attempts FROM jobs '
+        row=db.execute('SELECT status,lease_until,lease_hash,attempts,reserved_node FROM jobs '
                        'WHERE app=? AND id=?',(who['app'],job)).fetchone()
         digest=hashlib.sha256(lease_token.encode()).hexdigest()
         if (not row or row['status']!='leased' or not isinstance(row['lease_until'],float)
                 or row['lease_until']<=time.time() or not row['lease_hash']
-                or not hmac.compare_digest(row['lease_hash'],digest)):
+                or not hmac.compare_digest(row['lease_hash'],digest) or
+                row['reserved_node']!=who.get('node')):
             raise PermissionError('Lease expired, invalid or not owned by this worker.')
         return row
 
@@ -261,10 +290,37 @@ class Broker:
             state=self._leased(db,who,job,lease_token)
             status='completed' if success else ('queued' if state['attempts']<MAX_ATTEMPTS else 'failed')
             db.execute('UPDATE jobs SET status=?,result=?,lease_hash=NULL,lease_until=NULL,'
-                       'updated=? WHERE id=?',
+                       'reserved_node=NULL,reserved_memory_mb=0,reserved_vram_mb=0,'
+                       'reserved_cpu_slots=0,updated=? WHERE id=?',
                        (status,output,time.time(),job))
             db.commit()
         return {'job_id':job,'status':status,'attempts':state['attempts']}
+
+    def configure_node(self,node,memory_mb,vram_mb,cpu_slots,max_jobs,
+                       *,reserve_memory_mb=None,reserve_vram_mb=None,confirm=False):
+        if confirm is not True:raise PermissionError('Only the local owner can authorise a worker node.')
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            value=parallel.register_node(db,node,memory_mb,vram_mb,cpu_slots,max_jobs,
+                                         reserve_memory_mb,reserve_vram_mb)
+            db.commit()
+        return value
+
+    def configure_task(self,app,task,memory_mb,vram_mb,cpu_slots,*,confirm=False):
+        if confirm is not True:raise PermissionError('Only local owner can set task resource limits.')
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            result=parallel.set_task(db,app,task,memory_mb,vram_mb,cpu_slots)
+            db.commit()
+        return result
+
+    def configure_app_limit(self,app,max_jobs,*,confirm=False):
+        if confirm is not True:raise PermissionError('Only local owner can set parallel project limits.')
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            result=parallel.app_limit(db,app,max_jobs)
+            db.commit()
+        return result
 
     def inventory(self):
         """Dashboard-only safe metadata: never expose tokens or queued payloads."""
@@ -278,7 +334,12 @@ class Broker:
                 'tasks':json.loads(row['tasks']),'enabled':bool(row['enabled']),'queues':{}})
             if row['status']:
                 item['queues'][row['status']]=row['amount']
-        return {'apps':list(apps.values()),'runtime':'app-worker-broker',
+        with self._db() as db:
+            nodes=[parallel.snapshot(db,row['id']) for row in db.execute(
+                'SELECT id FROM compute_nodes WHERE enabled=1 ORDER BY id').fetchall()]
+        return {'apps':list(apps.values()),'nodes':nodes,'runtime':'app-worker-broker',
+                'resource_mode':'reservations' if nodes else 'legacy-unlimited',
+                'resource_enforcement':'not-os-enforced',
                 'execute_untrusted_code':False}
 
     def overview(self,who):
