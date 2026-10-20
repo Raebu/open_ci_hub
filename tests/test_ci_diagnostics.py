@@ -33,6 +33,14 @@ class WorkflowDiagnosticTests(unittest.TestCase):
         self.assertEqual(report['code'], 'eligible')
         self.assertEqual(report['issues'], [])
 
+    def test_chatgpt_private_control_repo_is_not_a_ci_job(self):
+        with patch('ci_workflow_diagnostics.fleet._json_object') as github:
+            report=workflows.inspect_github('Raebu/open-ci-chatgpt-control','main')
+        github.assert_not_called()
+        self.assertFalse(report['verified'])
+        self.assertEqual(report['code'], 'control_channel_not_ci')
+        self.assertIn('Do not create GitHub Actions', report['suggestion'])
+
     def test_missing_workflow_gets_exact_next_action(self):
         report=self.report(tree={'truncated': False, 'tree': []})
         self.assertEqual(report['code'], 'workflow_missing')
