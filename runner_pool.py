@@ -103,6 +103,27 @@ def _existing_container(name):
     result, code = _docker(['inspect','--format','{{.State.Status}}',name],check=False)
     return result if code == 0 else None
 
+def _legacy_container_safe(name):
+    """Require current hard ceilings before restarting persisted Docker runners."""
+    raw,code=_docker(['inspect','--format','{{json .HostConfig}}',name],check=False)
+    if code!=0 or len(raw)>16384:return False
+    try:
+        cfg=json.loads(raw)
+        if not isinstance(cfg,dict):return False
+        memory=cfg.get('Memory');swap=cfg.get('MemorySwap')
+        nano=cfg.get('NanoCpus');pids=cfg.get('PidsLimit')
+        drops=cfg.get('CapDrop');security=cfg.get('SecurityOpt')
+        restart=cfg.get('RestartPolicy')
+        return (type(memory)==int and 0<memory<=2*1024**3
+                and type(swap)==int and swap==memory
+                and type(nano)==int and 0<nano<=2*10**9
+                and type(pids)==int and 0<pids<=256
+                and isinstance(drops,list) and 'ALL' in drops
+                and isinstance(security,list)
+                and any(isinstance(x,str) and 'no-new-privileges' in x for x in security)
+                and isinstance(restart,dict) and restart.get('Name') in ('','no'))
+    except (ValueError,TypeError):return False
+
 def _active():
     output, _ = _docker(['ps','--filter','name=^/'+PREFIX,
                          '--format','{{.Names}}'])
@@ -161,7 +182,8 @@ def register(repo,branch):
                '--name "$GH_NAME" --labels local-ci --work _work')
     _docker(['run','--rm','--cap-drop','ALL',
              '--security-opt','no-new-privileges:true','--pids-limit','256',
-             '--memory','2g','-v',volume+':/home/runner',
+             '--memory','2g','--memory-swap','2g','--cpus','2',
+              '-v',volume+':/home/runner',
              '-e','GH_URL','-e','GH_TOKEN','-e','GH_NAME',
              IMAGE,'sh','-c',command],
             extra_env={'GH_URL':registration.target,'GH_TOKEN':registration.token,'GH_NAME':name})
@@ -186,14 +208,18 @@ def start(repo):
     require_start_capacity(2048)
     prior = _existing_container(info['container'])
     if prior is not None:
+        if not _legacy_container_safe(info['container']):
+            raise RuntimeError('Existing runner lacks verified RAM/swap/CPU/PID limits or safe restart policy. '
+                               'Review configuration manually; credentials and volumes were preserved.')
         _docker(['start',info['container']])
     else:
         _docker(['run','-d','--name',info['container'],
-                 '--restart','unless-stopped','--cap-drop','ALL',
-                 '--security-opt','no-new-privileges:true',
-                 '--pids-limit','256','--memory','2g','--cpus','2',
-                 '-v',info['volume']+':/home/runner',
-                 IMAGE,'./run.sh'])
+                  '--restart','no','--cap-drop','ALL',
+                  '--security-opt','no-new-privileges:true',
+                  '--pids-limit','256','--memory','2g','--memory-swap','2g',
+                  '--cpus','2',
+                  '-v',info['volume']+':/home/runner',
+                  IMAGE,'./run.sh'])
     return 'started'
 
 def stop(repo):
