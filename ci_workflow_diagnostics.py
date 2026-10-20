@@ -78,7 +78,7 @@ def inspect_github(repo: str, branch: str) -> dict:
             if label != LOCAL_LABELS:
                 result['issues'].append(_issue(path, 'runner_label_mismatch',
                     'At least one job is not pinned to [self-hosted, linux, local-ci].',
-                    'Review and migrate that job separately; do not silently switch hosted minutes.'))
+                    'Review/migrate to [self-hosted, linux, local-ci] explicitly; never silently switch from hosted minutes.'))
             else:
                 eligible_jobs += 1
     if result['issues']:
