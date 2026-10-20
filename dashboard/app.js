@@ -277,6 +277,18 @@ async function loadApps(){
     root.replaceChildren();
     const res=inventory.resources;
     if(res){
+      if(res.policy){
+        const p=res.policy;
+        $('apps-mode').value=p.mode||'balanced';
+        $('apps-mode-apply').disabled=state.mode==='mobile'&&$('apps-mode').value==='performance';
+        root.append(el('p','Mode: '+p.mode+' · '+(p.paused?'New work paused':'New work enabled')+
+          ' · Admission: '+p.reason+' · Effective concurrency: '+p.max_parallel+
+          ' · Memory pressure: '+(p.memory_pressure_pct===null?'unknown':p.memory_pressure_pct+'%')+
+          ' · CPU temperature: '+(p.temperature_c===null?'unknown':p.temperature_c+' °C'),'small'));
+      }
+      root.append(el('p','Native CI containers: '+(res.native_runners===null?'unknown':res.native_runners)+
+        ' · Native reserved RAM: '+(res.reserved_native_runner_ram_mb===null?'unknown':res.reserved_native_runner_ram_mb+' MiB')+
+        ' · Native CPU reservations: '+(res.native_cpu_slots===null?'unknown':res.native_cpu_slots),'small'));
       const c=res.capacity;
       root.append(el('h3','Parallel work and resource safeguards'),
         el('p','Active jobs: '+res.active_jobs+'/'+c.max_parallel+
@@ -311,7 +323,32 @@ async function loadApps(){
           ' · Queue: '+Object.entries(app.queues).map(([k,v])=>k+' '+v).join(', '),'small'));
       card.append(details);root.append(card);
     }
+    const queue=$('apps-queue');queue.replaceChildren();
+    try{
+      const preview=await api('/api/apps/queue');
+      for(const job of preview.jobs.slice(0,24)){
+        const item=el('div',undefined,'result-row');
+        item.append(el('span',job.app+' · '+job.task+' · '+job.status+
+          ' · priority '+job.priority,'small'));
+        if(job.status==='queued'){
+          item.append(btn('Higher priority',async()=>{
+            await api('/api/apps/priority',{job_id:job.job_id,priority:Math.min(5,job.priority+1),confirm:true});
+            await loadApps();
+          }));
+        }
+        queue.append(item);
+      }
+      if(!preview.jobs.length)queue.append(el('p','No queued, running or stranded application jobs.','small'));
+    }catch(err){queue.replaceChildren(el('p',err.message));}
   }catch(e){root.replaceChildren(el('p','App runtime unavailable: '+e.message));}
+}
+async function appControl(action){
+  if(!confirm(action==='emergency_stop'?
+    'Emergency stop all managed application scopes? Running jobs will remain stranded until verified safe recovery. Existing CI runners will NOT be stopped.':
+    'Apply '+action+' to the application runtime?'))return;
+  const result=await api('/api/apps/control',{action,confirm:true});
+  notice(result.message||('Application control applied: '+action));
+  await loadApps();
 }
 
 async function loadMachines(){
@@ -377,6 +414,13 @@ async function init(){
   });
   $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();});
   $('apps-refresh').addEventListener('click',loadApps);
+  $('apps-pause').addEventListener('click',()=>appControl('pause').catch(e=>notice(e.message,true)));
+  $('apps-resume').addEventListener('click',()=>appControl('resume').catch(e=>notice(e.message,true)));
+  $('apps-emergency').addEventListener('click',()=>appControl('emergency_stop').catch(e=>notice(e.message,true)));
+  $('apps-mode-apply').addEventListener('click',()=>appControl($('apps-mode').value).catch(e=>notice(e.message,true)));
+  $('apps-mode').addEventListener('change',()=>{
+    $('apps-mode-apply').disabled=state.mode==='mobile'&&$('apps-mode').value==='performance';
+  });
   $('machines-refresh').addEventListener('click',loadMachines);
   $('machine-enroll').addEventListener('submit',async e=>{
     e.preventDefault();
@@ -408,7 +452,7 @@ async function init(){
   });
   configureOnboarding();
   await refresh();
-  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();
+  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();
     show('machine-enroll',state.role==='owner'&&state.mode==='desktop');}
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }
