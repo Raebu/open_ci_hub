@@ -80,12 +80,17 @@ Requires existing working `gh auth status` on the **host**, Python 3 and
 systemd user scopes. GitHub must permit this account to read/create comments
 in a private control repo.
 
-Create or select a **private repo owned by Raebu**. One option if you do
-not already have a suitable control repository is to explicitly create one:
+Use the **existing, verified private control repository**:
 
-```fish
-gh repo create Raebu/open-ci-control --private --description "Private Open CI Hub command requests"
-```
+- GitHub: `Raebu/open-ci-chatgpt-control`
+- Repository ID: `1427302798`
+- Access: private, owned by `Raebu`
+- Contents: [operating agreement](https://github.com/Raebu/open-ci-chatgpt-control/blob/main/README.md)
+
+The bridge now rejects configuration against other repository names or IDs.
+The control repository currently authenticates transport/ownership only. It
+**does not prove the originating ChatGPT message**, so do not enable
+unrestricted native shell tasks on the basis of this repository alone.
 
 Do NOT publish customer data, credentials or private command output to Issues.
 
@@ -94,7 +99,7 @@ untracked `Service_Business/` directory:
 
 ```fish
 cd /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
-python3 github_host_bridge.py configure --repo Raebu/open-ci-control --sender Raebu --confirm
+python3 github_host_bridge.py configure --repo Raebu/open-ci-chatgpt-control --sender Raebu --confirm
 python3 github_host_bridge.py status
 bash scripts/install-github-host-bridge-service.sh
 ```
