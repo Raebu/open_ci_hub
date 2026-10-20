@@ -73,11 +73,25 @@ class BridgeTests(unittest.TestCase):
                     self.assertEqual(result, CFG)
                     self.assertEqual((Path(temp)/'private.json').stat().st_mode & 0o077, 0)
 
+    def test_control_repo_is_checked_again_before_execution(self):
+        with patch('github_host_bridge.gh', return_value={
+            'id': CFG['repo_id'], 'private': False, 'full_name': CFG['repo'],
+            'owner': {'login': CFG['sender']}
+        }):
+            with self.assertRaises(PermissionError):
+                bridge.verify_control_repo(CFG)
+        with patch('github_host_bridge.gh', return_value={
+            'id': CFG['repo_id'], 'private': True, 'full_name': CFG['repo'],
+            'owner': {'login': CFG['sender']}
+        }):
+            self.assertTrue(bridge.verify_control_repo(CFG))
+
     @patch('github_host_bridge.require_user')
     def test_explicit_approval_digest_and_no_replay(self, user):
         with tempfile.TemporaryDirectory() as temp:
             with patch.object(bridge, 'JOBS', Path(temp)), \
                  patch('github_host_bridge.config', return_value=CFG), \
+                 patch('github_host_bridge.verify_control_repo'), \
                  patch('github_host_bridge.get_issue', return_value=bridge.validate_task(issue(), CFG)):
                 digest = bridge.validate_task(issue(), CFG)['digest']
                 with self.assertRaises(PermissionError):
@@ -111,6 +125,7 @@ class BridgeTests(unittest.TestCase):
                 return {'id': 1}
             with patch.object(bridge, 'JOBS', Path(temp)), \
                  patch('github_host_bridge.config', return_value=CFG), \
+                 patch('github_host_bridge.verify_control_repo'), \
                  patch('github_host_bridge.get_issue', return_value=request), \
                  patch('github_host_bridge.safe_capacity'), \
                  patch('github_host_bridge.gh', side_effect=github):
@@ -131,6 +146,7 @@ class BridgeTests(unittest.TestCase):
             path.chmod(0o600)
             with patch.object(bridge, 'JOBS', Path(temp)), \
                  patch('github_host_bridge.config', return_value=CFG), \
+                 patch('github_host_bridge.verify_control_repo'), \
                  patch('github_host_bridge.get_issue', return_value=bridge.validate_task(issue(), CFG)), \
                  patch('github_host_bridge.safe_capacity') as gate:
                 self.assertEqual(bridge.run_once()['status'], 'idle')
@@ -148,6 +164,7 @@ class BridgeTests(unittest.TestCase):
             path.chmod(0o600)
             with patch.object(bridge, 'JOBS', Path(temp)), \
                  patch('github_host_bridge.config', return_value=CFG), \
+                 patch('github_host_bridge.verify_control_repo'), \
                  patch('github_host_bridge.get_issue', return_value=request), \
                  patch('github_host_bridge.safe_capacity', side_effect=RuntimeError('hot')), \
                  self.assertRaisesRegex(RuntimeError, 'hot'):
