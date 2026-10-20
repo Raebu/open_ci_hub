@@ -32,6 +32,22 @@ class DiskPressureTests(unittest.TestCase):
         x=mp.admission('balanced',{'disk':None},3)
         self.assertEqual(x['max_parallel'],3)
 
+    def test_project_checkout_partition_can_be_the_bottleneck(self):
+        class Good:
+            f_bavail=20000000
+            f_frsize=4096
+            f_blocks=100000000
+        class Full:
+            f_bavail=200000
+            f_frsize=4096
+            f_blocks=10000000
+        def fake(path):
+            return Full() if path==str(Path(mp.__file__).resolve().parent) else Good()
+        with patch('machine_policy.os.statvfs',side_effect=fake):
+            disk=mp.disk_state()
+        self.assertEqual(disk['min_free_mb'],781)
+        self.assertEqual(mp.admission('balanced',{'disk':disk},3)['max_parallel'],0)
+
     def test_disk_reports_true_free_capacity_of_root_and_home(self):
         class Fake:
             f_bavail=1000000
