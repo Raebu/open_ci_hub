@@ -284,7 +284,9 @@ async function loadApps(){
         root.append(el('p','Mode: '+p.mode+' · '+(p.paused?'New work paused':'New work enabled')+
           ' · Admission: '+p.reason+' · Effective concurrency: '+p.max_parallel+
           ' · Memory pressure: '+(p.memory_pressure_pct===null?'unknown':p.memory_pressure_pct+'%')+
-          ' · CPU temperature: '+(p.temperature_c===null?'unknown':p.temperature_c+' °C'),'small'));
+          ' · CPU temperature: '+(p.temperature_c===null?'unknown':p.temperature_c+' °C')+
+          ' · Free disk: '+(p.disk?.min_free_mb==null?'unknown':p.disk.min_free_mb+' MiB')+
+          ' · Disk status: '+(p.disk?.min_free_percent==null?'unknown':p.disk.min_free_percent+'% free'),'small'));
       }
       root.append(el('p','Native CI containers: '+(res.native_runners===null?'unknown':res.native_runners)+
         ' · Native reserved RAM: '+(res.reserved_native_runner_ram_mb===null?'unknown':res.reserved_native_runner_ram_mb+' MiB')+
