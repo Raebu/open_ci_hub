@@ -94,7 +94,8 @@ class UnifiedBrokerTests(unittest.TestCase):
         self.enqueue('report')
         self.b.control(paused=True,confirm=True)
         self.assertEqual(self.b.claim(self.worker)['reason'],'admissions_paused')
-        self.assertTrue(Broker(self.b.state).resource_gate.controls(next(self._db_context()))['paused']) if False else None
+        with self.b._db() as db:
+            self.assertTrue(rg.ResourceGate.controls(db)['paused'])
         self.b.control(paused=False,mode='quiet',confirm=True)
         self.assertEqual(self.b.resource_status()['policy']['max_parallel'],1)
         self.assertIsNotNone(self.b.claim(self.worker)['job'])
@@ -105,7 +106,6 @@ class UnifiedBrokerTests(unittest.TestCase):
         second=self.enqueue('report')
         self.b.reprioritize(second,5,confirm=True)
         self.assertEqual(self.b.claim(self.worker)['job']['job_id'],second)
-        self.assertEqual(self.b.queue_preview()['jobs'][0]['job_id'],second) if False else None
         with self.assertRaises(RuntimeError):
             self.b.reprioritize(second,0,confirm=True)
         self.assertEqual(self.b.queue_preview()['jobs'][0]['job_id'],first)
