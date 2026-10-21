@@ -809,9 +809,24 @@ def write_pc_file(path: str, content: str, expected_sha256: str | None) -> dict:
             raise ValueError(f"Existing file exceeds the {MAX_FILE_BYTES}-byte edit limit.")
         if expected_sha256 is None:
             raise ValueError("Existing files require their current expected_sha256.")
-        current = hashlib.sha256(target.read_bytes()).hexdigest()
+        raw_current = target.read_bytes()
+        current = hashlib.sha256(raw_current).hexdigest()
         if current != expected_sha256:
             raise RuntimeError("File changed since it was read; re-read it before editing.")
+        try:
+            original_text = raw_current.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ValueError("Existing file is not valid UTF-8; refusing to edit it through the redaction-aware text tool.") from None
+        _, redaction_count = _redact(original_text)
+        if redaction_count:
+            _audit("write_pc_file", str(target), "blocked_redacted_content",
+                   {"redactions": redaction_count})
+            raise PermissionError(
+                "This file contains credential-like content that is redacted on read. "
+                "Direct editing is blocked to prevent replacing hidden values with redaction "
+                "placeholders or silently deleting them. Edit it locally or use a future "
+                "secret-preserving edit operation."
+            )
         backup = _private_backup(target)
         mode = stat.S_IMODE(st.st_mode)
     else:
