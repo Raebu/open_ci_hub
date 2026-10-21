@@ -13,7 +13,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#whatsapp">◉ <span>Personal WhatsApp</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -26,6 +26,27 @@
       </section>
       <div id="workspace" class="hidden">
         <section id="providers"><div class="section-head"><div><h2>Connected platforms</h2><p>Use your provider’s official browser sign-in. No API key pasting.</p></div><button class="btn secondary" type="button" id="refresh">↻ Refresh</button></div><div class="cards" id="cards"></div></section>
+        <section id="whatsapp">
+          <div class="section-head"><div><h2>Personal WhatsApp messages</h2>
+            <p>Write a message to someone using your own WhatsApp account, then open the conversation to review and press Send.</p></div></div>
+          <div class="device-panel"><div>
+            <form id="wa-compose" class="form-grid" autocomplete="off">
+              <label>Recipient’s international mobile number
+                <input id="wa-to" type="tel" inputmode="tel" autocomplete="off" placeholder="+44 7700 900123" maxlength="26" aria-describedby="wa-help">
+              </label>
+              <label class="wide">Message
+                <textarea id="wa-message" rows="5" maxlength="1800" placeholder="Write your personal message here. You can also ask ChatGPT to draft it, then paste it here." spellcheck="true"></textarea>
+              </label>
+              <div class="wide controls">
+                <a id="wa-open" class="btn primary" href="#" target="_blank" rel="noopener noreferrer" aria-describedby="wa-help">Open in WhatsApp to send</a>
+                <button id="wa-copy" class="btn secondary" type="button">Copy message</button>
+                <button id="wa-clear" class="btn secondary" type="button">Clear</button>
+              </div>
+            </form>
+            <p id="wa-message-status" role="status" aria-live="polite" class="small"></p>
+            <p id="wa-help" class="small">Uses WhatsApp’s official click-to-chat feature. You must be signed in to WhatsApp and press Send there. No messages are sent automatically; drafts are not stored on the Open CI Hub server. The prefilled message appears in the WhatsApp link.</p>
+          </div></div>
+        </section>
         <section id="repositories"><div class="section-head"><div><h2>Create repository</h2><p>Create a new GitHub or GitLab repository directly from here. Private by default.</p></div></div>
           <form id="new-repo" class="form-grid">
             <label>Provider<select id="repo-provider"><option value="github">GitHub</option><option value="gitlab">GitLab</option></select></label>
