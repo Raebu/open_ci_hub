@@ -156,7 +156,7 @@ def _archive_entries(archive):
         value = raw[:-1] if is_dir else raw
         parts = value.split("/")
         if (len(parts) > MAX_DEPTH or any(p in ("", ".", "..") or
-            p.startswith(".") for p in parts)
+            (p.startswith(".") and p != ".next") for p in parts)
             or any(ord(ch) < 32 for ch in value)):
             raise PermissionError("Unsafe ZIP path traversal or hidden member.")
         canonical = "/".join(parts)
