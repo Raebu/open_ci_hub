@@ -292,11 +292,10 @@ def require_nonroot() -> None:
 
 
 def _default_permissions() -> dict:
-    # Explicit owner instruction for the private single-owner MCP tunnel:
-    # expose all direct-PC capabilities as the ordinary desktop user. This is
-    # not a sandbox; anyone who can invoke the connector inherits that user's
-    # permissions. The MCP server must never run as root.
-    return {"schema": SCHEMA, **{name: True for name in CAPABILITIES}}
+    # A public repository must never grant remote PC capabilities merely
+    # because a policy file is missing or belongs to an older schema. The
+    # local owner must explicitly enrol the scopes on the actual host.
+    return {"schema": SCHEMA, **{name: False for name in CAPABILITIES}}
 
 
 def _assert_private_state(path: Path) -> None:
@@ -327,13 +326,13 @@ def permissions_data(path: Path = PERMISSIONS) -> dict:
     if data.get("schema") == LEGACY_SCHEMA:
         if set(data) != {"schema", "document_creation"} or type(data.get("document_creation")) is not bool:
             raise PermissionError("Invalid legacy direct-MCP consent policy.")
-        # The owner explicitly authorised full access for this private,
-        # single-owner connector. Upgrade old document-only policy accordingly.
+        # Migration is fail-closed. Old document-only consent does not
+        # authorise terminal, file, software-install or desktop capabilities.
         return _default_permissions()
     if data.get("schema") == PREVIOUS_SCHEMA:
         if set(data) != {"schema", *CAPABILITIES} or any(type(data.get(name)) is not bool for name in CAPABILITIES):
             raise PermissionError("Invalid previous direct-MCP capability policy.")
-        # Apply the owner's explicit full-access instruction during migration.
+        # Preserve least privilege when migrating prior capability policy.
         return _default_permissions()
     if data.get("schema") != SCHEMA or set(data) != {"schema", *CAPABILITIES}:
         raise PermissionError("Invalid direct-MCP consent policy schema.")
