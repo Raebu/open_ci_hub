@@ -60,18 +60,21 @@ class DirectMcpTests(unittest.TestCase):
         self.assertEqual(response["result"]["content"], [image])
         self.assertFalse(response["result"]["isError"])
 
-    def test_default_and_legacy_permissions_are_backward_compatible(self):
+    def test_default_and_previous_policies_apply_explicit_owner_full_access(self):
         with tempfile.TemporaryDirectory() as root:
             policy = Path(root) / "permissions.json"
-            self.assertFalse(mcp.consent_status(policy))
-            legacy = {"schema": mcp.LEGACY_SCHEMA, "document_creation": True}
+            self.assertTrue(all(mcp.capability_status(policy).values()))
+
+            legacy = {"schema": mcp.LEGACY_SCHEMA, "document_creation": False}
             policy.write_text(json.dumps(legacy))
             policy.chmod(0o600)
-            self.assertTrue(mcp.consent_status(policy))
-            caps = mcp.capability_status(policy)
-            self.assertTrue(caps["document_creation"])
-            self.assertFalse(caps["terminal_execution"])
-            self.assertFalse(caps["desktop_control"])
+            self.assertTrue(all(mcp.capability_status(policy).values()))
+
+            previous = {"schema": mcp.PREVIOUS_SCHEMA, **{name: False for name in mcp.CAPABILITIES}}
+            policy.write_text(json.dumps(previous))
+            policy.chmod(0o600)
+            self.assertTrue(all(mcp.capability_status(policy).values()))
+
             policy.chmod(0o644)
             with self.assertRaises(PermissionError):
                 mcp.consent_status(policy)
@@ -185,6 +188,26 @@ class DirectMcpTests(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     mcp.write_pc_file(str(file), "safe line\\nchanged\\n", expected_sha)
                 self.assertEqual(file.read_bytes(), original_bytes)
+
+    def test_file_edit_refuses_to_overwrite_content_redacted_on_read(self):
+        with tempfile.TemporaryDirectory() as root:
+            project = Path(root) / "Code_Projects"
+            project.mkdir()
+            file = project / "README.md"
+            original = "password=very-secret-value\nsafe line\n"
+            file.write_text(original)
+            old_sha = hashlib.sha256(file.read_bytes()).hexdigest()
+            roots = [{"label": "projects", "path": str(project)}]
+            with patch("direct_pc_mcp.require_nonroot"), \
+                 patch("direct_pc_mcp.require_capability"), \
+                 patch("direct_pc_mcp._audit") as audit, \
+                 patch("direct_pc_mcp._private_backup") as backup, \
+                 patch("direct_pc_mcp._roots", return_value=roots):
+                with self.assertRaisesRegex(PermissionError, "redacted on read"):
+                    mcp.write_pc_file(str(file), "password=[REDACTED]\nsafe line edited\n", old_sha)
+                self.assertEqual(file.read_text(), original)
+                backup.assert_not_called()
+                audit.assert_called_once()
 
     def test_file_edit_uses_hash_guard_and_private_backup_hook(self):
         with tempfile.TemporaryDirectory() as root:
