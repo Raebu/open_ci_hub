@@ -553,16 +553,29 @@ class Queue:
         """Return a transiently blocked job to the durable queue without consuming an attempt."""
         message=reason[:1000]
         with self._db() as db:
-            db.execute("UPDATE jobs SET state='pending',not_before=?,attempts=MAX(0,attempts-1),"
-                       "updated_at=?,started_at=NULL,finished_at=NULL,error=?,"
-                       "summary='Deferred by local resource guard; will retry automatically',evidence_json=? "
-                       "WHERE id=? AND state='running'",
-                       (now()+RESOURCE_RETRY_SECONDS,now(),message,
-                        json.dumps(evidence or {},sort_keys=True),job_id))
+            db.execute("BEGIN IMMEDIATE")
             row=db.execute("SELECT * FROM jobs WHERE id=?",(job_id,)).fetchone()
             if not row:
+                db.execute("ROLLBACK")
                 raise ValueError("Cannot defer a missing job.")
-            return dict(row)
+            if row["state"]!="running":
+                db.execute("ROLLBACK")
+                raise RuntimeError("Only a running job can be resource-deferred.")
+            if row["cancel_requested"]:
+                db.execute("UPDATE jobs SET state='cancelled',updated_at=?,finished_at=?,"
+                           "summary='Cancelled while resource admission was deferred',error=?,"
+                           "evidence_json=? WHERE id=?",
+                           (now(),now(),message,json.dumps(evidence or {},sort_keys=True),job_id))
+            else:
+                db.execute("UPDATE jobs SET state='pending',not_before=?,attempts=MAX(0,attempts-1),"
+                           "updated_at=?,started_at=NULL,finished_at=NULL,error=?,"
+                           "summary='Deferred by local resource guard; will retry automatically',evidence_json=? "
+                           "WHERE id=? AND state='running'",
+                           (now()+RESOURCE_RETRY_SECONDS,now(),message,
+                            json.dumps(evidence or {},sort_keys=True),job_id))
+            result=dict(db.execute("SELECT * FROM jobs WHERE id=?",(job_id,)).fetchone())
+            db.execute("COMMIT")
+            return result
 
     def update_workflow(self, job_id: str, workflow: dict, workflow_sha: str, workspace: Path, log_path: Path) -> None:
         deployment=workflow.get("deployment") or {}
@@ -1556,8 +1569,12 @@ def execute_one(queue: Queue, job: dict) -> dict:
         _append_log(log_path,message)
         evidence["resource_deferred"]={"reason":str(exc)[:500],"retry_after_seconds":RESOURCE_RETRY_SECONDS}
         deferred=queue.defer(job["id"],message,evidence=evidence)
-        try:_provider_status(deferred,"pending",f"Open CI Hub deferred · retry in {RESOURCE_RETRY_SECONDS}s")
-        except Exception:pass
+        if deferred["state"]=="cancelled":
+            try:_provider_status(deferred,"cancelled","Open CI Hub cancelled during resource admission")
+            except Exception:pass
+        else:
+            try:_provider_status(deferred,"pending",f"Open CI Hub deferred · retry in {RESOURCE_RETRY_SECONDS}s")
+            except Exception:pass
         return deferred
     except Exception as exc:
         message=f"{type(exc).__name__}: {str(exc)}"
