@@ -4,6 +4,8 @@ An **open-source, provider-neutral, local-first CI/CD control centre** for GitHu
 
 **Release: v4 community preview; native onboarding is implemented in source and requires live verification.** Local Docker image builds/bootstrap and read-only provider checks have passed; real push builds across all three providers remain unverified. Do **not** treat it as a security-audited or production-certified service.
 
+Delivery and cross-chat handover: [canonical project checklist](https://github.com/Raebu/open_ci_hub/issues/48), [current verified state](docs/PROJECT-HANDOVER.md) and [reusable project continuity standard](docs/PROJECT-CONTINUITY-STANDARD.md).
+
 For the optional unattended provider watcher and local resource-aware build worker, see [streamlined autonomous CI](docs/STREAMLINED-AUTONOMOUS-CI.md).
 
 See the [engineering delivery and evidence](docs/ENGINEERING-2026-10-19.md) for
