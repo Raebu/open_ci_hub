@@ -154,6 +154,10 @@ Open CI Hub now distinguishes native provider pipeline statuses from [runner-rep
 
 A separate **Terminal** tab can create an actor-scoped interactive Linux pseudo-terminal on the real host, under the regular user account. It is a new shell, **not a mirror of an existing KDE Konsole window**. It is disabled until the host owner explicitly runs the enablement command and grants each mobile editor separately. See [Host Terminal security and activation](docs/HOST-TERMINAL.md). No CI runner receives arbitrary host console privileges, and a successful PR run does not imply the host agent is deployed on the PC.
 
+## Governed deployment engine (staging foundation)
+
+[Deployment engine and multi-target roadmap](docs/DEPLOYMENT-ENGINE.md) (tracked in [deployment issue #49](https://github.com/Raebu/open_ci_hub/issues/49)) covers environment-locked release promotion, signed-artifact checks, local staging health/rollback and an audit record built on the existing \`release_manager.py\`. The [Raeburn Talent deployment profile](docs/ATS-DEPLOYMENT-PROFILE.md) documents ATS-specific application gates without embedding them in CI core. Only owner-approved **local staging user-service targets** are executable in this increment. Remote SSH/Compose, Cloudflare, Vercel and all production promotion remain disabled pending isolation, credentials and end-to-end testing.
+
 ## Signed deployment and rollback (optional)
 
 [Signed deployments guide](docs/SIGNED-DEPLOYMENTS.md) explains immutable staged .tar.gz releases approved with an **offline OpenSSH signing key**, source commit and mandatory test/build/database check metadata. The unprivileged release manager validates SHA-256 and signature, rejects malicious archive members, verifies release files again before activation, atomically switches the user-service current pointer and health-checks the release. If the service fails to restart or reports unhealthy, the last pointer is restored; explicit rollback is also supported.

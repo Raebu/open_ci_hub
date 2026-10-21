@@ -42,6 +42,10 @@ The Open CI Hub resource broker retains thermal gating and a 4 GiB memory reserv
 
 Open CI Hub provider watcher persists last-observed SHAs, the broker persists queued and completed jobs, and the bridge produces local job evidence and provider statuses when configured. Do not represent this as an automatic Google Sheets sync; it is not. In an interactive Chat session update the Google handover evidence after verifying a real result.
 
+## Deployment-specific evidence
+
+For projects with deployments, link the immutable release artifact and SHA, environment identifier, authorised deploy actor, security/migration/backup proof, pre/post health, previous version, rollback outcome and time. Do not label a production target healthy merely because a staging build passed. All production deployment must have the correct release adapter and explicit policy approval.
+
 ## Completion gate
 
 Before closing a delivery issue or marking release GO: every required row is VERIFIED DONE or explicitly NOT APPLICABLE, with actual test and deployment proof, security review as applicable, a rollback and backup plan, no unresolved P0/P1 security blockers, and confirmation that the source branch and deployed revision match. Record the final approval owner. If not met: keep IN PROGRESS or BLOCKED.

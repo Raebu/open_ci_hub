@@ -4,7 +4,7 @@ As of 21 October 2026. This is a live-verified snapshot; re-check all system cla
 
 Project: [Raebu/open_ci_hub](https://github.com/Raebu/open_ci_hub)
 Work branch: feat/hub-owned-ci-execution-bridge-20261021
-Latest verified branch commit when recorded: `c8c6853780440ee91addfdc6e8d85b51d30a770b`
+Last documented baseline commit before deployment work (verify newer head): `c8c6853780440ee91addfdc6e8d85b51d30a770b`
 Canonical tasks: [GitHub issue #48](https://github.com/Raebu/open_ci_hub/issues/48)
 Review: [draft PR #47](https://github.com/Raebu/open_ci_hub/pull/47) (do not merge until release gates pass)
 Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub`.
@@ -18,6 +18,12 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - Private manifest: one reviewed GitHub pilot, `main` only, Python 3.12 digest-pinned smoke tests; no automatic deployment.
 - On 21 October full `scripts/validate.py` passed 537 tests, dashboard JavaScript syntax and Docker Compose checks.
 - Existing GitHub/GitLab self-hosted runner containers, old one-build legacy CI and business app containers preserved.
+
+## Deployment engine increment — 21 October 2026
+- New \`deployment_engine.py\` and deployment unit tests; depends on existing \`release_manager.py\`, no new CI runner.
+- Local staging-only policy, signed checks for build/tests/security/database/backup, one-target-at-a-time lock, audited history and local health-gated release/rollback.
+- No live application deployed; remote adapters and production promotion are intentionally disabled pending separate target/environment isolation and safe migration planning.
+- See [Deployment Engine](DEPLOYMENT-ENGINE.md) and [ATS deployment profile](ATS-DEPLOYMENT-PROFILE.md). Track P0/P1 acceptance gates in [deployment issue #49](https://github.com/Raebu/open_ci_hub/issues/49), linked to canonical issue #48.
 
 ## NOT yet complete or verified
 - Changed SHA → durable enqueue → admitted Docker execution → accurate provider status, logs and receipt, proven end to end.
