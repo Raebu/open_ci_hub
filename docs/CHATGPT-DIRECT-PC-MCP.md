@@ -16,7 +16,11 @@ When the relevant local capability is enabled, the tunnel can expose these opera
 
 File access is deliberately scoped. Secret/config/cache directories, common credential files, symlinks and binary files are blocked from the direct file tools. File reads redact common credential formats, but redaction cannot guarantee that every secret format is detected. A command run with terminal capability has the ordinary user's filesystem permissions and must be treated as powerful access.
 
-## Local capabilities are off by default
+## Owner-authorised full-access mode
+
+The current owner has explicitly instructed that all direct-PC capabilities be enabled for the private, single-owner MCP connector. New policy state and legacy policy migrations therefore enable document creation, file browsing/reading/editing, arbitrary shell commands as the desktop user, official-repository package installation and KDE desktop control.
+
+This is a deployment-specific trust decision, not a safe default for a shared or public connector. The shell is **not sandboxed** and can access anything the desktop user can access. It does not run as root. Anyone who can invoke this connector can exercise these permissions; the stdio MCP server does not cryptographically prove the origin of the original ChatGPT instruction. Do not reuse this configuration for a shared connector or expose the tunnel publicly.
 
 The private local policy is stored in .local/direct-mcp/permissions.json. The audit journal is .local/direct-mcp/audit.jsonl; both are intended to remain private and must never be committed.
 
@@ -47,7 +51,7 @@ python3 direct_pc_mcp.py enable-capabilities --confirm
 python3 direct_pc_mcp.py disable-capabilities --confirm
 ~~~
 
-Do not run the all-capabilities command unless you have verified who can access the ChatGPT connector. Enable the smallest scope needed first. In particular, enable-terminal permits commands to run as your Linux user; it is not a sandbox and it is not a root boundary.
+The owner has explicitly requested full access for this single-owner connector. To revoke that decision locally, run disable-capabilities --confirm. In particular, enable-terminal permits arbitrary commands as your Linux user; it is not a sandbox and it is not a root boundary.
 
 ## Important identity and authentication limitation
 
