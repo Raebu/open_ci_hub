@@ -154,6 +154,10 @@ Open CI Hub now distinguishes native provider pipeline statuses from [runner-rep
 
 A separate **Terminal** tab can create an actor-scoped interactive Linux pseudo-terminal on the real host, under the regular user account. It is a new shell, **not a mirror of an existing KDE Konsole window**. It is disabled until the host owner explicitly runs the enablement command and grants each mobile editor separately. See [Host Terminal security and activation](docs/HOST-TERMINAL.md). No CI runner receives arbitrary host console privileges, and a successful PR run does not imply the host agent is deployed on the PC.
 
+## Personal WhatsApp — writing and handoff
+
+The authenticated dashboard now includes a **Personal WhatsApp** composer: edit a draft, create a tone-specific writing suggestion without erasing your work, copy the text, and open the recipient's WhatsApp conversation with the message prefilled. **Only pressing Send inside WhatsApp actually sends the message.** This is not an unofficial personal WhatsApp API and does not download or store your WhatsApp conversations or contacts. See [supported personal WhatsApp workflow](docs/WHATSAPP-PERSONAL.md).
+
 ## Controlled CI internet access
 
 See [CI Network](docs/CI-NETWORK.md) for owner-approved public-Web HTTPS/HTTP access in local CI while retaining Docker network isolation, private LAN denial and existing resource limits. The dashboard's CI Internet view shows effective repository policies.
