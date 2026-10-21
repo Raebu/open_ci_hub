@@ -1,166 +1,104 @@
-# Direct ChatGPT → Garuda PC connection (private MCP tunnel)
+# Direct ChatGPT → Garuda PC connection
 
-**Status:** Source and tests; NOT automatically connected, enrolled, or
-executed through ChatGPT until the owner completes the local and ChatGPT
-steps. This is a separate, faster path from PR #34's delayed/signed GitHub
-Issues host bridge. Keep existing dashboard, native CI runners, host-agent,
-and legacy custom-ci-api running. Do not create public inbound ports.
+**Status:** The expanded MCP tool surface is proposed in a review branch. It is not yet deployed to Garuda or locally enabled. Existing CI runners, dashboard, host agent, legacy CI service and tunnel unit remain separate and must not be reconfigured or duplicated.
 
-## What is actually exposed
+## What the expanded tool surface provides
 
-The stdio MCP server \`direct_pc_mcp.py\` offers **only**:
+When the relevant local capability is enabled, the tunnel can expose these operations to ChatGPT:
 
-- \`get_pc_status\`: live RAM/disk/load and existing known user-service health,
-  including Open CI Hub on 8765 and legacy CI on 8090.
-- \`inspect_ci_failure\`: provider-native GitHub/GitLab run/job/log evidence
-  for the exact repository/run, with existing sanitisation. This is read-only.
-- \`create_pc_document\`: opt-in, new-only \`.md\`/\`.txt\` up to 4,000 bytes
-  exclusively in \`~/Documents/OpenCIHubTasks\`. No overwrite or arbitrary path.
+- PC status and read-only GitHub/GitLab failure diagnostics.
+- Create a new Markdown/text document in ~/Documents/OpenCIHubTasks.
+- Browse directories and read UTF-8 text files in the approved Documents, Downloads, Desktop and Code_Projects roots.
+- Edit source/text files inside Code_Projects only, using an expected SHA-256 to prevent stale overwrites and a private backup before replacement.
+- Run a command as the ordinary desktop user in Code_Projects, with a maximum 300-second timeout, a 16 KiB output cap, common credential redaction and an audit record.
+- Install named packages from official Arch/Garuda pacman repositories through pkexec and the normal polkit authentication flow. The tool does not run AUR PKGBUILDs or bypass the authentication prompt.
+- Open HTTP/HTTPS URLs, launch a fixed set of desktop applications, capture a screenshot, list/activate/minimise/close KWin windows, type text, press keys and click the pointer where the required KDE utilities are installed and available.
 
-No arbitrary shell, sudo, root, SSH forwarding, GitHub repo edits, software
-install, process restart, CI retry or deployment is offered by this server.
+File access is deliberately scoped. Secret/config/cache directories, common credential files, symlinks and binary files are blocked from the direct file tools. File reads redact common credential formats, but redaction cannot guarantee that every secret format is detected. A command run with terminal capability has the ordinary user's filesystem permissions and must be treated as powerful access.
 
-**Identity boundary:** the Secure MCP Tunnel transport authenticates its
-control-plane connection through the owner's Platform credentials and associated
-ChatGPT workspace. The stdio tool itself does **not** receive an OpenAI-signed
-natural-language message or automatically validate an OAuth user identity.
-Do not claim cryptographic origin authentication for chat messages.
-For broad native-user command execution, use a separately authenticated
-and explicitly scoped OAuth/mTLS gateway (see PR #34) first.
-GitHub Issues alone are insufficient to prove ChatGPT instruction provenance.
+## Local capabilities are off by default
 
-## 1. Install/update the source on Garuda
+The private local policy is stored in .local/direct-mcp/permissions.json. The audit journal is .local/direct-mcp/audit.jsonl; both are intended to remain private and must never be committed.
 
-Use the repo the user already has. **Never \`git clean\`, reset, delete Docker
-volumes, or overwrite locally modified files.**
+Available owner-only commands, run locally as the ordinary Garuda user from the repository directory:
 
-\`\`\`fish
+~~~fish
+python3 direct_pc_mcp.py status
+
+# Enable only new Markdown/text documents:
+python3 direct_pc_mcp.py enable-documents --confirm
+
+# Enable browse, read and source-file editing:
+python3 direct_pc_mcp.py enable-file-access --confirm
+
+# Enable local command execution:
+python3 direct_pc_mcp.py enable-terminal --confirm
+
+# Enable official-repository package installation:
+python3 direct_pc_mcp.py enable-software-install --confirm
+
+# Enable KDE screenshot, keyboard and window tools:
+python3 direct_pc_mcp.py enable-desktop-control --confirm
+
+# Enable every capability above in one owner-confirmed operation:
+python3 direct_pc_mcp.py enable-capabilities --confirm
+
+# Disable all capabilities:
+python3 direct_pc_mcp.py disable-capabilities --confirm
+~~~
+
+Do not run the all-capabilities command unless you have verified who can access the ChatGPT connector. Enable the smallest scope needed first. In particular, enable-terminal permits commands to run as your Linux user; it is not a sandbox and it is not a root boundary.
+
+## Important identity and authentication limitation
+
+The Secure MCP Tunnel authenticates its control-plane connection. The direct stdio MCP server does **not** receive a cryptographic signature over the original natural-language ChatGPT instruction, nor does it independently receive a verified ChatGPT end-user identity. Therefore it cannot prove that each command was requested by Martin rather than another party who can invoke the same connector.
+
+The connector was configured without OAuth. Before enabling terminal execution, software installation or desktop input, verify that the connector and tunnel are restricted to your intended ChatGPT account/workspace. If that cannot be established, keep those capabilities disabled. The signed task gateway work in PR #34 remains a separate, not-yet-live path; do not assume that a private GitHub repository or the Secure MCP Tunnel by itself proves the origin of a ChatGPT message.
+
+## Garuda KDE desktop dependencies
+
+Desktop actions require the tunnel process to see the live KDE session environment. The tool checks for XDG_RUNTIME_DIR and a Wayland or X11 display. The background systemd user manager may need the KDE session variables imported before a restart; the implementation reports a clear error rather than pretending an action succeeded.
+
+Optional backends:
+
+- spectacle or grim for screenshots.
+- kdotool for KWin window discovery and actions.
+- wtype for Wayland keyboard text/key input.
+- ydotool plus an already configured ydotoold and suitable /dev/uinput permissions for mouse clicks. The MCP tool does not grant root permissions or alter device policy.
+
+The screenshot tool sends the visible screen to ChatGPT. Avoid displaying passwords, payment details or other material you do not want to share. Closing a window may discard unsaved work; use that action only when explicitly intended.
+
+## Update and verify the existing installation
+
+First inspect the local working tree. Do not run git clean, reset local changes, remove Docker volumes or overwrite untracked files.
+
+~~~fish
 cd /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
 git status --short
 git fetch origin main
-# Only with a compatible, safely clean tracked working tree:
 git pull --ff-only origin main
 python3 -m py_compile direct_pc_mcp.py
 python3 -m unittest tests.test_direct_pc_mcp -v
 python3 direct_pc_mcp.py status
-\`\`\`
+~~~
 
-\`status\` produces live host status, and runs as the ordinary non-root desktop
-user. It does not need the OpenAI API key or a running tunnel.
+After the update and tests pass, restart the **existing** tunnel service so it reloads the MCP tool list:
 
-## 2. Obtain a private Secure MCP Tunnel
+~~~fish
+systemctl --user restart open-ci-hub-tunnel.service
+systemctl --user status open-ci-hub-tunnel.service --no-pager
+curl -fsS http://127.0.0.1:18080/readyz
+curl -fsS http://127.0.0.1:18080/health/mcp
+~~~
 
-Follow the currently published OpenAI instructions:
-<https://developers.openai.com/api/docs/guides/secure-mcp-tunnels>
+The MCP connector caches the discovered tool list, so refresh/reconnect it in ChatGPT if the new tools do not appear after the tunnel restarts. A healthy tunnel alone does not mean a local capability is enabled or a desktop action is working.
 
-1. In OpenAI Platform **tunnel settings**, create one private tunnel, associate
-   it with the relevant Platform organisation and target ChatGPT workspace,
-   and record its \`tunnel_id\` privately.
-2. Install the current official \`openai/tunnel-client\` release using its
-   documented installer/download, and verify \`tunnel-client help quickstart\`.
-   Do not use random community relay scripts or publish ports 8765/8090.
-3. Give the tunnel client a dedicated minimal-scope runtime API key, **only
-   in the owner's protected local terminal/systemd environment**. Never put
-   it in this GitHub repository, an Issue, ChatGPT, screenshots or command logs.
+## Rollback and disablement
 
-Example from a private owner Fish shell, after the binary, tunnel and key have
-been securely prepared (substitute your own tunnel id; DO NOT paste the key
-into this chat):
+Immediately disable all direct-PC capabilities locally:
 
-\`\`\`fish
-cd /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
-echo "Enter your OpenAI tunnel runtime key (hidden input):"
-read --silent CONTROL_PLANE_API_KEY
-set -gx CONTROL_PLANE_API_KEY "$CONTROL_PLANE_API_KEY"
-tunnel-client init --sample sample_mcp_stdio_local \
-  --profile open-ci-garuda \
-  --tunnel-id YOUR_ACTUAL_TUNNEL_ID \
-  --mcp-command "/usr/bin/python3 /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub/direct_pc_mcp.py serve"
+~~~fish
+python3 direct_pc_mcp.py disable-capabilities --confirm
+~~~
 
-tunnel-client doctor --profile open-ci-garuda --explain
-tunnel-client run --profile open-ci-garuda
-\`\`\`
-
-This foreground run needs to stay open for ChatGPT to call the local server.
-Only after testing should a dedicated non-root user systemd unit with a
-protected credential store be considered. Do not reconfigure existing
-\`open-ci-hub-dashboard.service\`, \`open-ci-hub-host-agent.service\`,
-\`custom-ci-api.service\` or runner containers to run the tunnel.
-
-## 3. Connect in ChatGPT
-
-If **Add custom MCP server** is available to the user/workspace:
-
-- Open **Plugins → + → Add custom MCP server**.
-- Name it **Open CI Hub — My Garuda PC**.
-- Select **Tunnel**, choose the correct tunnel or enter its \`tunnel_id\`,
-  and configure any required authentication.
-- Review the trust/permission warning; create the plugin.
-- Confirm discovery shows **get_pc_status**, **inspect_ci_failure** and
-  **create_pc_document**. Do not claim success until ChatGPT actually calls
-  a tool and the returned measurements match the owner PC.
-
-Availability and permissions depend on the ChatGPT workspace and Platform
-tunnel roles. If the custom MCP option is absent or the tunnel is not visible,
-do not claim it is connected; check account/workspace access first.
-
-Relevant OpenAI instructions:
-<https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt>
-
-## 4. First two-way verification
-
-1. Ask ChatGPT: **"From my Open CI Hub MCP, get the live status of my PC."**
-   Confirm the response reports actual live disk/RAM plus service readiness.
-2. Ask ChatGPT: **"Using my Open CI Hub MCP, inspect the old failed
-   Raebu/open_ci_hub Actions run 39460692725."** Check run/commit/job/log
-   metadata and that it does not invent missing details.
-3. Only if you specifically want to test file creation, deliberately opt in
-   locally as the ordinary host user:
-
-\`\`\`fish
-python3 direct_pc_mcp.py enable-documents --confirm
-\`\`\`
-
-Then ask ChatGPT to create a new \`chatgpt-connection-test.md\` file containing
-unique harmless text. Verify it on the physical PC:
-
-\`\`\`fish
-ls -l ~/Documents/OpenCIHubTasks/chatgpt-connection-test.md
-cat ~/Documents/OpenCIHubTasks/chatgpt-connection-test.md
-\`\`\`
-
-The file creation tool cannot overwrite an existing file or access a different
-directory. Disable its standing permission at any time:
-
-\`\`\`fish
-python3 direct_pc_mcp.py disable-documents --confirm
-\`\`\`
-
-Do not upload sensitive data or expose secret file contents to the MCP tool.
-
-## Limits
-
-- **Remote desktop or full terminal control is NOT enabled.** This MVP is
-  read-only inspection and carefully bounded document creation.
-- **The original ChatGPT instruction is not cryptographically signed** in this
-  stdio transport. Signed scope and user identity require a stronger gateway
-  before full native shell privileges.
-- **ChatGPT's ability to discover/use a custom MCP plugin** depends on your
-  ChatGPT plan, workspace permissions and tunnel organisation association.
-- **No automatic messages** are delivered into this conversation on background
-  failures; this is a request/response tool connection.
-- System health may say a process is active while the actual CI runner is
-  misconfigured; check provider runner eligibility and native job proof too.
-
-## Troubleshooting
-
-\`python3 direct_pc_mcp.py status\` is the local no-tunnel smoke test.
-For tunnel transport issues, run:
-\`\`\`fish
-tunnel-client doctor --profile open-ci-garuda --explain
-\`\`\`
-
-The latest \`tunnel-client\` build includes local health/ready metrics and an
-admin UI. If GitHub job inspection fails, check \`gh auth status\` as the same
-user running the tunnel and the exact repository permissions, but do not send
-secrets to ChatGPT. Never make a failed \`gh\` call look like a successful job.
+Then restart the existing tunnel service if you need the disabled policy reflected in a fresh tool session. The read-only status and CI failure inspection remain available. Do not delete the tunnel, dashboard, CI services or runner containers as a rollback method.
