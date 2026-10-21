@@ -96,6 +96,10 @@
   }
   root.document.addEventListener('DOMContentLoaded',()=>{
     if (!$('whatsapp-compose')) return;
+    root.document.addEventListener('open-ci-logout',()=>{
+      for (const id of ['whatsapp-name','whatsapp-phone','whatsapp-context','whatsapp-message','whatsapp-suggestion']) $(id).value='';
+      notify('Personal message fields cleared on sign-out. Nothing was sent.');
+    });
     $('whatsapp-write').addEventListener('click',buildDraft);
     $('whatsapp-apply').addEventListener('click',useSuggestion);
     $('whatsapp-copy').addEventListener('click',copyDraft);
