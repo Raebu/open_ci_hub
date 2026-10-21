@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import stat
 import sys
 import time
@@ -35,6 +36,8 @@ STEP = re.compile(r"^[a-z][a-z0-9_.-]{0,50}$")
 MAX_MANIFEST = 16_384
 MAX_SIGNED_AGE = 86_400
 MAX_FUTURE_SKEW = 30
+MAX_QUEUED = 20
+MIN_FREE_DISK = 4 * 1024 * 1024 * 1024
 
 
 def canonical(data):
@@ -307,6 +310,13 @@ def submit(app, manifest_path, archive_path):
     with _queue_lock(folder):
         if state_path.exists() or artifact_path.exists() or state_path.is_symlink():
             raise PermissionError("Duplicate or replayed signed deployment request.")
+        active = sum(_record(p)["status"] in ("queued", "running")
+                     for p in queue.glob("*.json"))
+        if active >= MAX_QUEUED:
+            raise PermissionError("Preview queue capacity exhausted.")
+        artifact_bytes = Path(archive_path).stat().st_size
+        if (shutil.disk_usage(folder).free < MIN_FREE_DISK + 4 * artifact_bytes):
+            raise PermissionError("Insufficient reserve disk for staging and recovery.")
         _copy_blob(archive_path, artifact_path, payload["artifact_sha256"])
         try:
             record = {"status": "queued", "manifest": manifest,
