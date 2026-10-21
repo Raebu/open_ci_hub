@@ -1,6 +1,7 @@
 """Signed private GitHub transport: exact ZIP, replay and untrusted issue rejection."""
 import base64
 import hashlib
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
 import os
@@ -69,9 +70,15 @@ class DeliveryTests(unittest.TestCase):
         self.issue = {"number": 101, "state": "open",
                       "title": "[open-ci-preview] demo",
                       "user": {"login": "Raebu"}, "body": json.dumps(self.signed)}
+        now = datetime.now(timezone.utc)
         self.run = {"event": "push", "status": "completed", "conclusion": "success",
+                    "updated_at": (now - timedelta(minutes=4)).isoformat(),
                     "head_sha": self.sha, "head_branch": "feature/test",
                     "head_repository": {"full_name": "Raebu/Service_Business"}}
+        self.external_status = [{"context": "Raeburn Local CI",
+            "state": "success", "description": "Full test suite passed",
+            "creator": {"login": "raeburn-local-ci[bot]"},
+            "created_at": (now - timedelta(minutes=3)).isoformat()}]
         self.artifacts = {"total_count": 1, "artifacts": [{
             "id": 33, "name": "release-bundle", "expired": False,
             "digest": "sha256:" + hashlib.sha256(self.outer).hexdigest()}]}
@@ -85,6 +92,8 @@ class DeliveryTests(unittest.TestCase):
             return self.repo
         if endpoint.endswith("/issues?state=open&per_page=100"):
             return [self.issue]
+        if endpoint.endswith("/statuses?per_page=100"):
+            return self.external_status
         if endpoint.endswith("/artifacts?per_page=100"):
             return self.artifacts
         if endpoint.endswith("/runs/123"):
@@ -118,6 +127,17 @@ class DeliveryTests(unittest.TestCase):
         self.run["head_sha"] = self.sha
         self.artifacts["artifacts"][0]["digest"] = "sha256:" + "f" * 64
         self.assertEqual(self.poll()["count"], 0)
+
+    def test_external_ci_failed_or_superseded_never_queues(self):
+        self.external_status[0]["state"] = "failure"
+        self.assertEqual(self.poll()["count"], 0)
+        self.external_status[0]["state"] = "success"
+        self.external_status[0]["description"] = "CI superseded by newer head; obsolete result not used"
+        self.assertEqual(self.poll()["count"], 0)
+        self.external_status[0]["description"] = "Full suite passed"
+        self.external_status[0]["created_at"] = "2025-01-01T00:00:00Z"
+        self.assertEqual(self.poll()["count"], 0)
+        self.assertEqual(q.status("demo")["queue"]["queued"], 0)
 
     def test_repo_privacy_and_replay_consent(self):
         self.repo["private"] = False
