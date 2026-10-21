@@ -1,33 +1,26 @@
-# Native self-hosted jobs only; no paid hosted runner minutes.
-# Run main pushes only for the repository owner, and pull requests only from
-# trusted same-repository contributors. Never execute fork PR code on this PC.
-name: Open CI Hub tests (self-hosted)
+# The authenticated direct webhook is the automatic CI entry point.
+# GitHub Actions must not run builds/tests on push or pull_request.
+# Raeburn's local act-based executor invokes this workflow with ACT=true.
+name: Open CI Hub local test workflow (act only)
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+
 concurrency:
-  group: open-ci-hub-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: open-ci-hub-local-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' &&
-       github.ref == 'refs/heads/main' && github.actor == 'Raebu') ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository &&
-       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
+    # GitHub-hosted or native GitHub Actions runs are intentionally no-ops.
+    # Only the local act executor may run the substantive test suite.
+    if: ${{ env.ACT == 'true' }}
     runs-on: [self-hosted, linux, local-ci]
     timeout-minutes: 15
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Record full Python test execution
+      - name: Record full Python test execution locally
         run: python3 execution_evidence.py run --name python-unittest --output .local/ci-proof/receipt.json --timeout 540 -- python3 -m unittest discover -s tests -v
       - name: Show sanitised failure details
         if: failure()
@@ -40,13 +33,3 @@ jobs:
       - name: Verify receipt matches actual execution transcript
         if: always()
         run: python3 execution_evidence.py verify .local/ci-proof/receipt.json
-      - name: Upload self-hosted execution proof (not independent attestation)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: open-ci-hub-execution-proof
-          path: |
-            .local/ci-proof/receipt.json
-            .local/ci-proof/python-unittest.log
-          if-no-files-found: error
-          retention-days: 7
