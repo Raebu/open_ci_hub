@@ -334,7 +334,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue', '/api/deployments'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue', '/api/deployments', '/api/ci/network'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -347,6 +347,11 @@ class WebConsole:
                                 return self.output(403, {'error':'Application management access required.'})
                             return self.output(200,console.apps.inventory() if path.endswith('inventory')
                                                else console.apps.queue_preview())
+                        if path == '/api/ci/network':
+                            if console.role(self) not in ('owner','editor'):
+                                return self.output(403, {'error':'CI internet policy needs management permission.'})
+                            from ci_network import network_overview
+                            return self.output(200, network_overview())
                         if path == '/api/deployments':
                             if console.role(self) not in ('owner','editor'):
                                 return self.output(403, {'error':'Deployment history access requires owner/editor.'})

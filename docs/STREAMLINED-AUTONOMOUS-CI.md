@@ -35,6 +35,10 @@ Provider polling checks the newest branch SHA only. Multiple pushes between poll
 
 The provider event never controls shell commands: only owner-reviewed 0600 manifest steps are executed. Checkout verifies the full SHA. Builds use a pinned image with no network, no mounted host Docker socket or provider token, bounded RAM/CPU/PIDs, and resource-aware admission.
 
+## Opt-in CI internet
+
+The private owner manifest can enable controlled Full public-Web mode for trusted protected-branch pushes; Offline remains default. The container keeps network-none and gains a private public-only proxy. See [CI network guide](CI-NETWORK.md) for actual Docker security tests and caveats.
+
 ## Resource safety
 
 During installation, the CPU reached 100 degrees C and the Intel laptop experienced memory/swap pressure. Open CI Hub was correctly denying new jobs for critical temperature and memory reserve. Do not loosen these policies to make a job run. A reversible power-saver profile lowered observed idle temperatures considerably.

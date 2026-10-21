@@ -30,6 +30,13 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - Added read-only authenticated Deployments dashboard. All provider operations are unit-tested with mocks; no live provider/SSH deployment tested, and no target policy or token was installed on the host.
 - Automatic production remains deliberately blocked until independent CI execution attestation, approval, environment isolation and real rollback proof. See [issue #49](https://github.com/Raebu/open_ci_hub/issues/49).
 
+## Controlled CI internet increment — 21 October 2026
+
+- Owner-approved Full public HTTP/HTTPS access (80/443) for protected push builds, with default Offline for all others. The Docker network remains disabled and job code accesses only a filtered host Unix-socket gateway.
+- Live bounded container smoke test succeeded for public npm HTTPS; loopback, laptop LAN, RFC1918, metadata, and direct public sockets all blocked.
+- Private network settings appear in the authenticated dashboard. See [CI-NETWORK](CI-NETWORK.md).
+- Full here does NOT mean arbitrary TCP/UDP ports or private network access; CI build provider status and release gates remain separate.
+
 ## NOT yet complete or verified
 - Changed SHA → durable enqueue → admitted Docker execution → accurate provider status, logs and receipt, proven end to end.
 - GitLab project-specific review and allowlisting. Merely authenticating `glab` is not a validated Talent build.

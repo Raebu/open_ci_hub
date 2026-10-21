@@ -9,6 +9,8 @@ import argparse, hashlib, hmac, json, os, re, shutil, subprocess, sys, threading
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from contextlib import nullcontext
+from ci_network import VALID_MODES, public_web_proxy, ensure_static_bridge, docker_network_options
 from urllib.parse import quote
 
 from app_runtime import Broker
@@ -67,6 +69,11 @@ def load_manifest(path=MANIFEST):
         ram=cfg.get("ram_mb",1024)
         if type(ram) is not int or not 256<=ram<=8192:
             raise ValueError("ram_mb must be an integer between 256 and 8192.")
+        network=cfg.get("network","offline")
+        if network not in VALID_MODES:
+            raise ValueError("CI network must be offline or full")
+        if network=="full" and cfg.get("trusted_network_confirmed") is not True:
+            raise PermissionError("Full public-Web egress requires explicit trusted-network approval")
         parallel=cfg.get("max_parallel",2)
         if type(parallel) is not int or not 1<=parallel<=8:
             raise ValueError("max_parallel must be an integer between 1 and 8.")
@@ -169,6 +176,8 @@ def enqueue(provider, repo, sha, branch, event, manifest, broker=None):
     if branch not in cfg["branches"]: raise PermissionError("Branch is not allowlisted.")
     if not SHA.fullmatch(sha): raise ValueError("A full 40-character commit SHA is required.")
     if event not in ALLOWED_EVENTS: raise ValueError("Unsupported provider event.")
+    if cfg.get("network","offline")=="full" and event!="push":
+        raise PermissionError("Full CI public-Web access is only approved for protected-branch push events.")
     broker=ensure_scheduler(manifest,broker)
     app=app_for(repo)
     idempotency=hashlib.sha256(f"{provider}:{repo}:{sha}:{event}".encode()).hexdigest()
@@ -290,6 +299,8 @@ def execute_one(job, manifest, broker=None):
         pass
     passed=False;detail="";lease_lost=False
     try:
+        if cfg.get("network","offline")=="full" and payload["event"]!="push":
+            raise RuntimeError("Network privilege changed since queue admission; rejected for safety")
         work.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
         if work.exists(): shutil.rmtree(work)
         work.mkdir(mode=0o700)
@@ -313,15 +324,22 @@ def execute_one(job, manifest, broker=None):
                   "--security-opt=no-new-privileges","--pids-limit=128",
                   "--memory",f"{budget}m","--memory-swap",f"{budget}m","--cpus","1.0",
                   "--user",f"{os.getuid()}:{os.getgid()}","-e","HOME=/tmp","-e","CI=true",
-                  "-v",f"{work}:/workspace:rw","-w","/workspace",image,*step["argv"]]
+                  "-v",f"{work}:/workspace:rw","-w","/workspace"]
+            enabled=cfg.get("network","offline")=="full"
+            context=public_web_proxy(STATE,secrets.token_hex(16)) if enabled else nullcontext(None)
             def heartbeat():
                 try:
                     broker.heartbeat(who,job_id,token)
                     return True
                 except (PermissionError,RuntimeError,OSError):
                     return False
-            code,lease_lost=monitored_container(argv,cwd=ROOT,timeout=cfg.get("max_seconds",900),
-                                                log_path=log,heartbeat=heartbeat,container_name=container_name)
+            with context as egress:
+                if enabled:
+                    binary=ensure_static_bridge(ROOT/"ci_proxy_bridge.c",STATE)
+                    argv+=docker_network_options(binary,egress)
+                argv.extend([image,*step["argv"]])
+                code,lease_lost=monitored_container(argv,cwd=ROOT,timeout=cfg.get("max_seconds",900),
+                                                    log_path=log,heartbeat=heartbeat,container_name=container_name)
             if lease_lost:
                 detail="Worker lease was lost; job remains reserved until safe recovery."
                 raise RuntimeError(detail)

@@ -13,7 +13,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -121,6 +121,14 @@
           <h3>Queued projects</h3>
           <div id="apps-queue" class="results" aria-live="polite"></div>
           <p class="small">Register app IDs and issue separate submitter/worker API tokens locally on the host. Jobs are executed by independently deployed application workers, never by the host terminal or CI runner.</p>
+        </section>
+        <section id="internet">
+          <div class="section-head"><div><h2>CI internet access</h2>
+            <p>Per-project policy. Offline by default; approved Full mode uses a public-web gateway while Docker remains network-none.</p></div>
+            <button type="button" class="btn secondary" id="internet-refresh">↻ Refresh network</button>
+          </div>
+          <div id="internet-items" class="results" role="status" aria-live="polite"></div>
+          <p class="small">Full here means public HTTP and HTTPS via ports 80/443. Private networks, cloud metadata endpoints and all direct container sockets stay blocked. An owner-controlled 0600 manifest enables trusted projects; this screen cannot bypass that policy.</p>
         </section>
         <section id="deployments">
           <div class="section-head"><div><h2>Deployments &amp; release evidence</h2>

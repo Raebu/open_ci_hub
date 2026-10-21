@@ -435,6 +435,25 @@ async function appControl(action){
   await loadApps();
 }
 
+async function loadInternet(){
+  const root=$('internet-items');root.replaceChildren(el('p','Loading network access policies…','small'));
+  try{
+    const result=await api('/api/ci/network');
+    root.replaceChildren();
+    if(!result.projects.length)root.append(el('p','No approved CI repository profiles configured.','small'));
+    for(const project of result.projects){
+      const item=el('article',undefined,'result-row');
+      const details=el('div');
+      details.append(el('strong',project.repo));
+      details.append(el('p','Network: '+(project.mode==='full'?'Full public web (controlled)':'Offline')+
+        ' · '+(project.trusted?'Trusted opt-in':'Default isolation')+
+        ' · provider '+project.provider,'small'));
+      details.append(el('p','Approved branches: '+project.branches.join(', '),'small'));
+      item.append(details);root.append(item);
+    }
+    root.append(el('p',result.note||'Network policy is private and owner-controlled.','small'));
+  }catch(err){root.replaceChildren(el('p',err.message,'small'));}
+}
 async function loadDeployments(){
   const root=$('deployments-items');root.replaceChildren(el('p','Loading verified release records…','small'));
   try{
@@ -523,7 +542,7 @@ async function init(){
     try{await api('/api/logout',{});notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();});
   $('apps-refresh').addEventListener('click',loadApps);
   $('apps-pause').addEventListener('click',()=>appControl('pause').catch(e=>notice(e.message,true)));
   $('apps-resume').addEventListener('click',()=>appControl('resume').catch(e=>notice(e.message,true)));
@@ -534,6 +553,7 @@ async function init(){
   });
   $('machines-refresh').addEventListener('click',loadMachines);
   $('deployments-refresh').addEventListener('click',loadDeployments);
+  $('internet-refresh').addEventListener('click',loadInternet);
   $('machine-enroll').addEventListener('submit',async e=>{
     e.preventDefault();
     const name=$('machine-name').value.trim(),host=$('machine-host').value.trim().toLowerCase();
@@ -565,7 +585,7 @@ async function init(){
   });
   configureOnboarding();
   await refresh();
-  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();
+  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();
     show('machine-enroll',state.role==='owner'&&state.mode==='desktop');}
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }

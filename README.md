@@ -154,6 +154,10 @@ Open CI Hub now distinguishes native provider pipeline statuses from [runner-rep
 
 A separate **Terminal** tab can create an actor-scoped interactive Linux pseudo-terminal on the real host, under the regular user account. It is a new shell, **not a mirror of an existing KDE Konsole window**. It is disabled until the host owner explicitly runs the enablement command and grants each mobile editor separately. See [Host Terminal security and activation](docs/HOST-TERMINAL.md). No CI runner receives arbitrary host console privileges, and a successful PR run does not imply the host agent is deployed on the PC.
 
+## Controlled CI internet access
+
+See [CI Network](docs/CI-NETWORK.md) for owner-approved public-Web HTTPS/HTTP access in local CI while retaining Docker network isolation, private LAN denial and existing resource limits. The dashboard's CI Internet view shows effective repository policies.
+
 ## Governed deployment engine (staging foundation)
 
 [Deployment engine and multi-target roadmap](docs/DEPLOYMENT-ENGINE.md) (tracked in [deployment issue #49](https://github.com/Raebu/open_ci_hub/issues/49)) covers environment-locked release promotion, signed-artifact checks, local staging health/rollback and an audit record built on the existing \`release_manager.py\`. The [Raeburn Talent deployment profile](docs/ATS-DEPLOYMENT-PROFILE.md) documents ATS-specific application gates without embedding them in CI core. The source includes *opt-in* Cloudflare Worker version, Vercel immutable alias and SSH/Compose staging adapters plus a credential store and read-only deployment dashboard. None are enabled without an owner-installed private policy, signed target metadata and scoped secrets. Automatic production remains disabled pending independent CI attestation, provider rollback verification, environment isolation and human-approved policy.
