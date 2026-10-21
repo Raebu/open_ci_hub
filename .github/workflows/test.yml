@@ -1,8 +1,13 @@
 # Development test harness for local act only. Automatic CI is owned by Open CI Hub.
-# GitHub Actions must not run builds/tests on push or pull_request.
+# GitHub Actions may run only an inert trigger job. The authenticated direct webhook
+# is the automatic CI entry point; local act alone may execute substantive tests.
 name: Open CI Hub local act test harness
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 concurrency:
   group: open-ci-hub-local-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
