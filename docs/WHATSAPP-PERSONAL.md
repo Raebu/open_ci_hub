@@ -24,6 +24,19 @@ Official method: [WhatsApp Help Center — How to use click to chat](https://faq
 
 **Personal WhatsApp and the WhatsApp Business Platform are different products.** Automated API sending through Meta's WhatsApp Business Platform requires a business-capable sender, applicable permissions, templates and policies; do not treat a personal WhatsApp number as automatically API-compatible.
 
+## ChatGPT / Open CI Hub PC tool
+
+The Open CI Hub direct-PC connector now also defines `prepare_personal_whatsapp_message`, so a normal ChatGPT session can prepare one personal message without opening the full dashboard:
+
+- `recipient` — full international number, including country code;
+- `message` — the text to prepare (up to 1,800 characters);
+- `open_on_desktop` — optional, defaults to false;
+- `confirm_open` — required true when opening WhatsApp on the desktop.
+
+The tool returns `sent: false` even after WhatsApp opens. It does not extract chat history, handle incoming messages or press Send. Opening uses the existing authorised desktop-control capability, and message text is not written to Open CI Hub's audit record.
+
+**Activation requires the PC tunnel to reconnect and reload the updated connector.** Adding the tool definition to GitHub does not automatically install it on the desktop or make it visible to ChatGPT.
+
 ## Privacy and security
 
 The browser owns all draft/recipient fields. No message storage, cloud logging or account login is added to Open CI Hub. Phone numbers are validated before link generation; messages are length-limited and percent-encoded. Opening the click-to-chat link intentionally gives WhatsApp the recipient and prepared text, and the external URL may be visible in the browser history. Use the existing authenticated dashboard, review the telephone number carefully, and avoid putting highly sensitive information in the URL.
