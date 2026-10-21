@@ -28,7 +28,7 @@ class DirectMcpTests(unittest.TestCase):
             "run_pc_command", "install_arch_packages", "desktop_open_url",
             "desktop_launch_app", "desktop_screenshot", "desktop_list_windows",
             "desktop_window_action", "desktop_type_text", "desktop_press_key",
-            "desktop_click",
+            "desktop_click", "prepare_personal_whatsapp_message",
         })
         for tool in response["result"]["tools"]:
             self.assertFalse(tool["inputSchema"]["additionalProperties"])
