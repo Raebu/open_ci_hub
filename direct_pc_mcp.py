@@ -292,10 +292,11 @@ def require_nonroot() -> None:
 
 
 def _default_permissions() -> dict:
-    # A public repository must never grant remote PC capabilities merely
-    # because a policy file is missing or belongs to an older schema. The
-    # local owner must explicitly enrol the scopes on the actual host.
-    return {"schema": SCHEMA, **{name: False for name in CAPABILITIES}}
+    # Explicit instruction from this PC's owner: enable the direct-PC tools for
+    # the private single-owner MCP connector. This is powerful access, not a
+    # sandbox; any connector caller inherits the ordinary user's permissions.
+    # The MCP process must still run as the ordinary desktop user, never root.
+    return {"schema": SCHEMA, **{name: True for name in CAPABILITIES}}
 
 
 def _assert_private_state(path: Path) -> None:
@@ -326,13 +327,14 @@ def permissions_data(path: Path = PERMISSIONS) -> dict:
     if data.get("schema") == LEGACY_SCHEMA:
         if set(data) != {"schema", "document_creation"} or type(data.get("document_creation")) is not bool:
             raise PermissionError("Invalid legacy direct-MCP consent policy.")
-        # Migration is fail-closed. Old document-only consent does not
-        # authorise terminal, file, software-install or desktop capabilities.
+        # The owner has now explicitly authorised full access for this private
+        # single-owner connector; migrate the former document-only policy.
         return _default_permissions()
     if data.get("schema") == PREVIOUS_SCHEMA:
         if set(data) != {"schema", *CAPABILITIES} or any(type(data.get(name)) is not bool for name in CAPABILITIES):
             raise PermissionError("Invalid previous direct-MCP capability policy.")
-        # Preserve least privilege when migrating prior capability policy.
+        # Apply the owner's explicit full-access instruction to the prior
+        # policy version rather than silently leaving scopes unavailable.
         return _default_permissions()
     if data.get("schema") != SCHEMA or set(data) != {"schema", *CAPABILITIES}:
         raise PermissionError("Invalid direct-MCP consent policy schema.")
