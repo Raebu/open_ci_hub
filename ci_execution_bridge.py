@@ -1882,7 +1882,7 @@ def worker_loop(queue: Queue) -> None:
             try:_provider_status(job,"running",f"Open CI Hub running · {job['id'][:8]}")
             except Exception:pass
             result=execute_one(queue,job)
-            if result.get("state") not in ("awaiting_approval","passed","failed","cancelled","blocked","interrupted"):
+            if result.get("state") not in ("pending","awaiting_approval","passed","failed","cancelled","blocked","interrupted"):
                 queue.finish(job["id"],"failed",error="Worker returned an unexpected state.",summary="Execution bridge internal error.")
         except Exception:
             STOP.wait(3)
