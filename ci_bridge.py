@@ -157,9 +157,14 @@ def provider_status(cfg, repo, sha, state, description, job_url=""):
 
 def execute_one(job, manifest):
     cfg=manifest["repositories"][job["repo"]]
+    # Claim atomically so two worker processes can never execute the same queued job.
     with connect() as db:
-        db.execute("UPDATE jobs SET status='running',attempts=attempts+1,updated=? WHERE id=? AND status='queued'",(time.time(),job["id"]))
+        db.execute("BEGIN IMMEDIATE")
+        claimed=db.execute("UPDATE jobs SET status='running',attempts=attempts+1,updated=? WHERE id=? AND status='queued'",
+                           (time.time(),job["id"])).rowcount
         db.commit()
+    if claimed != 1:
+        return {"job_id":job["id"],"status":"not-claimed","detail":"Another worker already claimed this job."}
     work=STATE/"work"/job["id"]
     work.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     try:
