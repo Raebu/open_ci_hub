@@ -83,6 +83,12 @@ class PcReleasesTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.stage(archive=archive, digest=hashlib.sha256(archive.read_bytes()).hexdigest())
 
+    def test_nextjs_standalone_archive_supports_next_directory(self):
+        archive, digest = self.archive({".next/BUILD_ID": "abc123", "server.js": "console.log('hello')"})
+        result = self.stage(archive=archive, digest=digest)
+        self.assertEqual(result["status"], "staged")
+        self.assertEqual((self.root / "demo" / "releases" / self.sha_a / ".next" / "BUILD_ID").read_text(), "abc123")
+
     def test_archive_limits_and_exact_commit_are_required(self):
         archive, digest = self.archive({"dist/data.txt": "x" * 8})
         with self.assertRaises(ValueError):
