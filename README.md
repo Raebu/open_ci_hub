@@ -11,6 +11,7 @@ current validation, activation commands and remaining release gates.
 
 - Responsive dashboard with **Sign in** and **Register runner** buttons. Authorization uses the **official provider CLIs and browser**, not copy/paste API keys.
 - Native provider runner support: GitHub Actions, GitLab, CircleCI, with separate Docker Compose profiles. No host Docker socket or home-directory mount by default.
+- Draft Hub-owned CI trigger bridge: authenticated GitHub/GitLab webhooks, exact-SHA queueing, and shared resource-aware parallel admission through the existing application broker. Not yet wired into the installer/dashboard or production-verified; see [bridge implementation and release gates](docs/HUB-OWNED-CI-BRIDGE.md).
 - Browse GitHub/GitLab repositories, create private or public repositories (with confirmation), inspect recent pipelines, and explicitly retry/cancel GitHub or GitLab runs.
 - Control runners, inspect Docker/disk/CLI readiness, and view a **local SQLite management audit log**.
 - Optional **mobile access through Tailscale Serve**, using a trusted tailnet identity with an owner-approved viewer or editor role.
