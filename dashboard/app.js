@@ -539,7 +539,7 @@ async function init(){
   let secret=null;if(location.hash.startsWith('#access=')){secret=decodeURIComponent(location.hash.slice(8));history.replaceState(null,'',location.pathname+location.search);}
   if(secret){try{await api('/api/session',{secret});}catch(e){notice(e.message,true)}}
   $('signout').addEventListener('click',async()=>{
-    try{await api('/api/logout',{});notice('Signed out of this desktop session.');await refresh();}
+    try{await api('/api/logout',{});document.dispatchEvent(new Event('open-ci-logout'));notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
   $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();});
