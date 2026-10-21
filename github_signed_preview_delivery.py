@@ -18,6 +18,7 @@ import tempfile
 import time
 
 import provider_artifact_verifier as provider
+import release_status_consistency as consistency
 import signed_preview_queue as preview
 import pc_releases as releases
 from hub import secure_write
@@ -38,7 +39,7 @@ def config(app):
     data = releases._private_file(_config_path(app))
     if not isinstance(data, dict) or set(data) != {
         "schema", "control_repo", "control_repo_id", "trusted_issue_authors",
-        "artifact_name", "enrolled_at"
+        "artifact_name", "enrolled_at", "status_context", "status_publisher"
     } or data["schema"] != SCHEMA:
         raise PermissionError("Private GitHub delivery not enrolled.")
     if (not isinstance(data["control_repo"], str) or not REPO.fullmatch(data["control_repo"])
@@ -49,12 +50,18 @@ def config(app):
                for x in data["trusted_issue_authors"])
         or not isinstance(data["artifact_name"], str)
         or not provider.NAME.fullmatch(data["artifact_name"])
-        or type(data["enrolled_at"]) is not int or data["enrolled_at"] < 1):
+        or type(data["enrolled_at"]) is not int or data["enrolled_at"] < 1
+        or not isinstance(data["status_context"], str)
+        or not 1 <= len(data["status_context"]) <= 90
+        or not isinstance(data["status_publisher"], str)
+        or not re.fullmatch(r"[A-Za-z0-9_.\[\]-]{1,90}", data["status_publisher"])):
         raise PermissionError("Invalid owner-enrolled transport scope.")
     return data
 
 
-def enrol(app, *, control_repo, trusted_issue_authors, artifact_name, confirm=False,
+def enrol(app, *, control_repo, trusted_issue_authors, artifact_name,
+          status_context="Raeburn Local CI",
+          status_publisher="raeburn-local-ci[bot]", confirm=False,
           api=provider._json):
     releases._owner()
     releases._config(app)
@@ -64,7 +71,10 @@ def enrol(app, *, control_repo, trusted_issue_authors, artifact_name, confirm=Fa
         or not isinstance(trusted_issue_authors, list) or not trusted_issue_authors
         or any(not isinstance(v, str) or not LOGIN.fullmatch(v)
                for v in trusted_issue_authors)
-        or not isinstance(artifact_name, str) or not provider.NAME.fullmatch(artifact_name)):
+        or not isinstance(artifact_name, str) or not provider.NAME.fullmatch(artifact_name)
+        or not isinstance(status_context, str) or not 1 <= len(status_context) <= 90
+        or not isinstance(status_publisher, str)
+        or not re.fullmatch(r"[A-Za-z0-9_.\[\]-]{1,90}", status_publisher)):
         raise ValueError("Invalid private GitHub transport configuration.")
     path = _config_path(app)
     if path.exists() or path.is_symlink():
@@ -76,7 +86,8 @@ def enrol(app, *, control_repo, trusted_issue_authors, artifact_name, confirm=Fa
         raise PermissionError("Transport repository must exist and be private.")
     record = {"schema": SCHEMA, "control_repo": control_repo,
               "control_repo_id": info["id"], "trusted_issue_authors": trusted_issue_authors,
-              "artifact_name": artifact_name, "enrolled_at": int(time.time())}
+              "artifact_name": artifact_name, "enrolled_at": int(time.time()),
+              "status_context": status_context, "status_publisher": status_publisher}
     secure_write(path, json.dumps(record, sort_keys=True) + "\n")
     return {"app": app, "transport_enrolled": True, "repository_id": info["id"],
             "polling_enabled": False}
@@ -91,7 +102,8 @@ def _verify_private_repository(conf, api):
         raise PermissionError("Private transport repo ID/privacy changed.")
 
 
-def _fetch_signed_zip(app, signed, artifact_name, *, api, binary):
+def _fetch_signed_zip(app, signed, artifact_name, *, api, binary,
+                      status_context, status_publisher):
     proof = preview.verify_signed(app, signed)
     repo = proof["repository"]
     if not REPO.fullmatch(repo):
@@ -108,6 +120,11 @@ def _fetch_signed_zip(app, signed, artifact_name, *, api, binary):
         or (run.get("head_repository") or {}).get("full_name", "").casefold()
            != repo.casefold()):
         raise PermissionError("Signed preview cannot be matched to a successful GitHub push.")
+    # Native success cannot override a failed, superseded or prematurely green
+    # independent required CI status for the same SHA.
+    consistency.verify_github_release_statuses(
+        api=api, repository=repo, sha=proof["commit"], run=run,
+        required_context=status_context, trusted_publisher=status_publisher)
     arts = api("gh", base + "/runs/" + rid + "/artifacts?per_page=100")
     if (not isinstance(arts, dict) or not isinstance(arts.get("artifacts"), list)
         or arts.get("total_count", 0) > 100):
@@ -160,7 +177,9 @@ def poll_once(app, *, api=provider._json, binary=provider._query):
             if proof["issued_at"] <= conf["enrolled_at"] - 60:
                 raise PermissionError("Refusing pre-enrolment signed delivery.")
             release = _fetch_signed_zip(app, signed, conf["artifact_name"],
-                                        api=api, binary=binary)
+                                        api=api, binary=binary,
+                                        status_context=conf["status_context"],
+                                        status_publisher=conf["status_publisher"])
             folder, _, _ = preview._dirs(app)
             with tempfile.TemporaryDirectory(prefix=".delivery-", dir=folder) as temp:
                 md = Path(temp) / "manifest.json"
@@ -185,6 +204,8 @@ def main(argv=None):
     e.add_argument("--repo", required=True)
     e.add_argument("--trusted-author", action="append", required=True)
     e.add_argument("--artifact-name", default="release-bundle")
+    e.add_argument("--status-context", default="Raeburn Local CI")
+    e.add_argument("--status-publisher", default="raeburn-local-ci[bot]")
     e.add_argument("--confirm", action="store_true")
     for action in ("status", "poll-once"):
         x = sub.add_parser(action)
@@ -194,7 +215,10 @@ def main(argv=None):
         if a.action == "enrol":
             data = enrol(a.app, control_repo=a.repo,
                          trusted_issue_authors=a.trusted_author,
-                         artifact_name=a.artifact_name, confirm=a.confirm)
+                         artifact_name=a.artifact_name,
+                         status_context=a.status_context,
+                         status_publisher=a.status_publisher,
+                         confirm=a.confirm)
         elif a.action == "status":
             data = config(a.app)
             data = {"app": a.app, "repo": data["control_repo"],
