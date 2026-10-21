@@ -765,7 +765,7 @@ def read_pc_file(path: str) -> dict:
     target, label, _ = _resolve_user_path(path, must_exist=True)
     text, digest, redaction_count = _read_text_file(target)
     _audit("read_pc_file", str(target), "success", {"sha256": digest, "redactions": redaction_count})
-    return {"path": str(target), "root_type": label, "content": text,
+    return {"path": str(target), "root_type": label, "file_text": text,
             "sha256": digest, "redactions_applied": redaction_count,
             "note": "Content is redacted for common credential patterns; this is not a guarantee that every secret format is detected."}
 
@@ -930,6 +930,8 @@ def _run_bounded(argv: list[str], *, cwd: str | None = None, env: dict | None = 
         except (OSError, ProcessLookupError):
             pass
         reader.join(timeout=2)
+    if process.stdout is not None and not reader.is_alive():
+        process.stdout.close()
     output = collected.decode("utf-8", "replace")
     redacted, redactions = _redact(output)
     return {

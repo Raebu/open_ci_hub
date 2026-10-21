@@ -210,14 +210,14 @@ def provider_status(cfg, repo, sha, state, description, job_url=""):
     provider=cfg["provider"]
     if provider=="github":
         result=run_cmd(["gh","api","--method","POST",f"repos/{repo}/statuses/{sha}",
-          "-f",f"state={state}","-f","context=Open CI Hub/local","-f",f"description={description[:140]}",
+          "-f",f"state={state}","-f","context=Open CI Hub/bridge-smoke","-f",f"description={description[:140]}",
           "-f",f"target_url={job_url or 'https://github.com/'+repo+'/commit/'+sha}"],timeout=20)
     else:
         project=quote(repo,safe="")
         state_map={"pending":"pending","success":"success","failure":"failed","error":"failed"}
         result=run_cmd(["glab","api","--hostname","gitlab.com","-X","POST",
           f"projects/{project}/statuses/{sha}","-f",f"state={state_map.get(state,state)}",
-          "-f","name=Open CI Hub/local","-f",f"description={description[:255]}"],timeout=20)
+          "-f","name=Open CI Hub/bridge-smoke","-f",f"description={description[:255]}"],timeout=20)
     return result.returncode==0
 
 def event_update(broker, job_id, status, detail=None):

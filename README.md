@@ -4,6 +4,8 @@ An **open-source, provider-neutral, local-first CI/CD control centre** for GitHu
 
 **Release: v4 community preview; native onboarding is implemented in source and requires live verification.** Local Docker image builds/bootstrap and read-only provider checks have passed; real push builds across all three providers remain unverified. Do **not** treat it as a security-audited or production-certified service.
 
+For the optional unattended provider watcher and local resource-aware build worker, see [streamlined autonomous CI](docs/STREAMLINED-AUTONOMOUS-CI.md).
+
 See the [engineering delivery and evidence](docs/ENGINEERING-2026-10-19.md) for
 current validation, activation commands and remaining release gates.
 

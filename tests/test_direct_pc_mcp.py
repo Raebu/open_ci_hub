@@ -161,8 +161,8 @@ class DirectMcpTests(unittest.TestCase):
                  patch("direct_pc_mcp._audit"), \
                  patch("direct_pc_mcp._roots", return_value=roots):
                 result = mcp.read_pc_file(str(file))
-                self.assertIn("[REDACTED]", result["content"])
-                self.assertIn("safe line", result["content"])
+                self.assertIn("[REDACTED]", result["file_text"])
+                self.assertIn("safe line", result["file_text"])
                 self.assertEqual(result["sha256"], hashlib.sha256(file.read_bytes()).hexdigest())
                 self.assertGreater(result["redactions_applied"], 0)
                 with self.assertRaises(PermissionError):
@@ -183,11 +183,11 @@ class DirectMcpTests(unittest.TestCase):
                  patch("direct_pc_mcp._audit"), \
                  patch("direct_pc_mcp._roots", return_value=roots):
                 read_result = mcp.read_pc_file(str(file))
-                self.assertIn("[REDACTED]", read_result["content"])
+                self.assertIn("[REDACTED]", read_result["file_text"])
                 self.assertEqual(read_result["sha256"], expected_sha)
                 # The exact redacted view must never be written over the source.
                 with self.assertRaises(PermissionError):
-                    mcp.write_pc_file(str(file), read_result["content"] + "changed\n", expected_sha)
+                    mcp.write_pc_file(str(file), read_result["file_text"] + "changed\n", expected_sha)
                 # Removing the placeholder must not silently delete the hidden value either.
                 with self.assertRaises(PermissionError):
                     mcp.write_pc_file(str(file), "safe line\nchanged\n", expected_sha)
