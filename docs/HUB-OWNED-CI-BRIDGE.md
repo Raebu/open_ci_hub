@@ -29,7 +29,7 @@ The bridge connects authenticated GitHub/GitLab events to the existing Open CI H
 3. Create an owner-authored manifest at .local/ci-bridge/manifest.json with mode 0600. Configure a different random secret of at least 32 characters for each repository in the service environment.
 4. Preload each build image and verify its exact digest. Set ram_mb and max_parallel for each repository conservatively. The shared ResourceGate can still admit fewer jobs—or none—when RAM headroom, native runner telemetry, thermal policy or global concurrency requires it.
 5. Run python3 ci_bridge.py init-state. This registers the CI projects as named apps in the shared broker and configures their task budgets. It does not start a build.
-6. Run python3 ci_bridge.py serve --host 127.0.0.1 --port 8766 and, in a separately supervised process, python3 ci_bridge.py worker --workers 2. Worker count is the maximum number of worker threads, not a promise that all can be admitted simultaneously.
+6. Run python3 ci_bridge.py serve --host 127.0.0.1 --port 8766 and, in a separately supervised process, python3 ci_bridge.py worker --workers 3. Worker count is the maximum number of worker threads, not a promise that all can be admitted simultaneously.
 7. Configure the provider webhook only through an authenticated private relay that forwards the raw request body and required signature/token headers. Direct provider-to-loopback delivery will not work.
 
 ## Manifest example
@@ -64,7 +64,7 @@ The image digest is intentionally invalid until replaced. Each argv step runs wi
 python3 ci_bridge.py init-state
 python3 ci_bridge.py status
 python3 ci_bridge.py serve --host 127.0.0.1 --port 8766
-python3 ci_bridge.py worker --workers 2 --poll-seconds 5
+python3 ci_bridge.py worker --workers 3 --poll-seconds 5
 python3 ci_bridge.py worker-once
 ~~~
 
