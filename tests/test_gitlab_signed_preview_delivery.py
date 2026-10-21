@@ -130,7 +130,10 @@ class GitLabDeliveryTests(unittest.TestCase):
         self.trace = b"Changed provider job log"
         self.assertEqual(self.poll()["count"], 0)
         self.trace = b"Actual GitLab CI runner completed test 0\n"
-        self.outer = self.outer + b"changed bytes"
+        changed_outer = BytesIO()
+        with ZipFile(changed_outer, "w") as z:
+            z.writestr("release.zip", b"altered artifact contents")
+        self.outer = changed_outer.getvalue()
         self.assertEqual(self.poll()["count"], 0)
 
     def test_private_control_scope_and_signature_required(self):
