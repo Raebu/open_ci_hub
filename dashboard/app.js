@@ -535,55 +535,6 @@ async function previewOnboarding(){
     },'primary'));
   }catch(err){root.replaceChildren();notice(err.message,true)}
 }
-// Personal WhatsApp uses Meta's official prefilled click-to-chat link.
-// It never reads chats or sends a message on the user's behalf.
-function whatsappPersonalNumber(raw){
-  if(typeof raw!=='string')throw new Error('Enter an international phone number.');
-  const value=raw.trim().replace(/[\s().-]/g,'');
-  if(!/^\+?[1-9]\d{6,14}$/.test(value))throw new Error('Use the full international number with country code, e.g. +44 7700 900123.');
-  return value.replace(/^\+/,'');
-}
-function whatsappPersonalLink(phone,message){
-  const number=whatsappPersonalNumber(phone);
-  if(typeof message!=='string'||!message.trim())throw new Error('Write a message before opening WhatsApp.');
-  const draft=message.trim();
-  if(draft.length>1800)throw new Error('Keep the message under 1,800 characters.');
-  return 'https://wa.me/'+number+'?text='+encodeURIComponent(draft);
-}
-function setupPersonalWhatsApp(){
-  const to=$('wa-to'),draft=$('wa-message'),open=$('wa-open'),status=$('wa-message-status');
-  function validate(){
-    try{
-      const url=whatsappPersonalLink(to.value,draft.value);
-      open.href=url;
-      status.textContent='Ready to open in WhatsApp. You will review and press Send there.';
-      return url;
-    }catch(err){
-      open.removeAttribute('href');
-      status.textContent=to.value||draft.value?err.message:'Enter a recipient and message to begin.';
-      return null;
-    }
-  }
-  to.addEventListener('input',validate);
-  draft.addEventListener('input',validate);
-  open.addEventListener('click',event=>{
-    if(!validate()){event.preventDefault();return;}
-    status.textContent='WhatsApp will open with your message prefilled. You must press Send in WhatsApp.';
-  });
-  $('wa-copy').addEventListener('click',async()=>{
-    if(!draft.value.trim()){status.textContent='Write a message before copying it.';return;}
-    try{
-      if(!navigator.clipboard||typeof navigator.clipboard.writeText!=='function')throw new Error('Clipboard unavailable.');
-      await navigator.clipboard.writeText(draft.value);
-      status.textContent='Message copied. Nothing has been sent.';
-    }catch(err){status.textContent='Clipboard unavailable. Select and copy the message manually.';}
-  });
-  $('wa-clear').addEventListener('click',()=>{
-    to.value='';draft.value='';validate();to.focus();
-  });
-  validate();
-}
-
 async function init(){
   let secret=null;if(location.hash.startsWith('#access=')){secret=decodeURIComponent(location.hash.slice(8));history.replaceState(null,'',location.pathname+location.search);}
   if(secret){try{await api('/api/session',{secret});}catch(e){notice(e.message,true)}}
@@ -632,7 +583,6 @@ async function init(){
     if(!confirm(`Create ${visibility} ${provider} repository “${name}”?`))return;
     const b=$('create-repo');b.disabled=true;try{const out=await api('/api/repos',{provider,name,visibility,description,confirm_public:$('confirm-public').checked});notice(out.url?`${out.message} ${out.url}`:out.message);$('new-repo').reset();show('public-warning',false);}catch(err){notice(err.message,true)}finally{b.disabled=false}
   });
-  setupPersonalWhatsApp();
   configureOnboarding();
   await refresh();
   if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();
