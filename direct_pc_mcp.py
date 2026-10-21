@@ -1237,8 +1237,8 @@ def prepare_personal_whatsapp_message(recipient: str, message: str,
     """WhatsApp Messenger: prepare official chat link, never automate the Send control."""
     if not isinstance(recipient, str) or not isinstance(message, str):
         raise ValueError("WhatsApp recipient and message must be text.")
-    phone = re.sub(r"[\\s().-]", "", recipient.strip())
-    if not re.fullmatch(r"\\+?[1-9][0-9]{6,14}", phone):
+    phone = re.sub(r"[\s().-]", "", recipient.strip())
+    if not re.fullmatch(r"\+?[1-9][0-9]{6,14}", phone):
         raise ValueError("Use the full international WhatsApp number including country code.")
     digits = phone.lstrip("+")
     draft = message.strip()
