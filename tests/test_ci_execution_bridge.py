@@ -131,6 +131,7 @@ class LocalStateTests(BridgeTestCase):
                 created_at INTEGER NOT NULL)""")
             db.execute("INSERT INTO jobs(id,idempotency_key,provider,repo,sha,state,created_at) VALUES(?,?,?,?,?,?,?)",
                        ("existing","key","github","Raebu/open_ci_hub","a"*40,"failed",1))
+        legacy.chmod(0o600)
         migrated = bridge.Queue(legacy)
         with migrated._db() as db:
             columns={row["name"] for row in db.execute("PRAGMA table_info(jobs)")}
