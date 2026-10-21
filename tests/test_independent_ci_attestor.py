@@ -18,6 +18,13 @@ import signed_preview_queue as q
 
 class IndependentAttestorTests(unittest.TestCase):
     def setUp(self):
+        # Unit tests exercise cryptography only; never load signing credentials
+        # from the CI environment or turn on an actual signing service.
+        isolated_env = patch.dict(os.environ, {
+            "CI": "", "GITHUB_ACTIONS": "", "GITLAB_CI": "",
+            "GITHUB_RUN_ID": "", "CI_PIPELINE_ID": ""})
+        isolated_env.start()
+        self.addCleanup(isolated_env.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
