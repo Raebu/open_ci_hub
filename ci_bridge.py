@@ -21,6 +21,7 @@ MAX_BODY = 1024 * 1024
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA = re.compile(r"^[a-f0-9]{40}$")
 IDENT = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
+BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 IMAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9./:_-]{1,180}@sha256:[a-f0-9]{64}$")
 ALLOWED_EVENTS = {"push", "pull_request", "merge_request"}
 LEASE_HEARTBEAT_SECONDS = 45
@@ -48,7 +49,7 @@ def load_manifest(path=MANIFEST):
         if cfg.get("provider") not in ("github","gitlab") or not isinstance(cfg.get("secret_env"),str) or not IDENT.fullmatch(cfg["secret_env"]):
             raise ValueError("Each repository requires provider github/gitlab and a webhook secret environment variable name.")
         branches=cfg.get("branches")
-        if not isinstance(branches,list) or not branches or any(not isinstance(b,str) or not IDENT.fullmatch(b) for b in branches):
+        if not isinstance(branches,list) or not branches or any(not isinstance(b,str) or not BRANCH.fullmatch(b) or ".." in b or "//" in b or b.endswith(("/", ".")) for b in branches):
             raise ValueError("Each repository requires explicit allowed branch names.")
         image=cfg.get("image")
         if not isinstance(image,str) or not IMAGE.fullmatch(image):
@@ -239,7 +240,7 @@ def claim_one(manifest, broker=None):
         if reason in blocked: return None,reason
     return None,(blocked[0] if blocked else "queue_empty")
 
-def monitored_container(argv, *, cwd, timeout, log_path, heartbeat):
+def monitored_container(argv, *, cwd, timeout, log_path, heartbeat, container_name):
     deadline=time.monotonic()+timeout
     log_path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     lost_lease=False
@@ -250,18 +251,22 @@ def monitored_container(argv, *, cwd, timeout, log_path, heartbeat):
         while proc.poll() is None:
             now=time.monotonic()
             if now>=deadline:
+                try: run_cmd(["docker","kill",container_name],timeout=5)
+                except (OSError,subprocess.TimeoutExpired): pass
                 proc.terminate()
                 try: proc.wait(timeout=5)
                 except subprocess.TimeoutExpired: proc.kill();proc.wait(timeout=5)
-                stream.write(b"\nOpen CI Hub: step timed out.\n");stream.flush()
+                stream.write(b"\nOpen CI Hub: step timed out; container termination requested.\n");stream.flush()
                 return 124,False
             if now>=next_heartbeat:
                 if not heartbeat():
                     lost_lease=True
+                    try: run_cmd(["docker","kill",container_name],timeout=5)
+                    except (OSError,subprocess.TimeoutExpired): pass
                     proc.terminate()
                     try: proc.wait(timeout=5)
                     except subprocess.TimeoutExpired: proc.kill();proc.wait(timeout=5)
-                    stream.write(b"\nOpen CI Hub: worker lease heartbeat failed; execution stopped.\n");stream.flush()
+                    stream.write(b"\nOpen CI Hub: worker lease heartbeat failed; container termination requested.\n");stream.flush()
                     return 125,True
                 next_heartbeat=time.monotonic()+LEASE_HEARTBEAT_SECONDS
             time.sleep(1)
@@ -298,12 +303,14 @@ def execute_one(job, manifest, broker=None):
         if inspect.returncode:
             raise RuntimeError("Digest-pinned build image is not present locally; owner must provision it.")
         budget=max(256,int(job["resources"].get("effective_ram_mb",cfg.get("ram_mb",1024))))
-        for step in cfg["steps"]:
-            argv=["docker","run","--rm","--network","none","--read-only","--tmpfs","/tmp:rw,nosuid,nodev,size=256m",
-                  "--cap-drop=ALL","--security-opt=no-new-privileges","--pids-limit=128",
-                  "--memory",f"{budget}m","--cpus","1.0","--user",f"{os.getuid()}:{os.getgid()}",
-                  "-e","HOME=/tmp","-e","CI=true","-v",f"{work}:/workspace:rw","-w","/workspace",
-                  image,*step["argv"]]
+        for step_index,step in enumerate(cfg["steps"]):
+            container_name=f"open-ci-{job_id[:20]}-{step_index}"
+            argv=["docker","run","--rm","--name",container_name,"--network","none","--read-only",
+                  "--tmpfs","/tmp:rw,nosuid,nodev,size=256m","--cap-drop=ALL",
+                  "--security-opt=no-new-privileges","--pids-limit=128",
+                  "--memory",f"{budget}m","--memory-swap",f"{budget}m","--cpus","1.0",
+                  "--user",f"{os.getuid()}:{os.getgid()}","-e","HOME=/tmp","-e","CI=true",
+                  "-v",f"{work}:/workspace:rw","-w","/workspace",image,*step["argv"]]
             def heartbeat():
                 try:
                     broker.heartbeat(who,job_id,token)
@@ -311,7 +318,7 @@ def execute_one(job, manifest, broker=None):
                 except (PermissionError,RuntimeError,OSError):
                     return False
             code,lease_lost=monitored_container(argv,cwd=ROOT,timeout=cfg.get("max_seconds",900),
-                                                log_path=log,heartbeat=heartbeat)
+                                                log_path=log,heartbeat=heartbeat,container_name=container_name)
             if lease_lost:
                 detail="Worker lease was lost; job remains reserved until safe recovery."
                 raise RuntimeError(detail)
@@ -354,17 +361,18 @@ def worker_once(manifest=None,broker=None):
     if not job: return {"status":"idle" if reason=="queue_empty" else "blocked","reason":reason}
     return execute_one(job,manifest,broker)
 
-def worker_loop(manifest,broker,poll_seconds=5):
-    while True:
+def worker_loop(manifest,broker,poll_seconds=5,stop_event=None):
+    stop_event=stop_event or threading.Event()
+    while not stop_event.is_set():
         try:
             result=worker_once(manifest,broker)
             if result.get("status") in ("idle","blocked"):
-                time.sleep(poll_seconds)
+                stop_event.wait(poll_seconds)
             else:
                 print(json.dumps(result,ensure_ascii=True),flush=True)
         except (OSError,RuntimeError,ValueError) as exc:
             print(json.dumps({"status":"worker-error","detail":str(exc)[:300]}),file=sys.stderr,flush=True)
-            time.sleep(max(5,poll_seconds))
+            stop_event.wait(max(5,poll_seconds))
 
 def status(broker=None):
     broker=broker or get_broker()
@@ -434,9 +442,17 @@ def main():
             if type(a.workers) is not int or not 1<=a.workers<=8 or not 1<=a.poll_seconds<=60:
                 raise ValueError("workers must be 1–8 and poll-seconds 1–60.")
             manifest=load_manifest();broker=ensure_scheduler(manifest)
+            stop_event=threading.Event()
             with ThreadPoolExecutor(max_workers=a.workers,thread_name_prefix="ci-worker") as pool:
-                futures=[pool.submit(worker_loop,manifest,broker,a.poll_seconds) for _ in range(a.workers)]
-                for future in futures: future.result()
+                futures=[pool.submit(worker_loop,manifest,broker,a.poll_seconds,stop_event) for _ in range(a.workers)]
+                try:
+                    for future in futures: future.result()
+                except KeyboardInterrupt:
+                    stop_event.set()
+                    print("Open CI Hub: stopping new claims; active jobs are allowed to finish.",file=sys.stderr,flush=True)
+                    for future in futures:
+                        try: future.result()
+                        except Exception: pass
             return 0
         print(json.dumps(out,indent=2,ensure_ascii=True));return 0
     except (ValueError,PermissionError,RuntimeError,OSError) as exc:
