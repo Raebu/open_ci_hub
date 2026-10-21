@@ -37,6 +37,13 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - Private network settings appear in the authenticated dashboard. See [CI-NETWORK](CI-NETWORK.md).
 - Full here does NOT mean arbitrary TCP/UDP ports or private network access; CI build provider status and release gates remain separate.
 
+## Personal WhatsApp composer — 21 October 2026
+
+- Added a personal WhatsApp writing screen to the existing dashboard, supporting editable drafts, tone-specific suggestions, recipient number validation, and official click-to-chat handoff with **user-initiated Send in WhatsApp**.
+- No official personal WhatsApp API connection or background messaging was created. No personal messages have been sent.
+- GitHub branch source and relevant pure-JavaScript checks were verified; local Garuda deployment and complete test suite are **unverified**, because the Open CI Hub PC connector returned `Session terminated` during this work.
+- See [Personal WhatsApp guide](WHATSAPP-PERSONAL.md) and [tracking issue #50](https://github.com/Raebu/open_ci_hub/issues/50). Resume by reconnecting the PC and verifying the branch/dashboard; preserve the existing CI resource protections.
+
 ## NOT yet complete or verified
 - Changed SHA → durable enqueue → admitted Docker execution → accurate provider status, logs and receipt, proven end to end.
 - GitLab project-specific review and allowlisting. Merely authenticating `glab` is not a validated Talent build.
