@@ -124,6 +124,17 @@ class SignedPreviewQueueTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             queue.submit("demo", self.write_manifest(expired), self.archive)
 
+    def test_disk_pressure_and_backlog_refuse_before_copy(self):
+        from types import SimpleNamespace
+        receipt = self.make_receipt()
+        with patch.object(queue.shutil, "disk_usage", return_value=SimpleNamespace(free=0)):
+            with self.assertRaises(PermissionError):
+                queue.submit("demo", self.write_manifest(receipt), self.archive)
+        with patch.object(queue, "MAX_QUEUED", 0):
+            with self.assertRaises(PermissionError):
+                queue.submit("demo", self.write_manifest(receipt), self.archive)
+        self.assertEqual(queue.status("demo")["queue"]["queued"], 0)
+
     def test_artifact_tampering_is_rejected_without_queueing(self):
         receipt = self.make_receipt()
         with ZipFile(self.archive, "a") as z:
