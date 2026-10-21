@@ -25,6 +25,11 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - No live application deployed; remote adapters and production promotion are intentionally disabled pending separate target/environment isolation and safe migration planning.
 - See [Deployment Engine](DEPLOYMENT-ENGINE.md) and [ATS deployment profile](ATS-DEPLOYMENT-PROFILE.md). Track P0/P1 acceptance gates in [deployment issue #49](https://github.com/Raebu/open_ci_hub/issues/49), linked to canonical issue #48.
 
+## Deployment provider and dashboard increment
+- Verified ATS GitLab production inventory: seven named container units and separate Careers/Admin frontends; existing signed/requested release interface and migration/backup/synthetic candidate checks documented.\n- Implemented credential store, Cloudflare Worker version promotion, Vercel ready-deployment alias assignment, and an allowlisted SSH/Compose staging adapter (all default OFF without owner-provisioned policy and secrets).
+- Added read-only authenticated Deployments dashboard. All provider operations are unit-tested with mocks; no live provider/SSH deployment tested, and no target policy or token was installed on the host.
+- Automatic production remains deliberately blocked until independent CI execution attestation, approval, environment isolation and real rollback proof. See [issue #49](https://github.com/Raebu/open_ci_hub/issues/49).
+
 ## NOT yet complete or verified
 - Changed SHA → durable enqueue → admitted Docker execution → accurate provider status, logs and receipt, proven end to end.
 - GitLab project-specific review and allowlisting. Merely authenticating `glab` is not a validated Talent build.

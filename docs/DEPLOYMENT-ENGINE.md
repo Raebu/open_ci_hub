@@ -86,6 +86,33 @@ Before enabling any real ATS staging target, the approved manifest must identify
 
 Do not infer production readiness from earlier unit-test passes or a GitHub-hosted placeholder check. Existing ATS infrastructure and data are left unchanged.
 
+## Adapter integration added (controlled implementation; not activated)
+
+The new \`deployment_providers.py\` defines provider-specific operations rather than a generic remote shell:
+
+- **Cloudflare Workers:** look up the current single-version deployment, promote a separately built immutable UUID version to 100% via the official HTTPS API, check the approved HTTPS health URL and attempt to restore the prior version on failure. Split-traffic states fail closed.
+- **Vercel:** inspect a specific already-created READY deployment, assign its exact ID to an approved alias using the official API, perform health check, and attempt to restore the previous alias assignment if unhealthy. This is an alias-based promotion, **not** an application build or an equivalent guarantee to the official full Production Promote workflow.
+- **SSH / Docker Compose:** noninteractive strict host-key checking, dedicated owner-approved identity, fixed \`docker compose config --images\` / \`config -q\` / \`pull\` / \`up -d --no-build\` commands, signed digest-pinned image list comparison, isolated project name and a locked target. Automatic or production SSH rollback remains disabled pending a **real** safe recovery plan; this staging adapter cannot prove database recovery.
+- **Credentials:** \`CredentialStore\` resolves identifiers to files inside \`.local/deployment-engine/credentials/\`. The directory must be owner-owned 0700 and each credential file owner-owned 0600. Secrets are never accepted through a repository manifest, provider CLI argument, stdout result or HTTP URL. Cloudflare and Vercel tokens travel only in HTTPS Authorization headers; SSH key is a private file (not in version control). Credentials must be provisioned on the target computer by the authorised owner. Do not share them in ChatGPT.
+- **Signed provider reference:** a \`provider.json\` file **inside** the existing externally signed release bundle identifies each authorised target and immutable deployed version. SSH additionally demands a signed list of digest-pinned images. An unapproved commit SHA, unsigned version ID, missing previous release, or mismatched policy cannot promote.
+- **Dashboard:** the authenticated existing dashboard now exposes a read-only **Deployments** section at \`/api/deployments\`, showing target, environment, latest recorded commit, previous version, failures and integrity-checked history. Only owner/editor roles can read; it has no anonymous API and no write or rollback buttons.
+
+These adapters are code-level integrations with mocked unit tests, **not a declaration that the provider account, staging domains, application builds, secrets, migration plans, remote rollback or production site have been verified**.
+
+For the provider configuration, prefer distinct explicit staging and production **resources**, e.g. different Cloudflare Worker scripts or different Vercel aliases; the deployment policy rejects two active targets using the same declared remote resource. The production path requires last-known-good staging evidence from the same SHA and signed artifact. Automatic release execution is blocked until independent CI attestation and a separately approved operator policy exist.
+
+### Credential setup and staging workflow
+
+1. Establish target inventory and an app-specific rollback/backup plan in the project tracker.
+2. Provision approved scoped token/SSH key and known_hosts files under the private credential directory. Never create empty placeholder credentials.
+3. Produce **and independently sign** the immutable release bundle with exact source SHA, actual test/build/security/database/backup evidence, and authorised \`provider.json\`.
+4. Stage the signed bundle using existing \`release_manager.py stage\`; review the private target policy with mode 0600.
+5. Run \`python3 deployment_engine.py plan TARGET SHA DIGEST\` and review the fail-closed result before using \`deploy --confirm\`.
+6. Run staging-only deployment during a safe window, inspect the real deployment, health, TLS, critical user journeys and failure evidence.
+7. Enable production **only after** independent CI execution receipts, verified staging, environment isolation, provider rollback drill and formal release authorisation.
+
+The cloud targets use official HTTPS provider APIs and require **no new cloud-hosted build minutes** to promote a previously built version. They do not automatically build that version. Vercel/Cloudflare may still charge for deployed services or API usage according to account terms.
+
 ## Acceptance gates still required
 
 P0: verify one exact-SHA real CI build and its GitHub/GitLab commit status; immutable artifact checksum and provenance; environment locking across processes and hosts; secure remote target connection and short-lived credentials; verified staging deploy/health/rollback; migration and backup/restore tests.

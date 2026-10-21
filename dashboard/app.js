@@ -435,6 +435,33 @@ async function appControl(action){
   await loadApps();
 }
 
+async function loadDeployments(){
+  const root=$('deployments-items');root.replaceChildren(el('p','Loading verified release records…','small'));
+  try{
+    const result=await api('/api/deployments');
+    root.replaceChildren();
+    if(!result.targets.length){
+      root.append(el('p','No deployment targets activated. Configure a reviewed private target policy before enabling staging.','small'));
+    }
+    for(const target of result.targets){
+      const card=el('article',undefined,'result-row'), body=el('div');
+      body.append(el('strong',target.target+' · '+target.environment));
+      body.append(el('p','Adapter: '+target.adapter+' · '+(target.enabled?'Approved':'Disabled')+
+        ' · '+target.last_status,'small'));
+      if(target.current_commit)body.append(el('p','Commit '+target.current_commit.slice(0,12)+
+        ' · release '+(target.current_digest||'').slice(0,12),'small'));
+      if(target.previous_release)body.append(el('p','Previous release '+target.previous_release.slice(0,12),'small'));
+      if(target.recent_failure)body.append(el('p','Last failure '+target.recent_failure,'small'));
+      const hist=el('details');hist.append(el('summary','Release history ('+target.recent_history.length+')'));
+      const history=el('div',undefined,'results');
+      for(const item of [...target.recent_history].reverse()){
+        history.append(el('p',item.when+' · '+item.phase+' · '+item.sha.slice(0,12),'small'));
+      }
+      hist.append(history);body.append(hist);card.append(body);root.append(card);
+    }
+    root.append(el('p',result.note||'Status is based on local evidence, not a live provider health check.','small'));
+  }catch(err){root.replaceChildren(el('p',err.message,'small'));}
+}
 async function loadMachines(){
   const root=$('machine-items');root.replaceChildren(el('p','Loading trusted PCs…'));
   try{
@@ -496,7 +523,7 @@ async function init(){
     try{await api('/api/logout',{});notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();});
   $('apps-refresh').addEventListener('click',loadApps);
   $('apps-pause').addEventListener('click',()=>appControl('pause').catch(e=>notice(e.message,true)));
   $('apps-resume').addEventListener('click',()=>appControl('resume').catch(e=>notice(e.message,true)));
@@ -506,6 +533,7 @@ async function init(){
     $('apps-mode-apply').disabled=state.mode==='mobile'&&$('apps-mode').value==='performance';
   });
   $('machines-refresh').addEventListener('click',loadMachines);
+  $('deployments-refresh').addEventListener('click',loadDeployments);
   $('machine-enroll').addEventListener('submit',async e=>{
     e.preventDefault();
     const name=$('machine-name').value.trim(),host=$('machine-host').value.trim().toLowerCase();
@@ -537,7 +565,7 @@ async function init(){
   });
   configureOnboarding();
   await refresh();
-  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();
+  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();
     show('machine-enroll',state.role==='owner'&&state.mode==='desktop');}
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }

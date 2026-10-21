@@ -334,7 +334,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue', '/api/deployments'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -347,6 +347,11 @@ class WebConsole:
                                 return self.output(403, {'error':'Application management access required.'})
                             return self.output(200,console.apps.inventory() if path.endswith('inventory')
                                                else console.apps.queue_preview())
+                        if path == '/api/deployments':
+                            if console.role(self) not in ('owner','editor'):
+                                return self.output(403, {'error':'Deployment history access requires owner/editor.'})
+                            from deployment_dashboard import inventory
+                            return self.output(200, inventory())
                         if path == '/api/host':
                             from host_agent import client_request
                             try:
@@ -402,7 +407,7 @@ class WebConsole:
                             if console.role(self) != 'owner':
                                 return self.output(403, {'error':'Only the local owner can inspect the audit trail.'})
                             return self.output(200, {'items': console.audit.recent()})
-                    except (RuntimeError,ValueError,OSError) as exc:
+                    except (RuntimeError,ValueError,PermissionError,OSError) as exc:
                         return self.output(400, {'error': str(exc)[:300]})
                 if path == '/api/overview':
                     if not console.authenticated(self):

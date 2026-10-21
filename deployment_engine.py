@@ -19,6 +19,7 @@ import sys
 from contextlib import contextmanager
 
 from release_manager import Releases, APP, COMMIT, DIGEST
+from deployment_providers import CredentialStore, CloudflareVersions, VercelAlias, SSHCompose, https_health
 
 ROOT = Path(__file__).resolve().parent
 STATE = ROOT / ".local" / "deployment-engine"
@@ -78,6 +79,16 @@ def load_policy(path: Path = POLICY):
                 raise ValueError("Staging predecessor does not match production application")
         if any(k in cfg for k in ("secret", "token", "password", "private_key", "command", "argv")):
             raise ValueError("Secrets and executable commands are prohibited in policy")
+    # A single production and staging target must never share a live resource.
+    resources=set()
+    for cfg in targets.values():
+        if cfg.get("enabled") is not True or cfg["adapter"] not in ("cloudflare-workers","vercel","ssh-compose"):
+            continue
+        resource=(cfg["adapter"],cfg.get("account_id",""),cfg.get("script",""),
+                  cfg.get("alias",""),cfg.get("host",""),cfg.get("project",""))
+        if resource in resources:
+            raise ValueError("Two enabled deployment targets share the same remote resource")
+        resources.add(resource)
     return targets
 
 
@@ -173,14 +184,94 @@ class DeploymentEngine:
         cfg = configs[name]
         if cfg.get("enabled") is not True:
             raise PermissionError("Deployment target disabled in local policy")
-        if cfg["environment"] == "production":
-            # Current Releases policy is keyed only by application, so deploying
-            # the same app through staging and production would share pointers.
-            # Do not permit this until isolation and promotion are implemented.
-            raise NotImplementedError("Production environment isolation is not implemented; no deployment occurred")
-        if cfg["adapter"] != LOCAL_ADAPTER:
-            raise NotImplementedError("Remote adapter not approved or implemented; no deployment occurred")
+        if cfg["environment"] == "production" and cfg["adapter"] == LOCAL_ADAPTER:
+            # Local signed release pointers are keyed by app and could alias staging.
+            raise NotImplementedError("Local production environment isolation unavailable")
+        if cfg["adapter"] not in DECLARED_ADAPTERS:
+            raise NotImplementedError("Unknown adapter")
         return cfg
+
+    def provider_metadata(self, target: str, cfg: dict, digest: str):
+        # Provider reference must be inside the signed archive inventory.
+        root=self.releases._root(cfg["application"])
+        signed=self.releases._verify(root,digest)
+        if "provider.json" not in signed["files"]:
+            raise PermissionError("Immutable signed provider release metadata missing")
+        meta=json.loads((root/"releases"/digest/"provider.json").read_text())
+        if not isinstance(meta,dict) or meta.get("schema")!=1:
+            raise ValueError("Invalid signed provider release metadata")
+        item=meta.get("targets",{}).get(target)
+        if not isinstance(item,dict) or item.get("adapter")!=cfg["adapter"]:
+            raise PermissionError("Signed artifact not approved for this exact target")
+        ident=item.get("version")
+        if not isinstance(ident,str) or len(ident)>120:
+            raise ValueError("Missing immutable provider version")
+        return ident
+
+    def _remote_adapter(self,cfg):
+        creds=CredentialStore(self.state/"credentials")
+        if cfg["adapter"]=="cloudflare-workers":
+            return CloudflareVersions(cfg,creds)
+        if cfg["adapter"]=="vercel":
+            return VercelAlias(cfg,creds)
+        if cfg["adapter"]=="ssh-compose":
+            return SSHCompose(cfg,creds)
+        raise ValueError("No remote adapter")
+
+    def _deploy_remote(self,cfg,target,plan):
+        version=plan["provider_version"]
+        adapter=self._remote_adapter(cfg)
+        if cfg["adapter"]=="ssh-compose":
+            # First staging adapter supports only a preinstalled reviewed
+            # immutable Compose file. Never deploy unknown remote volumes,
+            # unpinned images, or missing recovery instructions.
+            if cfg["environment"]=="production":
+                raise NotImplementedError("SSH production requires independently verified remote rollback")
+            if cfg.get("no_mutable_volumes_verified") is not True or cfg.get("rollback_plan_verified") is not True:
+                raise PermissionError("Remote volume and rollback plan not authorised")
+            images=adapter.execute("images")["images"]
+            required=plan["signed_provider_images"]
+            if not required or sorted(images)!=sorted(required):
+                raise PermissionError("Remote Compose images differ from signed digest-pinned release")
+            adapter.execute("config")
+            adapter.execute("pull")
+            adapter.execute("up")
+            self._health_target(cfg)
+            return {"provider_deployment_id":version,"rollback":"requires-reviewed-compose-recovery"}
+        old=adapter.current()  # fail closed if rollback anchor unavailable
+        if old==version:
+            self._health_target(cfg)
+            return {"provider_deployment_id":version,"previous":old,"unchanged":True}
+        changed=False
+        try:
+            result=adapter.promote(version)
+            changed=True
+            self._health_target(cfg)
+            return {**result,"previous":old,"rollback_ready":True}
+        except Exception as exc:
+            if not changed:
+                # A network exception can happen after provider mutation;
+                # never claim that a rollback was unnecessary or successful.
+                raise RuntimeError("Provider promotion uncertain; check the target manually") from None
+            try:
+                adapter.rollback(old)
+                self._health_target(cfg)
+                raise RuntimeError("New release unhealthy; previous version restored") from exc
+            except RuntimeError as rollback_err:
+                if "previous version restored" in str(rollback_err):
+                    raise
+                raise RuntimeError("DEPLOYMENT INCIDENT: rollback failed; operator required") from None
+
+    @staticmethod
+    def _health_target(cfg):
+        from urllib.parse import urlsplit
+        url=cfg.get("health_url")
+        if not isinstance(url,str):
+            raise RuntimeError("An approved HTTPS health URL is required")
+        host=urlsplit(url).hostname
+        if not host or cfg.get("health_host")!=host:
+            raise PermissionError("Unapproved health hostname")
+        https_health(url,allowed_host=host)
 
     def plan(self, target: str, sha: str, digest: str):
         cfg = self.target(target)
@@ -190,31 +281,70 @@ class DeploymentEngine:
         prod_ready = None
         if cfg["environment"] == "production":
             previous = history(self.state, cfg["staging_target"])
-            prod_ready = any(
-                item.get("phase") == "healthy" and item.get("sha") == sha and
-                item.get("digest") == digest for item in previous
-            )
+            # A failed or superseded staging release is not permission to promote.
+            prod_ready = bool(previous and previous[-1].get("phase") == "healthy" and
+                              previous[-1].get("sha") == sha and
+                              previous[-1].get("digest") == digest)
             if not prod_ready:
                 raise PermissionError("Matching SHA and signed digest have not passed verified staging")
+        provider_version=None
+        signed_images=[]
+        if cfg["adapter"]!=LOCAL_ADAPTER:
+            provider_version=self.provider_metadata(target,cfg,digest)
+            self._health_target_config(cfg)
+            if cfg["adapter"]=="ssh-compose":
+                root=self.releases._root(cfg["application"])
+                meta=json.loads((root/"releases"/digest/"provider.json").read_text())
+                signed_images=meta["targets"][target].get("images",[])
+                import re
+                if (not isinstance(signed_images,list) or not signed_images or
+                    any(not isinstance(i,str) or not re.fullmatch(
+                      r"[a-zA-Z0-9][a-zA-Z0-9._:/@-]{4,240}@sha256:[0-9a-f]{64}",i)
+                        for i in signed_images)):
+                    raise ValueError("SSH release requires signed digest-pinned image list")
         return {"target":target, "application":cfg["application"],
                 "environment":cfg["environment"], "adapter":cfg["adapter"],
                 "source_commit":sha, "release_digest":digest,
                 "signed_evidence":evidence, "matching_staging_verified":prod_ready,
-                "auto_production_enabled":False}
+                "provider_version":provider_version, "signed_provider_images":signed_images,
+                "auto_production_enabled":cfg["environment"]=="production" and
+                  cfg.get("automatic") is True and cfg.get("approved_policy") is True}
 
-    def deploy(self, target: str, sha: str, digest: str, *, confirm=False):
-        if confirm is not True:
-            raise PermissionError("Explicit operator confirmation required (no auto-production)")
+    @staticmethod
+    def _health_target_config(cfg):
+        from urllib.parse import urlsplit
+        url=cfg.get("health_url")
+        u=urlsplit(url) if isinstance(url,str) else None
+        if (not u or u.scheme!="https" or not u.hostname or u.hostname!=cfg.get("health_host")
+                or u.username or u.password or u.port not in (None,443)):
+            raise ValueError("Approved HTTPS health check required")
+
+    def deploy(self, target: str, sha: str, digest: str, *, confirm=False, automatic=False):
+        if confirm is not True and automatic is not True:
+            raise PermissionError("Explicit operator confirmation or approved automation required")
+        if confirm is True and automatic is True:
+            raise ValueError("Choose one approval route")
+        if automatic:
+            # A private manifest flag alone is not independent CI attestation.
+            # Do not start automated production until a verifiable CI release
+            # receipt and separate approval policy mechanism are integrated.
+            raise NotImplementedError("Automatic production gated: independent CI attestation and owner approval service not yet verified")
         with locked_target(self.state,target):
             plan=self.plan(target,sha,digest)
+            if automatic and not plan["auto_production_enabled"]:
+                raise PermissionError("Automatic release forbidden by signed gates or owner policy")
             app=plan["application"]
-            previous=self.releases.status(app)["current"]
+            previous=(self.releases.status(app)["current"] if plan["adapter"]==LOCAL_ADAPTER
+                      else (history(self.state,target)[-1]["digest"] if history(self.state,target) else None))
             record(self.state,target,"requested",sha,digest,"operator-confirmed")
             try:
-                result=self.releases.deploy(app,digest,confirm=True)
-                if result["state"] not in ("healthy","already-active"):
-                    raise RuntimeError("Unexpected release-manager result")
-                record(self.state,target,"healthy",sha,digest,"local service health verified by release manager")
+                if plan["adapter"]==LOCAL_ADAPTER:
+                    result=self.releases.deploy(app,digest,confirm=True)
+                    if result["state"] not in ("healthy","already-active"):
+                        raise RuntimeError("Unexpected release-manager result")
+                else:
+                    result=self._deploy_remote(self.target(target),target,plan)
+                record(self.state,target,"healthy",sha,digest,"health verified; version="+str(result.get("provider_deployment_id","local-service"))[:95])
                 return {**plan, "status":"healthy", "previous_release":previous,
                         "release_result":result}
             except Exception as exc:
@@ -225,7 +355,8 @@ class DeploymentEngine:
 
     def status(self, target: str):
         cfg=self.target(target)
-        return {"target":target, "release":self.releases.status(cfg["application"]),
+        return {"target":target,"environment":cfg["environment"],"adapter":cfg["adapter"],
+                "release":(self.releases.status(cfg["application"]) if cfg["adapter"]==LOCAL_ADAPTER else None),
                 "recent_history":history(self.state,target)[-20:]}
 
 

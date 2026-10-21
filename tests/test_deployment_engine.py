@@ -90,7 +90,7 @@ class DeploymentEngineSafetyTests(unittest.TestCase):
             self.mgr.plan("production-app",SHA,self.digest)
         self.targets["vps-app"]["enabled"]=True
         self.save_policy()
-        with self.assertRaises(NotImplementedError):
+        with self.assertRaises(PermissionError):
             self.mgr.plan("vps-app",SHA,self.digest)
         self.assertEqual(engine.history(self.deploystate,"vps-app"),[])
         self.targets["production-app"]["enabled"]=True

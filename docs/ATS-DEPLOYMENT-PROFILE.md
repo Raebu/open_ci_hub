@@ -4,6 +4,20 @@
 
 Application: Raeburn Talent / ATS, linked to private GitLab `Theraeburngroup/main_ats` and the GitHub `Raebu/main_ats` reference. Repository ownership, default branch, authoritative deployment target, current runtime and infrastructure inventory MUST be reconciled before enabling any deployment.
 
+## Verified repository-specific deployment inventory — 21 October 2026
+
+Read the actual authenticated GitLab \`Theraeburngroup/main_ats\` \`main\` tree before preparing this profile:
+
+- \`infrastructure/production/docker-compose.production.yml\` includes seven application release units: **edge-api**, **recruitment-core**, **selection**, **experience**, **platform-control**, **intelligence-data**, and **malware-scanner**, plus infrastructure such as NATS and Caddy.
+- \`infrastructure/production/deployment-units.json\` is the existing deployment unit map. It must be used by the application-specific adapter, rather than guessing service names from a generic template.
+- \`infrastructure/production/Dockerfile.unit\`, \`Dockerfile.worker\`, \`Dockerfile.workspace\` and \`Dockerfile.malware-scanner\` define the existing image build family.
+- \`apps/careers-web\` and \`apps/talent-admin\` are separately built Next.js frontends; the repository explicitly permits Vercel for these.
+- \`scripts/deploy-release.mjs\` already submits an authorised release request to an existing deployment endpoint using an environment URL and token, an exact source SHA, pinned unit image and malware-scanner image references, the configured units, a rollout strategy and a rollback flag. **Do not replace or bypass this reviewed application controller** until its authenticated target, endpoint and actual rollback behavior have been checked.
+- \`scripts/backup-service-databases.mjs\`, \`restore-drill.mjs\`, \`validate-migrations.mjs\`, \`ci-security-isolation.mjs\`, \`synthetic-candidate-journey.mjs\`, \`release-smoke.mjs\` and \`verify-stage12-live.mjs\` provide named candidate execution gates. They are not proof that those gates currently pass on the target.
+- The production README describes service-specific PostgreSQL boundaries, NATS/JetStream, private object storage (R2 intended), private scanner endpoints, TLS and strict authenticated service traffic. These all require target-side credentials and isolated backing data.
+
+Use the **existing ATS release controller** as the authoritative deployment interface once verified, with Open CI Hub as the external build/test/approval/evidence broker. Do not directly reuse the generic remote Compose path to bypass its domain-specific release rules.
+
 ## Required release record
 
 - Source: exact 40-character Git commit; tested main/protected branch and release review/approvals.
