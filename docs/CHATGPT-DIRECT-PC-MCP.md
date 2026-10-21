@@ -9,7 +9,7 @@ When the relevant local capability is enabled, the tunnel can expose these opera
 - PC status and read-only GitHub/GitLab failure diagnostics.
 - Create a new Markdown/text document in ~/Documents/OpenCIHubTasks.
 - Browse directories and read UTF-8 text files in the approved Documents, Downloads, Desktop and Code_Projects roots.
-- Edit source/text files inside Code_Projects only, using an expected SHA-256 to prevent stale overwrites and a private backup before replacement.
+- Edit source/text files inside Code_Projects only, using an expected SHA-256 to prevent stale overwrites and a private backup before replacement. If the original file contains credential-like values that the read tool redacts, direct editing is refused: this prevents a redaction placeholder or omitted hidden value from overwriting the original. Use a local editor for those files until a secret-preserving edit operation is available.
 - Run a command as the ordinary desktop user in Code_Projects, with a maximum 300-second timeout, a 16 KiB output cap, common credential redaction and an audit record.
 - Install named packages from official Arch/Garuda pacman repositories through pkexec and the normal polkit authentication flow. The tool does not run AUR PKGBUILDs or bypass the authentication prompt.
 - Open HTTP/HTTPS URLs, launch a fixed set of desktop applications, capture a screenshot, list/activate/minimise/close KWin windows, type text, press keys and click the pointer where the required KDE utilities are installed and available.
