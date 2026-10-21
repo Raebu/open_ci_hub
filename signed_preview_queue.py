@@ -192,7 +192,7 @@ def verify_signed(app, manifest, *, now=None):
     if (not isinstance(ref, str)
         or not any(ref.startswith(prefix) and len(ref) > len(prefix)
                    for prefix in trust["ref_prefixes"])
-        or ".." in ref or "//" in ref or any(x in ref for x in ("\x00", "\\", " ")))
+        or ".." in ref or "//" in ref or any(x in ref for x in ("\x00", "\\", " "))
         or len(ref) > 300):
         raise PermissionError("Source ref outside the enrolled preview scope.")
     checks = obj["checks"]
