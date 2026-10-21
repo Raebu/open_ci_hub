@@ -292,11 +292,10 @@ def require_nonroot() -> None:
 
 
 def _default_permissions() -> dict:
-    # Explicit instruction from this PC's owner: enable the direct-PC tools for
-    # the private single-owner MCP connector. This is powerful access, not a
-    # sandbox; any connector caller inherits the ordinary user's permissions.
-    # The MCP process must still run as the ordinary desktop user, never root.
-    return {"schema": SCHEMA, **{name: True for name in CAPABILITIES}}
+    # The repository is public: missing or legacy local policy must never
+    # silently grant access to a desktop user's files, shell, installer or GUI.
+    # The owner must explicitly enrol the desired scopes on the actual host.
+    return {"schema": SCHEMA, **{name: False for name in CAPABILITIES}}
 
 
 def _assert_private_state(path: Path) -> None:
@@ -327,15 +326,14 @@ def permissions_data(path: Path = PERMISSIONS) -> dict:
     if data.get("schema") == LEGACY_SCHEMA:
         if set(data) != {"schema", "document_creation"} or type(data.get("document_creation")) is not bool:
             raise PermissionError("Invalid legacy direct-MCP consent policy.")
-        # The owner has now explicitly authorised full access for this private
-        # single-owner connector; migrate the former document-only policy.
-        return _default_permissions()
+        upgraded = _default_permissions()
+        upgraded["document_creation"] = data["document_creation"]
+        return upgraded
     if data.get("schema") == PREVIOUS_SCHEMA:
         if set(data) != {"schema", *CAPABILITIES} or any(type(data.get(name)) is not bool for name in CAPABILITIES):
             raise PermissionError("Invalid previous direct-MCP capability policy.")
-        # Apply the owner's explicit full-access instruction to the prior
-        # policy version rather than silently leaving scopes unavailable.
-        return _default_permissions()
+        # Preserve explicit per-host choices while upgrading the schema.
+        return {"schema": SCHEMA, **{name: data[name] for name in CAPABILITIES}}
     if data.get("schema") != SCHEMA or set(data) != {"schema", *CAPABILITIES}:
         raise PermissionError("Invalid direct-MCP consent policy schema.")
     if any(type(data.get(name)) is not bool for name in CAPABILITIES):
