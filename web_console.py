@@ -330,7 +330,7 @@ class WebConsole:
                     return self.app_api(path,'GET')
                 if path == '/health':
                     return self.output(200, {'ok': True})
-                static = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/style.css': ('style.css', 'text/css')}
+                static = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/whatsapp-personal.js': ('whatsapp-personal.js', 'text/javascript'), '/style.css': ('style.css', 'text/css')}
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
