@@ -90,12 +90,8 @@
       const link=messageLink(phone,message);
       const destination=name?name+' ('+normalisePhone(phone)+')':normalisePhone(phone);
       if (!root.confirm('Open WhatsApp for '+destination+'?\n\nReview the recipient and press Send inside WhatsApp. Open CI Hub will NOT send automatically.')) return;
-      const popup=root.open(link,'_blank','noopener,noreferrer');
-      if (popup===null) {
-        notify('Your browser blocked the WhatsApp tab. Enable pop-ups or use the Copy message button.',true);
-        return;
-      }
-      notify('WhatsApp chat opened with a prefilled message. NOT SENT — press Send in WhatsApp.');
+      root.open(link,'_blank','noopener,noreferrer');
+      notify('WhatsApp was requested with your prefilled message. NOT SENT — if a tab opened, check the recipient and press Send in WhatsApp.');
     } catch(err) {notify(err.message,true);}
   }
   root.document.addEventListener('DOMContentLoaded',()=>{
