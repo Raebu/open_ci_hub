@@ -218,6 +218,16 @@ class LocalStateTests(BridgeTestCase):
         self.assertEqual(result["state"], "running")
         self.assertTrue(self.queue.is_cancelled(job["id"]))
 
+    def test_cancel_wins_race_with_resource_deferral(self):
+        job, _ = self.queue.enqueue(provider="github", repo="Raebu/open_ci_hub", event="push", action="push",
+                                    ref="main", sha=self.sha(), source_repo="Raebu/open_ci_hub")
+        self.queue.claim(1)
+        with patch("ci_execution_bridge.require_owner"):
+            self.queue.cancel(job["id"], confirm=True)
+        result = self.queue.defer(job["id"], "resource pressure")
+        self.assertEqual(result["state"], "cancelled")
+        self.assertIsNotNone(result["finished_at"])
+
     def test_provider_status_failures_are_retained(self):
         job = {"id":"a"*32,"provider":"github","state":"failed"}
         with patch("ci_execution_bridge._provider_status_impl", side_effect=RuntimeError("provider auth unavailable")):
