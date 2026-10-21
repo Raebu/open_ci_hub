@@ -58,7 +58,7 @@ CAPABILITY_COMMANDS = {
 DOC_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\.(?:md|txt)$")
 PACKAGE_NAME = re.compile(r"^[A-Za-z0-9@._+-]{1,80}$")
 WINDOW_ID = re.compile(r"^\{[0-9a-fA-F-]{36}\}$")
-MAX_INPUT_BYTES = 300_000
+MAX_INPUT_BYTES = 1_100_000
 MAX_DOC_BYTES = 4_000
 MAX_FILE_BYTES = 256 * 1024
 MAX_COMMAND_CHARS = 8_000
@@ -102,6 +102,7 @@ SECRET_PATTERNS = [
     (re.compile(r"(?im)^(\s*(?:api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|password|passwd|secret)\s*[:=]\s*).+$"),
      r"\1[REDACTED]"),
     (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*"), "Bearer [REDACTED]"),
+    (re.compile(r"(?i)\b(https?://)[^/\s@]+@"), r"\1[REDACTED]@"),
 ]
 
 TOOLS = [
@@ -585,12 +586,42 @@ def _resolve_user_path(raw: str, *, projects_only: bool = False, must_exist: boo
     raise PermissionError("Path is outside the approved Documents, Downloads, Desktop and Code_Projects roots.")
 
 
+def _known_secret_values() -> list[str]:
+    values: set[str] = set()
+    for key, raw in os.environ.items():
+        if re.search(r"(?:TOKEN|API[_-]?KEY|SECRET|PASSWORD|CREDENTIAL|PRIVATE[_-]?KEY)", key, re.I):
+            value = raw.strip()
+            if len(value) >= 8:
+                values.add(value)
+    # Redact the runtime credential if a command accidentally prints the local
+    # key file. Read only this known file, and only when it is owner-private.
+    known_paths = [Path.home() / ".config" / "open-ci-hub" / "tunnel-runtime-key"]
+    for path in known_paths:
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            st = path.stat()
+            if st.st_uid != os.geteuid() or (st.st_mode & 0o077) or st.st_size > 8192:
+                continue
+            value = path.read_text(encoding="utf-8").strip()
+            if len(value) >= 8:
+                values.add(value)
+        except (OSError, UnicodeError):
+            continue
+    return sorted(values, key=len, reverse=True)
+
+
 def _redact(text: str) -> tuple[str, int]:
     count = 0
     value = text
     for pattern, replacement in SECRET_PATTERNS:
         value, hits = pattern.subn(replacement, value)
         count += hits
+    for secret in _known_secret_values():
+        hits = value.count(secret)
+        if hits:
+            value = value.replace(secret, "[REDACTED LOCAL SECRET]")
+            count += hits
     return value, count
 
 
@@ -767,12 +798,15 @@ def write_pc_file(path: str, content: str, expected_sha256: str | None) -> dict:
     if not target.parent.is_dir() or target.parent.is_symlink():
         raise ValueError("Parent directory must already exist and cannot be a symlink.")
     backup = None
-    if target.exists():
+    existed = target.exists()
+    if existed:
         if target.is_symlink() or not target.is_file():
             raise PermissionError("Only regular, non-symlink files can be replaced.")
         st = target.stat()
         if st.st_uid != os.geteuid():
             raise PermissionError("Refusing to edit a file not owned by the desktop user.")
+        if st.st_size > MAX_FILE_BYTES:
+            raise ValueError(f"Existing file exceeds the {MAX_FILE_BYTES}-byte edit limit.")
         if expected_sha256 is None:
             raise ValueError("Existing files require their current expected_sha256.")
         current = hashlib.sha256(target.read_bytes()).hexdigest()
@@ -794,10 +828,17 @@ def write_pc_file(path: str, content: str, expected_sha256: str | None) -> dict:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        if target.exists():
+        if existed:
+            if not target.exists() or target.is_symlink():
+                raise RuntimeError("File was removed or replaced during edit; no write performed.")
+            current_stat = target.stat()
+            if current_stat.st_size > MAX_FILE_BYTES or hashlib.sha256(target.read_bytes()).hexdigest() != expected_sha256:
+                raise RuntimeError("File changed during edit; no write performed.")
             os.replace(temp_path, target)
         else:
             # Link-based create is exclusive: never replace a file created concurrently.
+            if target.exists() or target.is_symlink():
+                raise RuntimeError("A file was created at this path concurrently; no overwrite performed.")
             os.link(temp_path, target, follow_symlinks=False)
             temp_path.unlink(missing_ok=True)
         try:

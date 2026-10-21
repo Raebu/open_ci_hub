@@ -206,6 +206,27 @@ class DirectMcpTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 mcp.install_arch_packages(["kdotool; rm -rf /"])
 
+    def test_output_redacts_exact_local_runtime_secrets(self):
+        with patch.dict(os.environ, {"CONTROL_PLANE_API_KEY": "local-secret-unique-value"}):
+            value, count = mcp._redact("tool printed local-secret-unique-value by mistake")
+        self.assertNotIn("local-secret-unique-value", value)
+        self.assertIn("[REDACTED LOCAL SECRET]", value)
+        self.assertEqual(count, 1)
+
+    def test_file_edit_rejects_oversized_existing_file_before_hashing(self):
+        with tempfile.TemporaryDirectory() as root:
+            project = Path(root) / "Code_Projects"
+            project.mkdir()
+            file = project / "large.py"
+            file.write_bytes(b"x" * (mcp.MAX_FILE_BYTES + 1))
+            roots = [{"label": "projects", "path": str(project)}]
+            with patch("direct_pc_mcp.require_nonroot"), \
+                 patch("direct_pc_mcp.require_capability"), \
+                 patch("direct_pc_mcp._audit"), \
+                 patch("direct_pc_mcp._roots", return_value=roots):
+                with self.assertRaises(ValueError):
+                    mcp.write_pc_file(str(file), "print('new')\n", hashlib.sha256(file.read_bytes()).hexdigest())
+
     def test_desktop_press_key_uses_argv_not_shell(self):
         with patch("direct_pc_mcp._require_desktop", return_value={"PATH": "/usr/bin"}), \
              patch("direct_pc_mcp.shutil.which", return_value="/usr/bin/wtype"), \
