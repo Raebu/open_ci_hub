@@ -161,6 +161,31 @@ class DirectMcpTests(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     mcp.read_pc_file(str(project / ".env"))
 
+    def test_file_edit_refuses_redacted_content_and_preserves_original(self):
+        with tempfile.TemporaryDirectory() as root:
+            project = Path(root) / "Code_Projects"
+            project.mkdir()
+            file = project / "README.md"
+            original = "password=very-secret-value\\nsafe line\\n"
+            file.write_text(original)
+            original_bytes = file.read_bytes()
+            expected_sha = hashlib.sha256(original_bytes).hexdigest()
+            roots = [{"label": "projects", "path": str(project)}]
+            with patch("direct_pc_mcp.require_nonroot"), \\
+                 patch("direct_pc_mcp.require_capability"), \\
+                 patch("direct_pc_mcp._audit"), \\
+                 patch("direct_pc_mcp._roots", return_value=roots):
+                read_result = mcp.read_pc_file(str(file))
+                self.assertIn("[REDACTED]", read_result["content"])
+                self.assertEqual(read_result["sha256"], expected_sha)
+                # The exact redacted view must never be written over the source.
+                with self.assertRaises(PermissionError):
+                    mcp.write_pc_file(str(file), read_result["content"] + "changed\\n", expected_sha)
+                # Removing the placeholder must not silently delete the hidden value either.
+                with self.assertRaises(PermissionError):
+                    mcp.write_pc_file(str(file), "safe line\\nchanged\\n", expected_sha)
+                self.assertEqual(file.read_bytes(), original_bytes)
+
     def test_file_edit_uses_hash_guard_and_private_backup_hook(self):
         with tempfile.TemporaryDirectory() as root:
             project = Path(root) / "Code_Projects"
