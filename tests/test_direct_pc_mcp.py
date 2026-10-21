@@ -60,20 +60,24 @@ class DirectMcpTests(unittest.TestCase):
         self.assertEqual(response["result"]["content"], [image])
         self.assertFalse(response["result"]["isError"])
 
-    def test_default_and_previous_policies_apply_owner_authorised_full_access(self):
+    def test_default_and_previous_policies_remain_per_host_opt_in(self):
         with tempfile.TemporaryDirectory() as root:
             policy = Path(root) / "permissions.json"
-            self.assertTrue(all(mcp.capability_status(policy).values()))
+            self.assertFalse(any(mcp.capability_status(policy).values()))
 
             legacy = {"schema": mcp.LEGACY_SCHEMA, "document_creation": False}
             policy.write_text(json.dumps(legacy))
             policy.chmod(0o600)
-            self.assertTrue(all(mcp.capability_status(policy).values()))
+            self.assertFalse(any(mcp.capability_status(policy).values()))
 
             previous = {"schema": mcp.PREVIOUS_SCHEMA, **{name: False for name in mcp.CAPABILITIES}}
+            previous["terminal_execution"] = True
             policy.write_text(json.dumps(previous))
             policy.chmod(0o600)
-            self.assertTrue(all(mcp.capability_status(policy).values()))
+            migrated = mcp.capability_status(policy)
+            self.assertTrue(migrated["terminal_execution"])
+            self.assertFalse(migrated["desktop_control"])
+            self.assertFalse(migrated["file_edit"])
 
             policy.chmod(0o644)
             with self.assertRaises(PermissionError):
