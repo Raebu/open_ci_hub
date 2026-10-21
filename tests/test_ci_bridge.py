@@ -64,6 +64,24 @@ class BridgeTests(unittest.TestCase):
         body=json.dumps({"repository":{"full_name":"Raebu/open_ci_hub"},"ref":"refs/heads/main","after":sha}).encode()
         self.assertEqual(bridge.parse_event("github",headers,body),("Raebu/open_ci_hub",sha,"main","push"))
 
+    def test_pull_request_branch_policy_uses_target_branch(self):
+        sha="b"*40
+        body=json.dumps({"repository":{"full_name":"Raebu/open_ci_hub"},
+          "action":"opened","pull_request":{"draft":False,
+          "head":{"sha":sha,"ref":"feature","repo":{"full_name":"Raebu/open_ci_hub"}},
+          "base":{"ref":"main"}}}).encode()
+        self.assertEqual(bridge.parse_event("github",{"X-GitHub-Event":"pull_request"},body),
+                         ("Raebu/open_ci_hub",sha,"main","pull_request"))
+
+    def test_merge_request_branch_policy_uses_target_branch(self):
+        sha="c"*40
+        body=json.dumps({"project":{"id":123,"path_with_namespace":"Raebu/open_ci_hub"},
+          "object_attributes":{"action":"open","state":"opened","target_project_id":123,
+          "source_project_id":123,"source_branch":"feature","target_branch":"main",
+          "last_commit":{"id":sha}}}).encode()
+        self.assertEqual(bridge.parse_event("gitlab",{"X-Gitlab-Event":"Merge Request Hook"},body),
+                         ("Raebu/open_ci_hub",sha,"main","merge_request"))
+
     def test_fork_pull_requests_are_rejected_by_default(self):
         sha="b"*40
         body=json.dumps({"repository":{"full_name":"Raebu/open_ci_hub"},
