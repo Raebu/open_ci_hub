@@ -143,7 +143,9 @@ def parse_event(provider, headers, body):
             head_repo=(head.get("repo") or {}).get("full_name","")
             if not repo or head_repo.lower()!=repo.lower():
                 raise PermissionError("Fork pull requests are not enabled for local execution.")
-            return repo,head.get("sha",""),head.get("ref",""),"pull_request"
+            # Apply branch policy to the target branch while testing the exact head SHA.
+            base=pr.get("base") or {}
+            return repo,head.get("sha",""),base.get("ref",""),"pull_request"
         raise ValueError("Unsupported GitHub event.")
     kind=headers.get("X-Gitlab-Event","")
     if kind=="Push Hook":
@@ -157,7 +159,8 @@ def parse_event(provider, headers, body):
         if not project.get("id") or project.get("id") != attrs.get("target_project_id") or project.get("id") != attrs.get("source_project_id"):
             raise PermissionError("Cross-project merge requests are not enabled for local execution.")
         repo=project.get("path_with_namespace","")
-        return repo,(attrs.get("last_commit") or {}).get("id",""),attrs.get("source_branch",""),"merge_request"
+        # Apply branch policy to the target branch while testing the exact MR head SHA.
+        return repo,(attrs.get("last_commit") or {}).get("id",""),attrs.get("target_branch",""),"merge_request"
     raise ValueError("Unsupported GitLab event.")
 
 def enqueue(provider, repo, sha, branch, event, manifest, broker=None):
