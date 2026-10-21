@@ -156,7 +156,7 @@ A separate **Terminal** tab can create an actor-scoped interactive Linux pseudo-
 
 ## Personal WhatsApp — writing and handoff
 
-The authenticated dashboard now includes a **Personal WhatsApp** composer: edit a draft, create a tone-specific writing suggestion without erasing your work, copy the text, and open the recipient's WhatsApp conversation with the message prefilled. **Only pressing Send inside WhatsApp actually sends the message.** This is not an unofficial personal WhatsApp API and does not download or store your WhatsApp conversations or contacts. See [supported personal WhatsApp workflow](docs/WHATSAPP-PERSONAL.md).
+The authenticated dashboard now includes a **Personal WhatsApp** composer: edit a draft, create a tone-specific writing suggestion without erasing your work, copy the text, and open the recipient's WhatsApp conversation with the message prefilled. **Only pressing Send inside WhatsApp actually sends the message.** This is not an unofficial personal WhatsApp API and does not download or store your WhatsApp conversations or contacts. Normal ChatGPT can also prepare a personal message through the direct-PC connector and open it for final review once that connector is deployed. See [supported personal WhatsApp workflow](docs/WHATSAPP-PERSONAL.md).
 
 ## Controlled CI internet access
 
