@@ -33,7 +33,8 @@ STATE_ROOT = ROOT / ".local"
 STATE_DIR = STATE_ROOT / "direct-mcp"
 PERMISSIONS = STATE_DIR / "permissions.json"
 AUDIT = STATE_DIR / "audit.jsonl"
-SCHEMA = "open-ci-hub.direct-pc-consent.v2"
+SCHEMA = "open-ci-hub.direct-pc-consent.v3"
+PREVIOUS_SCHEMA = "open-ci-hub.direct-pc-consent.v2"
 LEGACY_SCHEMA = "open-ci-hub.direct-pc-consent.v1"
 VERSION = "2025-06-18"
 
@@ -127,7 +128,7 @@ TOOLS = [
     },
     {
         "name": "create_pc_document",
-        "description": "Create a new Markdown/text document up to 4,000 bytes in ~/Documents/OpenCIHubTasks. Never overwrites. Requires local owner enrolment.",
+        "description": "Create a new Markdown/text document up to 4,000 bytes in ~/Documents/OpenCIHubTasks. Never overwrites. Enabled by the current owner-authorised policy.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -173,7 +174,7 @@ TOOLS = [
     },
     {
         "name": "run_pc_command",
-        "description": "Run a requested command as the ordinary Garuda desktop user in an approved Code_Projects directory. Bounded to 300 seconds and 16 KiB of output; never runs this MCP process as root. Requires local owner enrolment.",
+        "description": "Run arbitrary shell commands as the ordinary Garuda desktop user. Not root and not sandboxed; commands can access anything permitted to that user. Timeout and output are bounded. Enabled by the current owner-authorised policy.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -187,7 +188,7 @@ TOOLS = [
     },
     {
         "name": "install_arch_packages",
-        "description": "Install named packages from official Arch/Garuda repositories using pkexec and pacman only. KDE may display its normal authentication prompt. Does not run AUR build scripts or bypass polkit. Requires local owner enrolment.",
+        "description": "Install named packages from official Arch/Garuda repositories using pkexec and pacman only. KDE may display its normal authentication prompt. Does not run AUR build scripts or bypass polkit. Enabled by the current owner-authorised policy.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -202,7 +203,7 @@ TOOLS = [
     },
     {
         "name": "desktop_open_url",
-        "description": "Open an HTTP/HTTPS URL in the logged-in KDE desktop's default browser. Requires desktop-control enrolment and an available desktop session.",
+        "description": "Open an HTTP/HTTPS URL in the logged-in KDE desktop's default browser. Requires an available desktop session.",
         "inputSchema": {
             "type": "object",
             "properties": {"url": {"type": "string", "minLength": 8, "maxLength": 2048}},
@@ -229,7 +230,7 @@ TOOLS = [
     },
     {
         "name": "desktop_list_windows",
-        "description": "List visible KDE window titles/classes using kdotool. Window titles may contain private information. Requires desktop-control enrolment.",
+        "description": "List visible KDE window titles/classes using kdotool. Window titles may contain private information. Enabled by the current owner-authorised policy.",
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
     {
@@ -291,7 +292,11 @@ def require_nonroot() -> None:
 
 
 def _default_permissions() -> dict:
-    return {"schema": SCHEMA, **{name: False for name in CAPABILITIES}}
+    # Explicit owner instruction for the private single-owner MCP tunnel:
+    # expose all direct-PC capabilities as the ordinary desktop user. This is
+    # not a sandbox; anyone who can invoke the connector inherits that user's
+    # permissions. The MCP server must never run as root.
+    return {"schema": SCHEMA, **{name: True for name in CAPABILITIES}}
 
 
 def _assert_private_state(path: Path) -> None:
@@ -322,9 +327,14 @@ def permissions_data(path: Path = PERMISSIONS) -> dict:
     if data.get("schema") == LEGACY_SCHEMA:
         if set(data) != {"schema", "document_creation"} or type(data.get("document_creation")) is not bool:
             raise PermissionError("Invalid legacy direct-MCP consent policy.")
-        upgraded = _default_permissions()
-        upgraded["document_creation"] = data["document_creation"]
-        return upgraded
+        # The owner explicitly authorised full access for this private,
+        # single-owner connector. Upgrade old document-only policy accordingly.
+        return _default_permissions()
+    if data.get("schema") == PREVIOUS_SCHEMA:
+        if set(data) != {"schema", *CAPABILITIES} or any(type(data.get(name)) is not bool for name in CAPABILITIES):
+            raise PermissionError("Invalid previous direct-MCP capability policy.")
+        # Apply the owner's explicit full-access instruction during migration.
+        return _default_permissions()
     if data.get("schema") != SCHEMA or set(data) != {"schema", *CAPABILITIES}:
         raise PermissionError("Invalid direct-MCP consent policy schema.")
     if any(type(data.get(name)) is not bool for name in CAPABILITIES):
