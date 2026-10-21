@@ -2,7 +2,7 @@
 
 ## Scope and assumptions
 
-Open CI Hub manages *native provider runners* on an operator-controlled PC. It is not a multi-tenant hosted execution platform or a sandbox for malicious workflow code. Do not run untrusted fork pull requests, forks of unknown provenance, or jobs with credentials on a personal machine. Docker containers add boundaries but are **not** isolation against all attacks.
+Open CI Hub manages *native provider runners* and contains a separate opt-in Hub-owned local execution bridge on an operator-controlled PC. It is not a multi-tenant hosted execution platform or a sandbox for malicious workflow code. Do not run untrusted fork pull requests, forks of unknown provenance, or jobs with credentials on a personal machine. Docker containers add boundaries but are **not** isolation against all attacks.
 
 ## Authentication and authorization
 
@@ -22,6 +22,14 @@ Runner registration automatically obtains provider credentials (subject to accou
 Provider CLI calls use argument lists, no shell, strict repository/run ID validation, 30-second timeout and bounded response lengths; failure text does not quote provider CLI stderr. The local audit trail deliberately omits sensitive command output and description data. **CI logs can still contain secrets**: the cockpit links to the original provider rather than fetching logs into Hub.
 
 ## Workflow trust
+
+- The Hub-owned bridge is a separate service and is disabled until the local owner initialises private state, approves repositories/branches/images, and installs its user service.
+- The bridge accepts only authenticated provider events or authenticated local polling, checks delivery IDs for replay/deduplication, and rejects repositories/branches outside the local allowlist. It checks out the exact event commit and verifies the resulting SHA. Pull/merge-request workflow configuration is read from the protected target branch, and fork requests are rejected.
+- Workflow commands are arbitrary *inside the configured job container*, not arbitrary host commands. The container uses a pinned local image ID, read-only root, dropped Linux capabilities, no-new-privileges, bounded CPU/RAM/PIDs/time/output, and no host Docker socket or provider credential mounts. Network access is disabled by default and requires a separate local repository-policy grant. These controls reduce risk; they do not make malicious code safe on a personal computer.
+- The bridge defaults to one concurrent job and reserves host RAM/disk. Transient resource pressure is deferred with a cooldown rather than counted as a failed test attempt. A resource guard can stop a running step if host pressure becomes critical.
+- Artifacts, logs, step hashes, image IDs and provider-status attempts are retained in private local state. A green provider status is not independent attestation; verify the job ID, commit SHA, evidence and artifacts.
+- Production deployment is separate from build/test shell steps. It requires a locally allowlisted release application and signer, an owner-attached offline signature, a release manifest whose source commit matches the job SHA, and explicit local approval. Do not configure production deployment until the signed-release manager has been reviewed for that application.
+- The webhook server binds to loopback only. Provider webhooks require a separately secured HTTPS/private reverse proxy and strong per-provider secret; never expose the bridge port directly to the public internet. Authenticated outbound polling is the default fallback.
 
 - Separate repositories and native runners by trust level. GitLab starter is project-scoped, protected ref and tagged `local-ci` only. GitHub runner should be repository-scoped for trusted code.
 - There is no `/var/run/docker.sock` bind mount or home folder bind mount in the shipped Compose file. Consequently nested Docker/container builds are not supported by default.
