@@ -17,6 +17,8 @@ import re
 import stat
 import subprocess
 import sys
+import select
+import time
 from urllib.parse import quote
 from zipfile import ZipFile, BadZipFile
 
@@ -48,16 +50,20 @@ def _query(tool, endpoint, *, size_limit=MAX_JSON):
     chunks = []
     total = 0
     try:
+        deadline = time.monotonic() + 45
         while True:
-            block = process.stdout.read(1024 * 1024)
+            remaining = deadline - time.monotonic()
+            _require(remaining > 0, "Provider API command timed out.")
+            ready, _, _ = select.select([process.stdout], [], [], remaining)
+            _require(bool(ready), "Provider API command timed out.")
+            block = os.read(process.stdout.fileno(), 65536)
             if not block:
                 break
             total += len(block)
-            if total > size_limit:
-                raise PermissionError("Provider API response exceeds size limit.")
+            _require(total <= size_limit, "Provider API response exceeds size limit.")
             chunks.append(block)
         try:
-            status = process.wait(timeout=35)
+            status = process.wait(timeout=max(1, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
             raise PermissionError("Provider API command timed out.") from None
         _require(status == 0, "Provider API authentication or response failed.")
@@ -68,7 +74,6 @@ def _query(tool, endpoint, *, size_limit=MAX_JSON):
             process.wait(timeout=5)
         if process.stdout is not None:
             process.stdout.close()
-
 
 def _json(tool, endpoint):
     try:
@@ -196,9 +201,11 @@ def verify_github(repository, run_id, expected_sha, ref, actor,
     raw = binary("gh", base + "/artifacts/" + str(artifact["id"]) + "/zip",
                  size_limit=MAX_BUNDLE)
     digest = artifact.get("digest")
-    if isinstance(digest, str) and digest.startswith("sha256:"):
-        _require(hashlib.sha256(raw).hexdigest() == digest[7:],
-                 "Downloaded wrapper does not match GitHub artifact digest.")
+    _require(isinstance(digest, str) and digest.startswith("sha256:")
+             and bool(re.fullmatch(r"sha256:[a-f0-9]{64}", digest)),
+             "Missing GitHub artifact integrity digest.")
+    _require(hashlib.sha256(raw).hexdigest() == digest[7:],
+             "Downloaded wrapper does not match GitHub artifact digest.")
     inner = _bundle(raw)
     return _record("github", repository, run_id, expected_sha, ref, actor, evidence, inner), inner
 
