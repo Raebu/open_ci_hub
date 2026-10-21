@@ -24,7 +24,7 @@ into an authenticated, event-driven host deployment queue.
 - Stage accepts **only** a local regular ZIP file with an exact caller-supplied
   SHA-256 digest and 40-character source commit SHA.
 - A stage can never overwrite an existing commit directory. The ZIP validator
-  rejects absolute paths, traversal, hidden files, symlinks, duplicate members,
+  rejects absolute paths, traversal, sensitive hidden paths (except a Next.js `.next` build directory), symlinks, duplicate members,
   reserved metadata, excessive sizes and huge file counts.
 - Promotion and rollback hold a per-app filesystem lock and switch only the
   managed \`current\` symlink.
