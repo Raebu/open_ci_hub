@@ -1,8 +1,8 @@
 # Open CI Hub
 
-An **open-source, provider-neutral, local-first CI/CD control centre** for GitHub Actions, GitLab CI/CD and CircleCI. Use the providers' native self-hosted runners to build on a computer you control instead of purchasing hosted runner minutes.
+An **open-source, provider-neutral, local-first CI/CD control centre** for GitHub Actions, GitLab CI/CD and CircleCI. Use the providers' native self-hosted runners, or opt into the separate Hub-owned execution bridge for restricted local workflows with a durable queue and commit-status reporting.
 
-**Release: v4 community preview; native onboarding is implemented in source and requires live verification.** Local Docker image builds/bootstrap and read-only provider checks have passed; real push builds across all three providers remain unverified. Do **not** treat it as a security-audited or production-certified service.
+**Release: v4 community preview; native onboarding is implemented in source and requires live verification.** The Hub-owned execution bridge is opt-in and is not active until configured on the local PC. Its code and regression tests are included here, but real GitHub/GitLab end-to-end runs and an independent security review remain release gates. Do **not** treat this as a security-audited or production-certified service.
 
 See the [engineering delivery and evidence](docs/ENGINEERING-2026-10-19.md) for
 current validation, activation commands and remaining release gates.
@@ -13,10 +13,19 @@ current validation, activation commands and remaining release gates.
 - Native provider runner support: GitHub Actions, GitLab, CircleCI, with separate Docker Compose profiles. No host Docker socket or home-directory mount by default.
 - Browse GitHub/GitLab repositories, create private or public repositories (with confirmation), inspect recent pipelines, and explicitly retry/cancel GitHub or GitLab runs.
 - Control runners, inspect Docker/disk/CLI readiness, and view a **local SQLite management audit log**.
+- Optional **Hub-owned local execution bridge** with authenticated webhooks or provider-CLI polling, a persistent SQLite queue, exact-commit checkout, isolated Docker steps, resource deferral, artifacts, and GitHub/GitLab commit-status reporting.
 - Optional **mobile access through Tailscale Serve**, using a trusted tailnet identity with an owner-approved viewer or editor role.
 - MIT licence, neutral branding, contribution policy, workflow templates, installation docs and tests.
 
-**Important:** Mobile access uses the same live PC-backed workspace. It does **not** sync to a hosted account while the PC is offline. GitHub/GitLab/CircleCI require separate permissions. CircleCI pipeline browsing/retry is not yet implemented: its runner integration is available through the installer and runner controls. Provider-hosted storage/networking and plan limits may still apply.
+**Important:** Mobile access uses the same live PC-backed workspace. It does **not** sync to a hosted account while the PC is offline. GitHub/GitLab/CircleCI require separate permissions. CircleCI pipeline browsing/retry is not yet implemented: its runner integration is available through the installer and runner controls. The new Hub-owned bridge is a separate opt-in service, defaults to loopback plus authenticated outbound polling, and has not yet been activated or end-to-end verified on the live PC. Provider-hosted storage/networking and plan limits may still apply.
+
+## Hub-owned local execution bridge (opt-in)
+
+The separate bridge closes the gap between managing native provider runners and executing a restricted workflow under Hub control. It authenticates/deduplicates provider events, applies per-repository branch policy, stores jobs in SQLite, checks out the exact commit, runs approved steps in bounded containers, retains evidence, and reports the result to the same commit.
+
+It is **not enabled by installing the main dashboard**. The local owner must initialise private state, approve each repository/branch and local image, configure the workflow, and enable the per-user service. The default queue runs one job at a time, reserves 3 GiB RAM and 20 GiB disk, and defers jobs during transient resource pressure. See the [bridge setup and security guide](docs/LOCAL-CI-EXECUTION-BRIDGE.md) and [workflow example](.open-ci-hub.toml.example).
+
+The service binds to loopback. Polling through authenticated `gh`/`glab` CLIs is the default. Direct webhooks require a separately secured HTTPS/private reverse proxy and strong provider secret; **never expose port 8766 directly to the internet**. Workflow steps run inside Docker but are not a complete security boundary against malicious code. Fork pull requests are rejected; do not enable PR execution for untrusted contributors on a personal PC.
 
 ## Installation in five minutes (after installing prerequisites)
 
@@ -57,9 +66,9 @@ The UI launches interactive CLI setup in a visible terminal on **the owner PC**.
 - Binds HTTP only to IPv4 loopback (`127.0.0.1`), not the public internet.
 - Desktop session uses an administrator secret exchanged for an HttpOnly SameSite cookie; local sign-out revokes the in-memory session. The private bootstrap secret persists locally and must be protected.
 - Optional Tailscale Serve presents private HTTPS access; the owner must approve the identity and choose viewer or editor. A viewer cannot create repositories or modify pipelines. The **local PC owner** alone can start external provider sign-in, runner registration and device approvals.
-- State-changing requests require same-origin checks, a custom header and session/role authorization. External CLI commands use fixed argument arrays, bounded output, timeouts and strict resource validation; arbitrary commands are not accepted.
+- State-changing requests require same-origin checks, a custom header and session/role authorization. Native runner-management operations use fixed argument arrays, bounded output, timeouts and strict resource validation. The optional execution bridge intentionally runs approved repository commands *inside bounded containers*; it does not provide arbitrary host-shell access.
 - Audit log contains actor, operation, target and outcome, **never CLI output or account tokens**.
-- Runner credentials still exist inside native runner storage and/or ignored `.local` state. Docker administrator rights are high privilege. **Never run unreviewed pull-request code on a personal computer.**
+- Runner credentials still exist inside native runner storage and/or ignored `.local` state. The bridge keeps provider CLI credentials on the host and never mounts them into job containers. Docker administrator rights are high privilege. **Never run unreviewed pull-request code on a personal computer.**
 - A local process with access to your computer may be able to spoof private reverse-proxy headers. Use a dedicated worker PC/VM for hostile code and do not expose the dashboard through other proxies.
 
 **No subscription guarantee:** self-hosting removes hosted execution-minute quotas for eligible native runners, but your hardware/electricity, storage, networking, and provider plan limits remain. CircleCI specifically still has plan-related limits.
