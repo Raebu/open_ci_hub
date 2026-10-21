@@ -333,7 +333,7 @@ def execute_one(job, manifest, broker=None):
         event_update(broker,job_id,"stranded",detail)
         return {"job_id":job_id,"status":"stranded","detail":detail,"commit":payload["sha"]}
     try:
-        completion=broker.complete(who,job_id,token,passed,{"status":"passed" if passed else "failed","detail":detail})
+        completion=broker.complete(who,job_id,token,passed,{"status":"passed" if passed else "failed","detail":detail[:250]})
     except (PermissionError,RuntimeError,ValueError) as exc:
         event_update(broker,job_id,"stranded","Could not safely release worker lease: "+str(exc))
         return {"job_id":job_id,"status":"stranded","detail":detail,"commit":payload["sha"]}
@@ -428,7 +428,7 @@ def main():
     sub.add_parser("init-state");sub.add_parser("status")
     s=sub.add_parser("serve");s.add_argument("--host",default="127.0.0.1");s.add_argument("--port",type=int,default=8766)
     one=sub.add_parser("worker-once")
-    loop=sub.add_parser("worker");loop.add_argument("--workers",type=int,default=2);loop.add_argument("--poll-seconds",type=int,default=5)
+    loop=sub.add_parser("worker");loop.add_argument("--workers",type=int,default=3);loop.add_argument("--poll-seconds",type=int,default=5)
     a=p.parse_args()
     try:
         if a.cmd=="init-state":
