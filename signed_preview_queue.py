@@ -127,10 +127,13 @@ def pin(app, *, repository, issuer, public_key_path, ref_prefixes, required_chec
     }
     # Validate before persisting (using a temporary private file isn't necessary
     # here: the user supplied fields are checked explicitly and on every use).
-    if (not isinstance(ref_prefixes, list) or not ref_prefixes
+    if (not isinstance(ref_prefixes, list) or not 1 <= len(ref_prefixes) <= 10
         or any(not isinstance(x, str) or not x.startswith("refs/heads/")
-               or not x.endswith("/") or ".." in x or "//" in x for x in ref_prefixes)
-        or not isinstance(required_checks, list) or not required_checks
+               or not x.endswith("/") or ".." in x or "//" in x
+               or any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-./"
+                      for c in x) for x in ref_prefixes)
+        or not isinstance(required_checks, list) or not 1 <= len(required_checks) <= 30
+        or len(set(required_checks)) != len(required_checks)
         or any(not isinstance(x, str) or not STEP.fullmatch(x) for x in required_checks)):
         raise ValueError("Invalid branch/check policy.")
     secure_write(target, json.dumps(data, sort_keys=True) + "\n")
@@ -269,7 +272,12 @@ def _copy_blob(source_path, dest, expected_hash):
             if size > releases.MAX_ARCHIVE_BYTES:
                 raise PermissionError("Artifact exceeds byte limit.")
             h.update(chunk)
-            os.write(out, chunk)
+            remaining = memoryview(chunk)
+            while remaining:
+                wrote = os.write(out, remaining)
+                if wrote <= 0:
+                    raise OSError("Incomplete artifact copy.")
+                remaining = remaining[wrote:]
         os.fsync(out)
         if h.hexdigest() != expected_hash:
             raise PermissionError("Artifact SHA-256 does not match signed proof.")
