@@ -128,7 +128,12 @@ class ReleasePolicyTests(unittest.TestCase):
         pl = rp.plan(policy(), event())
         self.assertEqual(pl["autofix_budget"], 2)
         self.assertEqual(pl["status"], "admitted")
-        self.assertFalse(rp.ready_to_deploy(pl, passed_receipt(pl)))
+        # A preview release with all required checks observed and passing is eligible.
+        self.assertTrue(rp.ready_to_deploy(pl, passed_receipt(pl)))
+        # An autofix budget never overrides failed CI or manufactures a green receipt.
+        failed = passed_receipt(pl)
+        failed["checks"]["test"]["exit_code"] = 1
+        self.assertFalse(rp.ready_to_deploy(pl, failed))
         self.assertEqual(rp.plan(policy(auto_fix=False), event())["autofix_budget"], 0)
         with self.assertRaises(ValueError):
             rp.validate_config(policy(max_fix_attempts=10))
