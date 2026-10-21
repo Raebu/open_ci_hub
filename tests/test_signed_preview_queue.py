@@ -163,6 +163,18 @@ class SignedPreviewQueueTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             queue.enable_preview("demo", confirm=False)
 
+    def test_revoking_local_preview_consent_stops_an_existing_queue(self):
+        receipt = self.make_receipt()
+        queue.submit("demo", self.write_manifest(receipt), self.archive)
+        data = queue._policy("demo")
+        data["preview_auto"] = False
+        from hub import secure_write
+        secure_write(queue._policy_path("demo"), json.dumps(data))
+        with self.assertRaises(PermissionError):
+            queue.run_once("demo")
+        self.assertIsNone(pr.status("demo")["current_commit"])
+        self.assertEqual(queue.status("demo")["queue"]["queued"], 1)
+
     def test_cannot_sign_away_failed_checks_or_old_receipt(self):
         signed_failed = self.make_receipt(checks={
             "test": {"exit_code": 1, "observed": True, "timed_out": False,
