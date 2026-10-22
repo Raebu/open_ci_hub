@@ -15,6 +15,7 @@ const {Client,LocalAuth}=require('whatsapp-web.js');
 const QR=require('qrcode-terminal');
 const {chatAllowed,needsReview,safeReply,shortHash,validConfig}=require('./policy');
 const {generateReply}=require('./ollama');
+const {parseDirectSend}=require('./direct_send');
 
 const configDir=path.join(os.homedir(),'.config','open-ci-hub');
 const configPath=path.join(configDir,'personal-whatsapp.json');
@@ -125,6 +126,21 @@ function main(){
     audit(manual?'manual-send-submitted':'auto-send-submitted',id,sent.id._serialized);
     note('WhatsApp send submitted for approved chat '+shortHash(id)+'. Delivery NOT confirmed.');
   }
+  async function sendOnceToNumber(digits,text){
+    if(!connected)throw Error('WhatsApp is not connected');
+    if(!/^\d{8,15}$/.test(digits) || !text || text.length>1200)
+      throw Error('Invalid one-off recipient or message');
+    const result=await client.getNumberId(digits);
+    if(!result)throw Error('Recipient number is not registered on WhatsApp');
+    const resolved=result._serialized ?? result.$1;
+    if(typeof resolved!=='string'||!/^\d{6,20}@(c\.us|lid)$/.test(resolved))
+      throw Error('WhatsApp returned an unrecognised recipient identifier');
+    const message=await client.sendMessage(resolved,text,{sendSeen:false,waitUntilMsgSent:true});
+    if(!message?.id?._serialized)
+      throw Error('Send status unknown: no outgoing message ID returned; DO NOT retry automatically');
+    audit('one-off-send-submitted',resolved,message.id._serialized);
+    note('One-off message submitted to WhatsApp for '+digits+'. Delivery is not yet confirmed.');
+  }
   async function replyTo(id){
     pending.delete(id);
     try{
@@ -202,7 +218,7 @@ function main(){
   });
   rl.on('line',async line=>{
     const cmd=line.trim();
-    if(cmd==='help'){note('contacts — list IDs for owner approval; chats — list approved incoming; reply <index> <text> — manual send; status; quit');return;}
+    if(cmd==='help'){note('contacts — list IDs; chats — approved incoming; reply <index> <text>; send +<countrycode><number> <text> — one-off manual send; status; quit');return;}
     if(cmd==='chats'){recentChats.forEach((id,i)=>note(i+': '+id));return;}
     if(cmd==='contacts'){
       if(!connected){note('WhatsApp is not connected.');return;}
@@ -224,6 +240,13 @@ function main(){
     }
     if(cmd==='status'){note('Online: '+connected+'; Auto: '+config().autoSend+'; allowlisted contacts: '+config().approvedChats.length);return;}
     if(cmd==='quit'){for(const t of pending.values())clearTimeout(t);rl.close();await client.destroy();process.exit(0);}
+    if(cmd.startsWith('send ')){
+      const one=parseDirectSend(cmd);
+      if(!one){note('Use: send +447000000000 Your message text');return;}
+      try{await sendOnceToNumber(one.digits,one.message);}
+      catch(error){note('One-off send not confirmed: '+String(error?.message||error).slice(0,180));}
+      return;
+    }
     const parsed=/^reply\s+(\d{1,2})\s+(.{1,1200})$/.exec(cmd);
     if(parsed){
       const id=recentChats[Number(parsed[1])];
