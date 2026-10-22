@@ -40,6 +40,45 @@ Relevant upstream reports:
 - https://github.com/wwebjs/whatsapp-web.js/issues/201845
 - https://github.com/wwebjs/whatsapp-web.js/issues/201919
 
+## Delivery troubleshooting — 22 October 2026
+
+A one-off manual message displayed `submitted` on the terminal, but its
+intended recipient reported no message. Local owner-only audit records show
+the submitted message and an exact message-ID-matched WhatsApp
+`outgoing-ack-3` (normally reported as *read*), nine milliseconds earlier.
+**That is NOT proof that the intended phone/contact saw the message.**
+There may be an unexpected phone-number-to-LID association or a
+WhatsApp Web acknowledgement/UI mismatch. The assistant must not retry the
+same message automatically.
+
+A second attempted `send 204...@lid ...` was rejected by the old phone-only
+parser before sending. The updated terminal provides:
+
+- `outbox` — last five locally submitted outgoing messages and their
+  ID-matched WhatsApp acknowledgement states; no contact names or raw
+  message IDs are printed.
+- `resolve +447000000000` — inspect **without sending** the account ID
+  resolved by WhatsApp for that number and any accessible existing chat title.
+  Compare this against the intended person's WhatsApp profile.
+- `contacts` — the existing one-to-one chat IDs, including those ending
+  in `@lid`.
+- `send <existing-id@lid> Your message` — **manual only**, accepts an
+  exact chat ID only when the WhatsApp library verifies the ID is an
+  existing individual, non-read-only chat. It never sends to an unknown,
+  group, broadcast or channel identifier.
+
+The WhatsApp Web values `ack=1`, `ack=2`, and `ack=3` normally mean
+server accepted, device acknowledged, and read reported, respectively.
+They do **not** independently verify who owns an internally resolved LID.
+When delivery or recipient identity is disputed, use `resolve` and verify
+the recipient in the phone's WhatsApp interface before sending again.
+
+The **already-running** terminal must type `quit` and then
+`npm start` to load these new commands. Saved LocalAuth sessions are
+preserved; do not delete them or start a second client on the same session.
+Automatic sending remains governed by the private policy file and is
+not enabled by this change.
+
 ## Important risk
 
 **whatsapp-web.js is an unofficial WhatsApp Web client.**

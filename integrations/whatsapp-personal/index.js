@@ -15,7 +15,8 @@ const {Client,LocalAuth}=require('whatsapp-web.js');
 const QR=require('qrcode-terminal');
 const {chatAllowed,needsReview,safeReply,shortHash,validConfig}=require('./policy');
 const {generateReply}=require('./ollama');
-const {parseDirectSend}=require('./direct_send');
+const {parseDirectSend,parseExistingChatSend,verifiedExistingChat}=require('./direct_send');
+const {summarise,readAudit}=require('./receipts');
 
 const configDir=path.join(os.homedir(),'.config','open-ci-hub');
 const configPath=path.join(configDir,'personal-whatsapp.json');
@@ -141,6 +142,47 @@ function main(){
     audit('one-off-send-submitted',resolved,message.id._serialized);
     note('One-off message submitted to WhatsApp for '+digits+'. Delivery is not yet confirmed.');
   }
+  async function sendToExistingChat(chatId,text) {
+    if(!connected)throw Error('WhatsApp is not connected');
+    const chats=await client.getChats();
+    const target=verifiedExistingChat(chats,chatId);
+    if(!target)throw Error('ID is not an existing individual chat. Run contacts or resolve first.');
+    note('Verified individual chat: '+String(target.name||'Unnamed').slice(0,60)+
+         ' ('+chatId+'). Sending one manual message.');
+    const sent=await client.sendMessage(chatId,text,{sendSeen:false,waitUntilMsgSent:true});
+    const id=sent?.id?._serialized;
+    if(!id)throw Error('Unknown send status: no message ID; do not retry automatically');
+    audit('one-off-send-submitted',chatId,id);
+    note('One-off message submitted. Type outbox to inspect acknowledgements; intended recipient still must be checked.');
+  }
+  async function inspectRecipient(digits) {
+    if(!connected)throw Error('WhatsApp is not connected');
+    const result=await client.getNumberId(digits);
+    if(!result){note('WhatsApp did not identify that number as a registered account. No message sent.');return;}
+    const id=result._serialized??result.$1;
+    if(typeof id!=='string'||!/^\d{6,20}@(c\.us|lid)$/.test(id))
+      throw Error('WhatsApp returned an unsupported recipient ID');
+    note('WhatsApp resolves the entered number to '+id+'. No message sent.');
+    if(id.endsWith('@lid'))note('This is a LID identifier: compare its chat name/profile with the intended recipient before sending.');
+    try {
+      const chat=await client.getChatById(id);
+      if(chat && !chat.isGroup)
+        note('Known chat title: '+String(chat.name||'Unnamed').slice(0,65));
+      else note('No existing one-to-one chat title available for verification.');
+    } catch {note('Unable to retrieve profile name; the recipient identity remains unverified.');}
+  }
+  function showOutbox() {
+    try{
+      const items=summarise(readAudit(auditPath),5);
+      if(!items.length){note('No outgoing messages recorded in the local audit.');return;}
+      for(let index=0;index<items.length;index++){
+        const item=items[index];
+        note((index+1)+'. '+item.at+' — '+item.submitted+
+           '; '+item.state+'; exact message-ID match='+item.matchedBySameMessageId+
+           '; recipient identity NOT independently verified.');
+      }
+    }catch(error){note('Cannot inspect private outbox: '+String(error.message).slice(0,130));}
+  }
   async function replyTo(id){
     pending.delete(id);
     try{
@@ -218,7 +260,7 @@ function main(){
   });
   rl.on('line',async line=>{
     const cmd=line.trim();
-    if(cmd==='help'){note('contacts — list IDs; chats — approved incoming; reply <index> <text>; send +<countrycode><number> <text> — one-off manual send; status; quit');return;}
+    if(cmd==='help'){note('contacts; chats; outbox — inspect sent status; resolve +<number> — verify recipient without sending; send +<number> <text>; send <existing-chat@lid> <text>; reply <index> <text>; status; quit');return;}
     if(cmd==='chats'){recentChats.forEach((id,i)=>note(i+': '+id));return;}
     if(cmd==='contacts'){
       if(!connected){note('WhatsApp is not connected.');return;}
@@ -238,13 +280,25 @@ function main(){
       }
       return;
     }
+    if(cmd==='outbox'){showOutbox();return;}
+    if(/^resolve\s+\+?[1-9]\d{7,14}$/.test(cmd)){
+      try{await inspectRecipient(cmd.replace(/^resolve\s+\+?/,''));}
+      catch(error){note('Recipient lookup failed: '+String(error.message).slice(0,140));}
+      return;
+    }
     if(cmd==='status'){note('Online: '+connected+'; Auto: '+config().autoSend+'; allowlisted contacts: '+config().approvedChats.length);return;}
     if(cmd==='quit'){for(const t of pending.values())clearTimeout(t);rl.close();await client.destroy();process.exit(0);}
     if(cmd.startsWith('send ')){
       const one=parseDirectSend(cmd);
-      if(!one){note('Use: send +447000000000 Your message text');return;}
-      try{await sendOnceToNumber(one.digits,one.message);}
-      catch(error){note('One-off send not confirmed: '+String(error?.message||error).slice(0,180));}
+      const exact=parseExistingChatSend(cmd);
+      if(!one && !exact){
+        note('Use: send +447000000000 Your message text or send <existing-chat@lid> Your message text');
+        return;
+      }
+      try{
+        if(one)await sendOnceToNumber(one.digits,one.message);
+        else await sendToExistingChat(exact.chatId,exact.message);
+      }catch(error){note('One-off send not confirmed: '+String(error?.message||error).slice(0,180));}
       return;
     }
     const parsed=/^reply\s+(\d{1,2})\s+(.{1,1200})$/.exec(cmd);

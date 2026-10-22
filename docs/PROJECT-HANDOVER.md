@@ -59,6 +59,26 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - No background service activation; `autoSend=false`, approved contacts zero; no WhatsApp messages sent.
 - See [personal WhatsApp README](../integrations/whatsapp-personal/README.md) and issue #50.
 
+## WhatsApp delivery acknowledgement investigation — 22 October 2026
+
+- The test one-off WhatsApp message was reported **not received** by the
+  intended party. The private audit contained exactly one
+  `one-off-send-submitted` and one `outgoing-ack-3` for the **same
+  message ID** (time difference ~9ms). WhatsApp ACK 3 normally means read,
+  but **recipient identity and actual visibility remain unverified**.
+- An attempted direct `@lid` send was rejected by the previous parser
+  and not sent. Added an `outbox` command, read-only
+  `resolve +international-number` diagnostic and a manually initiated
+  existing chat-ID send path which rejects unknown/group/channel IDs.
+- Audit receipt display associates acknowledgements by the exact
+  hashed message ID even if the acknowledgement arrives before the local
+  `submitted` audit entry; never equates submission with delivery.
+- No additional WhatsApp message was sent in testing, no LocalAuth tokens
+  changed, and existing interactive terminal must restart to load code.
+  Automatic sending remains disabled in current private config.
+- See [WhatsApp troubleshooting](../integrations/whatsapp-personal/README.md)
+  and [issue #50](https://github.com/Raebu/open_ci_hub/issues/50).
+
 ## NOT yet complete or verified
 - Changed SHA → durable enqueue → admitted Docker execution → accurate provider status, logs and receipt, proven end to end.
 - GitLab project-specific review and allowlisting. Merely authenticating `glab` is not a validated Talent build.
