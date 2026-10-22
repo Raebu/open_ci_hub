@@ -55,3 +55,30 @@ After the owner PC reconnects and updates to this branch:
 6. Record the verification evidence in GitHub issue #48 and the existing Google Drive handover sheet.
 
 **Rollback:** Revert the new sidebar section/script reference and the added static route; there are no message databases or migration changes.
+
+## Optional unofficial terminal-based auto-read and auto-reply integration
+
+The [personal WhatsApp terminal companion](../integrations/whatsapp-personal/README.md)
+is a **separate opt-in integration**, based directly on `whatsapp-web.js` and
+`LocalAuth`. Unlike the dashboard's official click-to-chat composer, this
+unofficial library can read new linked-session messages and submit outgoing
+personal messages, including routine local Ollama-generated replies after
+explicit approved-contact and owner-style configuration.
+
+Local proof as of 22 October 2026:
+- `whatsapp-web.js@1.34.7`, pinned Puppeteer override 25.15.0, and
+  `qrcode-terminal@0.12.0` installed; `npm audit` reports zero known
+  advisories for the current pinned dependency tree.
+- Chromium 154 launched successfully without disabling the sandbox.
+- Seven policy/local-model unit tests passed.
+- WhatsApp Web launched and emitted a QR-login event in a bounded
+  **unpaired** smoke test. QR output was intentionally suppressed from
+  noninteractive logs. No personal chats or messages were accessed.
+- Owner-specific configuration files created with mode 0600; `autoSend=false`
+  and `approvedChats=[]`.
+
+**It is NOT yet linked, tested against live chats, or enabled for sending.**
+The owner must scan the QR in the desktop terminal, explicitly approve
+contacts, provide authentic sample messages, and test the initial manual
+workflow before enabling auto-send. This is not an officially supported
+personal-account API; WhatsApp may restrict the account.

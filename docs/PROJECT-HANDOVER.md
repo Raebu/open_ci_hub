@@ -20,7 +20,7 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - Existing GitHub/GitLab self-hosted runner containers, old one-build legacy CI and business app containers preserved.
 
 ## Deployment engine increment — 21 October 2026
-- New \`deployment_engine.py\` and deployment unit tests; depends on existing \`release_manager.py\`, no new CI runner.
+- New `deployment_engine.py` and deployment unit tests; depends on existing `release_manager.py`, no new CI runner.
 - Local staging-only policy, signed checks for build/tests/security/database/backup, one-target-at-a-time lock, audited history and local health-gated release/rollback.
 - No live application deployed; remote adapters and production promotion are intentionally disabled pending separate target/environment isolation and safe migration planning.
 - See [Deployment Engine](DEPLOYMENT-ENGINE.md) and [ATS deployment profile](ATS-DEPLOYMENT-PROFILE.md). Track P0/P1 acceptance gates in [deployment issue #49](https://github.com/Raebu/open_ci_hub/issues/49), linked to canonical issue #48.
@@ -43,6 +43,13 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - No official personal WhatsApp API connection or background messaging was created. No personal messages have been sent.
 - GitHub branch source and relevant pure-JavaScript checks were verified; local Garuda deployment and complete test suite are **unverified**, because the Open CI Hub PC connector returned `Session terminated` during this work.
 - See [Personal WhatsApp guide](WHATSAPP-PERSONAL.md) and [tracking issue #50](https://github.com/Raebu/open_ci_hub/issues/50). Resume by reconnecting the PC and verifying the branch/dashboard; preserve the existing CI resource protections.
+
+## Personal WhatsApp terminal integration — 22 October 2026
+- New `integrations/whatsapp-personal` opt-in Node companion built from the user's suggested whatsapp-web.js code (QR + LocalAuth), separate from CI workers.
+- Approved one-to-one contacts only; manual terminal reply option, explicit per-contact auto-send switch, 10-second burst grouping, local Ollama 4B writing style using user's own examples, sensitive-message holds and a maximum daily count. No auto command execution from received chats.
+- Chromium sandbox smoke succeeded and WhatsApp Web emitted QR login event. No QR stored in logs and no account linked. npm audit zero known advisories following pinned Puppeteer update; focused tests pass. Owner config mode 0600, autoSend false, zero approved contacts.
+- NOT operationally verified: actual QR linking, incoming/outgoing personal messages, WhatsApp send/delivery receipts, realistic style samples, and unattended systemd service. This is unofficial and may cause account restriction.
+- See [personal WhatsApp integration](../integrations/whatsapp-personal/README.md) and [GitHub issue #50](https://github.com/Raebu/open_ci_hub/issues/50).
 
 ## NOT yet complete or verified
 - Changed SHA → durable enqueue → admitted Docker execution → accurate provider status, logs and receipt, proven end to end.

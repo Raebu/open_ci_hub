@@ -158,13 +158,17 @@ A separate **Terminal** tab can create an actor-scoped interactive Linux pseudo-
 
 The authenticated dashboard now includes a **Personal WhatsApp** composer: edit a draft, create a tone-specific writing suggestion without erasing your work, copy the text, and open the recipient's WhatsApp conversation with the message prefilled. **Only pressing Send inside WhatsApp actually sends the message.** This is not an unofficial personal WhatsApp API and does not download or store your WhatsApp conversations or contacts. Normal ChatGPT can also prepare a personal message through the direct-PC connector and open it for final review once that connector is deployed. See [supported personal WhatsApp workflow](docs/WHATSAPP-PERSONAL.md).
 
+## Opt-in personal WhatsApp terminal (unofficial)
+
+The optional [personal WhatsApp terminal companion](integrations/whatsapp-personal/README.md) implements the user's proposed `whatsapp-web.js` / `LocalAuth` / QR integration. It can read incoming individual WhatsApp Web messages and send manual replies; opt-in automatic replies use the user's privately approved writing samples and the existing local Ollama model. Unknown contacts, groups, sensitive conversations and excessive reply volumes are excluded. **No account is paired and no automatic sending is enabled by this code.** The library is unofficial, and using it for automatic messages may lead to personal WhatsApp account restrictions. It is intentionally separate from the CI worker and deployment subsystem.
+
 ## Controlled CI internet access
 
 See [CI Network](docs/CI-NETWORK.md) for owner-approved public-Web HTTPS/HTTP access in local CI while retaining Docker network isolation, private LAN denial and existing resource limits. The dashboard's CI Internet view shows effective repository policies.
 
 ## Governed deployment engine (staging foundation)
 
-[Deployment engine and multi-target roadmap](docs/DEPLOYMENT-ENGINE.md) (tracked in [deployment issue #49](https://github.com/Raebu/open_ci_hub/issues/49)) covers environment-locked release promotion, signed-artifact checks, local staging health/rollback and an audit record built on the existing \`release_manager.py\`. The [Raeburn Talent deployment profile](docs/ATS-DEPLOYMENT-PROFILE.md) documents ATS-specific application gates without embedding them in CI core. The source includes *opt-in* Cloudflare Worker version, Vercel immutable alias and SSH/Compose staging adapters plus a credential store and read-only deployment dashboard. None are enabled without an owner-installed private policy, signed target metadata and scoped secrets. Automatic production remains disabled pending independent CI attestation, provider rollback verification, environment isolation and human-approved policy.
+[Deployment engine and multi-target roadmap](docs/DEPLOYMENT-ENGINE.md) (tracked in [deployment issue #49](https://github.com/Raebu/open_ci_hub/issues/49)) covers environment-locked release promotion, signed-artifact checks, local staging health/rollback and an audit record built on the existing `release_manager.py`. The [Raeburn Talent deployment profile](docs/ATS-DEPLOYMENT-PROFILE.md) documents ATS-specific application gates without embedding them in CI core. The source includes *opt-in* Cloudflare Worker version, Vercel immutable alias and SSH/Compose staging adapters plus a credential store and read-only deployment dashboard. None are enabled without an owner-installed private policy, signed target metadata and scoped secrets. Automatic production remains disabled pending independent CI attestation, provider rollback verification, environment isolation and human-approved policy.
 
 ## Signed deployment and rollback (optional)
 
