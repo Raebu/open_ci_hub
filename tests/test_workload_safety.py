@@ -47,12 +47,32 @@ class NativeObserverTests(unittest.TestCase):
         inspected='\n'.join('/'+x+' 2147483648 1500000000' for x in names.splitlines()[:4])
         with patch('native_runner_observer.shutil.which',return_value='/usr/bin/docker'),\
              patch('native_runner_observer.subprocess.run',side_effect=[
-                 self.respond(names),self.respond(inspected)]) as runner:
+                 self.respond(names),self.respond(inspected),self.respond('')]) as runner:
             result=ci.runner_reservations()
         self.assertEqual(result['active_runners'],4)
         self.assertEqual(result['reserved_ram_mb'],8192)
         self.assertEqual(result['reserved_cpus'],6.0)
-        self.assertEqual(runner.call_count,2)
+        self.assertEqual(runner.call_count,3)
+    def test_reserves_headroom_for_native_actions_and_act_jobs(self):
+        processes='Runner.Listener /usr/bin/Runner.Listener listen\nRunner.Worker /opt/runner/bin/Runner.Worker spawnclient\nact /home/user/bin/act pull_request\nbash bash -c Runner.Worker example\n'
+        with patch('native_runner_observer.shutil.which',return_value='/usr/bin/ps'),\
+             patch('native_runner_observer.subprocess.run',side_effect=[
+                 self.respond(''),self.respond(processes)]):
+            result=ci.runner_reservations()
+        self.assertEqual(result['reserved_ram_mb'],10240)
+        self.assertEqual(result['active_runners'],2)
+        self.assertEqual(result['reserved_cpus'],3.5)
+
+    def test_host_process_enumeration_unavailable_fails_closed(self):
+        with patch('native_runner_observer.shutil.which',return_value='/usr/bin/ps'),\
+             patch('native_runner_observer.subprocess.run',side_effect=[
+                 self.respond(''),self.respond('',1)]):
+            self.assertIsNone(ci.runner_reservations())
+    def test_host_process_enumeration_does_not_count_command_text_as_job(self):
+        with patch('native_runner_observer.shutil.which',return_value='/usr/bin/ps'),\
+             patch('native_runner_observer.subprocess.run',side_effect=[
+                 self.respond(''),self.respond('bash bash -c Runner.Worker spawnclient\nRunner.Listener idle\n')]):
+            self.assertEqual(ci.runner_reservations()['reserved_ram_mb'],0)
     def test_unbounded_runner_or_docker_failure_fail_closed(self):
         with patch('native_runner_observer.shutil.which',return_value='/usr/bin/docker'),\
              patch('native_runner_observer.subprocess.run',side_effect=[

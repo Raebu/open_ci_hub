@@ -1,9 +1,10 @@
-"""Observe running native CI Docker containers for shared app resource accounting.
+"""Observe real native CI jobs and managed runner containers for RAM admission.
 
-Existing Github/GitLab/CircleCI and per-repo pool containers have Docker hard
-memory limits. The app broker must subtract those reservations when deciding
-whether additional app tasks can start. This does not constitute a single
-enforcing scheduler across provider work already running.
+Docker-limited runner reservations are not enough: host-native GitHub Actions
+Runner.Worker and Open CI Hub's standalone act executor run directly on the PC.
+Count those processes explicitly before admitting *another* build. This is a
+conservative reservation, not a cgroup memory limit on existing native jobs.
+An unreadable process table fails closed so capacity cannot be double-spent.
 """
 from __future__ import annotations
 import re
@@ -12,6 +13,41 @@ import subprocess
 
 MANAGED=re.compile(r'^(?:open-ci-(?:github|gitlab|circleci)-runner|open-ci-hub-pool-[a-f0-9]{16})$')
 DEFAULT_CPU_LIMIT=1.5
+
+# Conservative per-active-job headroom on a 16-GiB desktop. Idle listeners do
+# not count. These are admission reservations, not measured RSS or enforced caps.
+HOST_JOB_RAM_MB={'Runner.Worker':6144,'act':4096}
+HOST_JOB_CPU_SLOTS={'Runner.Worker':2.0,'act':1.5}
+MAX_HOST_JOBS=16
+
+def host_ci_reservations():
+    """Detect host-native CI work by exact process comm, not command-line text.
+
+    An idle Runner.Listener is deliberately excluded. Never trust a failed or
+    truncated process enumeration to mean that no CI is running.
+    """
+    if not shutil.which('ps'):
+        return None
+    try:
+        result=subprocess.run(['ps','-eo','comm=,args='],
+            capture_output=True,text=True,timeout=3,check=False)
+        if result.returncode!=0 or len(result.stdout)>2_000_000:
+            return None
+        ram=count=0
+        cpu=0.0
+        for line in result.stdout.splitlines():
+            parts=line.split(None,1)
+            if not parts:continue
+            name=parts[0]
+            if name not in HOST_JOB_RAM_MB:continue
+            count+=1
+            if count>MAX_HOST_JOBS:return None
+            ram+=HOST_JOB_RAM_MB[name]
+            cpu+=HOST_JOB_CPU_SLOTS[name]
+        return {'reserved_ram_mb':ram,'active_runners':count,'reserved_cpus':round(cpu,2)}
+    except (OSError,subprocess.TimeoutExpired,ValueError):
+        return None
+
 
 def runner_reservations():
     if not shutil.which('docker'):
@@ -46,8 +82,12 @@ def runner_reservations():
                 total+=(memory+1024*1024-1)//(1024*1024)
                 cpu+=nano/1e9 if nano else DEFAULT_CPU_LIMIT
                 count+=1
-        return {'reserved_ram_mb':total,'active_runners':count,'reserved_cpus':round(cpu,2),
-                'trust':'Docker hard memory limits; jobs can also consume host storage/I/O'}
+        host=host_ci_reservations()
+        if host is None:return None
+        return {'reserved_ram_mb':total+host['reserved_ram_mb'],
+                'active_runners':count+host['active_runners'],
+                'reserved_cpus':round(cpu+host['reserved_cpus'],2),
+                'trust':'Docker hard limits plus conservative reservations for host-native Runner.Worker and act jobs'}
     except (OSError,subprocess.TimeoutExpired,ValueError):
         return None
 
