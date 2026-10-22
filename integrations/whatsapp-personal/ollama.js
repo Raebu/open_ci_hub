@@ -19,10 +19,10 @@ async function generateReply({model, sender, conversation, examples, fetcher=fet
   const history=conversation.slice(-10).map(m=>({role:m.fromMe?'assistant':'user',
     content:String(m.body||'').slice(0,600)}));
   const response=await fetcher(LOCAL_OLLAMA,{
-    method:'POST',signal:AbortSignal.timeout(28000),
+    method:'POST',signal:AbortSignal.timeout(45000),
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({model,stream:false,format:'json',think:false,options:{temperature:0.35,num_predict:220},
-      messages:[{role:'system',content:system},...history]})
+    body:JSON.stringify({model,stream:false,format:'json',think:false,options:{temperature:0.35,num_predict:120,num_ctx:1536,num_thread:2},
+      messages:[{role:'system',content:system},...history],keep_alive:'0s'})
   });
   if(!response.ok)throw Error('Local writing model unavailable');
   const result=await response.json();

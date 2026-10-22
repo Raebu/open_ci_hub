@@ -15,6 +15,7 @@ const {Client,LocalAuth}=require('whatsapp-web.js');
 const QR=require('qrcode-terminal');
 const {chatAllowed,needsReview,safeReply,shortHash,validConfig}=require('./policy');
 const {generateReply}=require('./ollama');
+const {learnOwnerStyle}=require('./style_learning');
 const {parseDirectSend,parseExistingChatSend,verifiedExistingChat}=require('./direct_send');
 const {isSelfChat}=require('./recipient_identity');
 const {summarise,readAudit}=require('./receipts');
@@ -94,6 +95,17 @@ function main(){
   const history=new Map();
   const pending=new Map();
   const seen=new Set();
+  const bootTimestamp=Math.floor(Date.now()/1000);
+  // The Web client can replay recent notifications after reconnecting.
+  // The audit stores hashed message IDs, never raw conversation content.
+  try {
+    if(fs.existsSync(auditPath))for(const event of readAudit(auditPath)){
+      if(event.kind==='approved-inbound' && event.messageHash)seen.add(event.messageHash);
+    }
+  } catch(error){
+    throw Error('Cannot verify previous inbound receipt IDs; refusing automatic startup');
+  }
+  let styleReady=false;
   const recentChats=[];
   const daily=todayAutoCounts();
   let connected=false;
@@ -117,7 +129,7 @@ function main(){
     const fresh=config();
     if(!connected)throw Error('WhatsApp is not ready');
     if(!chatAllowed(id,new Set(fresh.approvedChats)))throw Error('Recipient no longer on the approved allowlist');
-    if(!manual && !fresh.autoSend)throw Error('Automatic sending is disabled');
+    if(!manual && (!fresh.autoSend||!styleReady))throw Error('Automatic sending is not enabled or owner style is not ready');
     if(!manual && !safeReply(text))throw Error('Reply requires owner review');
     const count=dayCount(id);
     if(!manual && count.current>=fresh.maxPerContactDay)throw Error('Daily per-contact limit reached');
@@ -195,7 +207,7 @@ function main(){
     pending.delete(id);
     try{
       const fresh=config();
-      if(!fresh.autoSend||!chatAllowed(id,new Set(fresh.approvedChats)))return;
+      if(!fresh.autoSend||!styleReady||!chatAllowed(id,new Set(fresh.approvedChats)))return;
       const latest=history.get(id)||[];
       if(!latest.length||latest.at(-1).fromMe)return;
       const pendingText=latest.filter(m=>!m.fromMe).slice(-4).map(m=>m.body).join('\n');
@@ -236,7 +248,34 @@ function main(){
     note('Scan ONLY using WhatsApp → Linked Devices → Link a device:');
     QR.generate(qr,{small:true});
   });
-  client.on('ready',()=>{connected=true;note('Connected. Type help, chats, or reply <number> <text>.');});
+  async function prepareOwnerStyle(){
+    const existing=style().trim();
+    if(existing.length>=180){
+      styleReady=true;
+      note('Owner writing style loaded from private existing examples. No message text logged.');
+      return;
+    }
+    note('Learning writing style locally from owner-sent messages in approved one-to-one chats.');
+    const examples=await learnOwnerStyle(client,[...allowed]);
+    if(!examples.adequate){
+      styleReady=false;
+      note('Insufficient owner-authored non-sensitive examples ('+examples.count+'); automatic sending held. Add approved examples to the private style file.');
+      return;
+    }
+    if(fs.existsSync(stylePath)&&fs.lstatSync(stylePath).isSymbolicLink())
+      throw Error('Symlinked style file refused');
+    fs.writeFileSync(stylePath,examples.content+'\n',{mode:0o600,flag:'w'});
+    styleReady=true;
+    note('Owner writing style prepared locally from '+examples.count+' non-sensitive sent messages. Nothing sent.');
+  }
+  client.on('ready',()=>{
+    connected=true;
+    note('Connected. Type help, chats, or reply <number> <text>.');
+    prepareOwnerStyle().catch(error=>{
+      styleReady=false;
+      note('Owner writing style unavailable; automatic sending held ('+String(error.name||'error')+').');
+    });
+  });
   client.on('authenticated',()=>note('Authenticated. Session kept privately under owner state directory.'));
   client.on('auth_failure',()=>{connected=false;note('Authentication failed; no sending possible.');});
   client.on('disconnected',why=>{connected=false;note('Disconnected; no sending possible.');});
@@ -250,8 +289,12 @@ function main(){
     if(!id||msg.fromMe||!msg.body||msg.type!=='chat')return;
     if(!chatAllowed(id,allowed))return; // no group, status, unknown, unsanctioned
     const identifier=msg.id?._serialized;
-    if(!identifier||seen.has(identifier))return;
-    seen.add(identifier);
+    if(!identifier)return;
+    const receiptKey=shortHash(identifier);
+    // Never automatically answer messages replayed from before this process started.
+    if(Number(msg.timestamp||0)<bootTimestamp-30)return;
+    if(seen.has(receiptKey))return;
+    seen.add(receiptKey);
     if(seen.size>3500)seen.clear();
     rememberId(id);
     remember(id,msg.body,false);
@@ -262,7 +305,7 @@ function main(){
     const current=pending.get(id);
     if(current)clearTimeout(current);
     const enabled=config();
-    if(enabled.autoSend){
+    if(enabled.autoSend && styleReady){
       pending.set(id,setTimeout(()=>{replyTo(id).catch(()=>{});},enabled.debounceMs));
     } else note('MANUAL: use chats then reply <number> <message>.');
   });
@@ -294,7 +337,7 @@ function main(){
       catch(error){note('Recipient lookup failed: '+String(error.message).slice(0,140));}
       return;
     }
-    if(cmd==='status'){note('Online: '+connected+'; Auto: '+config().autoSend+'; allowlisted contacts: '+config().approvedChats.length);return;}
+    if(cmd==='status'){note('Online: '+connected+'; Auto requested: '+config().autoSend+'; style ready: '+styleReady+'; allowlisted contacts: '+config().approvedChats.length);return;}
     if(cmd==='quit'){for(const t of pending.values())clearTimeout(t);rl.close();await client.destroy();process.exit(0);}
     if(cmd.startsWith('send ')){
       const one=parseDirectSend(cmd);

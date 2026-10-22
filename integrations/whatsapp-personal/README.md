@@ -201,6 +201,72 @@ library submitted a message. Delivery/read status is different and is only
 observed via message acknowledgements when available. Never describe this
 as guaranteed delivery.
 
+## Automatic replies in Martin's own writing style
+
+When connected, the assistant can learn a private writing-style reference
+automatically from **messages sent by the account owner** in the already
+approved individual chats. It does not copy other people's messages into the
+style file, export chat content to ChatGPT, or contact any external AI.
+Only ordinary, non-sensitive outgoing text examples are selected; 5 or more
+examples and at least 180 characters are required. The style file stays
+owner-private at 0600.
+
+It will **not** pretend to know information or promises absent from the
+conversation. Generic or unverified AI responses can be inaccurate; replies
+cover routine small talk only. Money, health, legal, distress, commitments,
+relationships and private details remain held for manual review.
+
+To see the effective mode without opening WhatsApp:
+
+```bash
+npm run mode
+```
+
+To stop automatic replies immediately without disconnecting the account:
+
+```bash
+npm run pause
+```
+
+To resume, once at least one recipient is already approved and the owner's
+real writing style has been learnt:
+
+```bash
+npm run resume
+```
+
+The pause/resume settings are owner-owned and updated atomically. The running
+process rereads the current setting before each auto-send, so a pause applies
+without service restart. Existing one-to-one allowlists remain unchanged.
+The system **never** sends unknown contacts, groups or cold outreach by default.
+Model inference still requires available laptop memory; the existing 4 GiB
+minimum headroom check fails closed rather than overloading the system.
+
+On restart, the assistant loads hashed inbound message receipts from the
+private audit. Previously seen or stale inbound messages are not
+automatically answered again merely because WhatsApp resynchronises.
+
+### Live readiness and model requirement (22 October 2026)
+
+The owner account is linked and the background user service is running. The
+assistant has learnt 20 private, non-sensitive examples of the owner's own
+texting style from nine individually approved chats. Its mode is presently
+**PAUSED**.
+
+Automatic sending has **not** been switched on. Real local Ollama generation
+did not finish within the 45-second timeout on the current laptop, including
+tests of several smaller models, under substantial system load/swap use.
+A text-only Qwen 2.5 1.5B model was installed for further evaluation but was
+not approved as a functioning inference provider.
+
+**Do not run `npm run resume` until the selected model can pass a bounded
+draft-only quality/performance check with this private style and a normal
+incoming test message.** If the machine cannot produce a timely result, use
+a suitably provisioned, private remote inference host instead, while keeping
+the LocalAuth session on your own authorised computer. Any such remote
+transfer of private message context requires explicit owner approval and
+a defined data-retention/security policy.
+
 ## Background service after pairing
 
 An optional SYSTEMD USER unit installer is included:

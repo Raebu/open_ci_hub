@@ -10,7 +10,10 @@
     "start": "node scripts/ensure-compat.js && node index.js",
     "test": "node --test test/*.test.js",
     "init": "node index.js init",
-    "postinstall": "node scripts/ensure-compat.js"
+    "postinstall": "node scripts/ensure-compat.js",
+    "pause": "node reply_mode.js pause",
+    "resume": "node reply_mode.js resume",
+    "mode": "node reply_mode.js status"
   },
   "dependencies": {
     "qrcode-terminal": "0.12.0",

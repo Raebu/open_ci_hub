@@ -87,6 +87,23 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - The running WhatsApp process was left untouched. Restart via `quit` then `npm start` is required to load changes; do not force-stop it or clear LocalAuth.
 - Real delivery verification still outstanding; `autoSend=false` throughout inspection. No new messages were sent during diagnosis.
 
+## Owner-style WhatsApp automation increment — 22 October 2026
+- Nine individual chats have been owner-approved in the 0600 private configuration. No chat IDs or private content published.
+- Implemented local learning of the account owner's own historical outgoing messages in **those chats only**, with length, privacy and sensitivity filtering. Keeps private 0600 style examples; fails closed when insufficient.
+- Added model-ready and auto-send gates; hashed inbound receipts prevent replay after restart and stale messages are skipped.
+- Added atomic private pause/resume controls and tests; still no automatic messages sent merely by adding the code.
+- User reported a real manual message was received; automatic model quality, safe production send and end-to-end 24h uptime need verification after controlled service transition.
+
+## WhatsApp owner-style rollout evidence — 22 October 2026
+
+- WhatsApp linked session gracefully transferred from interactive \`npm start\` to the existing systemd **user** service; \`open-ci-hub-personal-whatsapp.service\` was enabled and started, reports **active** with no initial restarts; original LocalAuth directory preserved. No duplicate browser session started.
+- Exactly **nine already-approved individual chats** remain in the private 0600 allowlist. On background-service login, the app gathered **20 non-sensitive owner-authored text messages only** from those approved chats into a 0600 local owner-style file (**1,138 bytes**). No message contents logged or returned to ChatGPT.
+- Automatic duplicate/stale-message suppression, fail-closed style readiness, private atomic pause/resume and tests implemented. New incoming messages are grouped before potential replies; high-risk content still requires owner review.
+- **Production auto-send remains PAUSED (autoSend:false).** The original Qwen 3.5 4B, Qwen 2.5 coder 3B and smaller Qwen 3.5 0.8B all failed the bounded cold-start local Ollama inference test (45-second request timeout) under current heavily-loaded laptop. Qwen 2.5 1.5B text-only was downloaded but no successful end-to-end reply proof was obtained. Neither model-generated messages nor any automatic replies were sent.
+- WhatsApp manual-send receipt was confirmed by the owner in chat. Local model performance on hardware, response content quality and actual auto-send/ACK are still distinct **NO-GO** checks. Do not enable automatically or interpret \`npm run resume\` as model verification.
+- To pause instantly: from \`integrations/whatsapp-personal\`, run \`npm run pause\`; the service rereads the policy. To stop linked automation entirely: \`systemctl --user stop open-ci-hub-personal-whatsapp.service\`.
+- Follow [issue #50](https://github.com/Raebu/open_ci_hub/issues/50); do not disturb \`Service_Business/\` or other CI services.
+
 ## NOT yet complete or verified
 - Changed SHA → durable enqueue → admitted Docker execution → accurate provider status, logs and receipt, proven end to end.
 - GitLab project-specific review and allowlisting. Merely authenticating `glab` is not a validated Talent build.
