@@ -9,7 +9,7 @@ test('matches ACK to exact submitted message even when ACK event occurs earlier'
   ];
   const result=summarise(events);
   assert.equal(result.length,1);
-  assert.equal(result[0].state,'read reported by WhatsApp');
+  assert.equal(result[0].state,'read acknowledgement reported by WhatsApp (recipient/phone not independently verified)');
   assert.equal(result[0].matchedBySameMessageId,true);
   assert.equal(result[0].recipientVerified,false);
   assert.equal(JSON.stringify(result).includes('msg1'),false);
@@ -28,7 +28,7 @@ test('displays actual acknowledgement granularity without claiming recipient ide
     {kind:'outgoing-ack-'+n,messageHash:'id'}])[0];
   assert.equal(make(1).state,'server accepted');
   assert.equal(make(2).state,'recipient device acknowledged');
-  assert.equal(make(3).state,'read reported by WhatsApp');
+  assert.equal(make(3).state,'read acknowledgement reported by WhatsApp (recipient/phone not independently verified)');
   assert.equal(make(-1).state,'error');
   assert.equal(make(4).state,'played reported by WhatsApp');
   assert.equal(make(1).recipientVerified,false);

@@ -3,7 +3,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const ACK_NAMES=Object.freeze({
   '-1':'error','0':'pending','1':'server accepted',
-  '2':'recipient device acknowledged','3':'read reported by WhatsApp','4':'played reported by WhatsApp'
+  '2':'recipient device acknowledged','3':'read acknowledgement reported by WhatsApp (recipient/phone not independently verified)','4':'played reported by WhatsApp'
 });
 const SENT=new Set(['one-off-send-submitted','manual-send-submitted','auto-send-submitted']);
 function summarise(events,max=5){

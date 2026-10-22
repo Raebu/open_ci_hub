@@ -16,6 +16,7 @@ const QR=require('qrcode-terminal');
 const {chatAllowed,needsReview,safeReply,shortHash,validConfig}=require('./policy');
 const {generateReply}=require('./ollama');
 const {parseDirectSend,parseExistingChatSend,verifiedExistingChat}=require('./direct_send');
+const {isSelfChat}=require('./recipient_identity');
 const {summarise,readAudit}=require('./receipts');
 
 const configDir=path.join(os.homedir(),'.config','open-ci-hub');
@@ -136,6 +137,8 @@ function main(){
     const resolved=result._serialized ?? result.$1;
     if(typeof resolved!=='string'||!/^\d{6,20}@(c\.us|lid)$/.test(resolved))
       throw Error('WhatsApp returned an unrecognised recipient identifier');
+    if(isSelfChat(digits,resolved,client.info))
+      throw Error('This is your own WhatsApp account. Self-chat does not verify delivery to another phone; no message sent.');
     const message=await client.sendMessage(resolved,text,{sendSeen:false,waitUntilMsgSent:true});
     if(!message?.id?._serialized)
       throw Error('Send status unknown: no outgoing message ID returned; DO NOT retry automatically');
@@ -147,6 +150,8 @@ function main(){
     const chats=await client.getChats();
     const target=verifiedExistingChat(chats,chatId);
     if(!target)throw Error('ID is not an existing individual chat. Run contacts or resolve first.');
+    if(isSelfChat('',chatId,client.info))
+      throw Error('Cannot use your own self-chat to verify message delivery. No message sent.');
     note('Verified individual chat: '+String(target.name||'Unnamed').slice(0,60)+
          ' ('+chatId+'). Sending one manual message.');
     const sent=await client.sendMessage(chatId,text,{sendSeen:false,waitUntilMsgSent:true});
@@ -163,6 +168,9 @@ function main(){
     if(typeof id!=='string'||!/^\d{6,20}@(c\.us|lid)$/.test(id))
       throw Error('WhatsApp returned an unsupported recipient ID');
     note('WhatsApp resolves the entered number to '+id+'. No message sent.');
+    if(isSelfChat(digits,id,client.info))
+      note('SELF-CHAT: this resolves to your linked account. A read receipt does not confirm another recipient received it; test with a separate consenting account.');
+    else note('Recipient identity is not independently confirmed; verify the contact/chat before sending.');
     if(id.endsWith('@lid'))note('This is a LID identifier: compare its chat name/profile with the intended recipient before sending.');
     try {
       const chat=await client.getChatById(id);

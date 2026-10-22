@@ -79,6 +79,14 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - See [WhatsApp troubleshooting](../integrations/whatsapp-personal/README.md)
   and [issue #50](https://github.com/Raebu/open_ci_hub/issues/50).
 
+## Personal WhatsApp self-number delivery investigation — 22 October 2026
+
+- User reported a one-off message sent to their own WhatsApp number was not received. Private local audit (no message content or numbers exposed) has exactly one `one-off-send-submitted` record at 09:53 BST, paired with an `outgoing-ack-3` recorded nine milliseconds earlier for the identical message hash; these are **WhatsApp Web observations, not independently verified delivery to another device**.
+- A WhatsApp self-chat is not a reliable incoming-delivery test; the user should check **Message Yourself** and use a separately controlled/consenting number for a real end-to-end trial.
+- Added fail-closed self-chat detection when the linked account's identifiers permit comparison. Normalised read receipt wording to avoid claiming independent device delivery and added unit tests (including missing-identification cases).
+- The running WhatsApp process was left untouched. Restart via `quit` then `npm start` is required to load changes; do not force-stop it or clear LocalAuth.
+- Real delivery verification still outstanding; `autoSend=false` throughout inspection. No new messages were sent during diagnosis.
+
 ## NOT yet complete or verified
 - Changed SHA → durable enqueue → admitted Docker execution → accurate provider status, logs and receipt, proven end to end.
 - GitLab project-specific review and allowlisting. Merely authenticating `glab` is not a validated Talent build.

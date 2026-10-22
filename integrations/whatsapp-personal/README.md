@@ -79,6 +79,33 @@ preserved; do not delete them or start a second client on the same session.
 Automatic sending remains governed by the private policy file and is
 not enabled by this change.
 
+## Testing your own number does not verify delivery
+
+If you send from a WhatsApp account **to the same account's own phone number**,
+you may not receive an incoming notification: check WhatsApp's **Message
+Yourself** conversation, where the message can appear as your own outgoing
+message rather than as one received from somebody else.
+
+The local audit may show an ACK 3 (WhatsApp Web's read acknowledgement)
+for the exact message ID, but **neither that nor `sendMessage()` success
+independently proves that another phone/account received it**. This was
+observed after a one-off test on 22 October 2026: one submit record and one
+matched read acknowledgement at 09:53 BST, with no independently verified
+recipient identity. No additional message was sent during diagnosis.
+
+For a real delivery test, use a **different**, consenting WhatsApp account,
+verify the recipient with `resolve +<international number>` without sending,
+and confirm they can see the message on their own device after one
+owner-approved manual send. Use `outbox` to view acknowledgements only.
+Don't repeatedly resend on ambiguous receipt or assume that an ACK means
+delivery. `send` will reject sending to the linked account itself when
+the account identifiers allow it to be recognised.
+
+This feature is not yet live-tested after restart on the owner's phone.
+The already-running Node process needs an owner-controlled `quit` and
+`npm start` to load new recipient checks. Existing LocalAuth files are
+retained. Automatic sending remains opt-in.
+
 ## Important risk
 
 **whatsapp-web.js is an unofficial WhatsApp Web client.**
