@@ -9,6 +9,37 @@ one-to-one WhatsApp Web messages, let the owner send terminal replies, and,
 the owner's wording using their locally installed Ollama model
 (`qwen3.5:4b`). It does not require the ChatGPT API or Work.
 
+## WhatsApp Web October 2026 chat-list compatibility fix
+
+On some WhatsApp Web 2.3000.x builds, the internal message key property
+`_serialized` became `$1`. Unmodified `whatsapp-web.js@1.34.7` can
+report `Cannot list contacts: r` even when the app says `Connected`,
+and its send-message receipt may incorrectly be undefined. This is a
+documented upstream compatibility regression, **not evidence of a lost session**.
+
+This integration includes a reviewed version-specific patch at
+`patches/whatsapp-web.js+1.34.7.patch`. It restores the key fallback,
+prevents a single invalid chat model from failing the entire chat list,
+and protects send-message ID handling. The version-and-SHA-verified `scripts/ensure-compat.js` applies the reviewed
+patch after npm installation and before startup; unrecognised library versions or
+unexpected dependency file changes fail closed.
+The matching regression tests exercise both ID formats.
+
+**After updating the working tree**: in the **existing interactive WhatsApp
+terminal**, type `quit`; then run `npm start` and, after the
+`Connected` message, run `contacts` again. Because the existing
+`LocalAuth` directory is untouched, a new QR scan should not normally be
+necessary. Do NOT delete the private session or run two instances with
+the same profile. The current already-running Node/Chromium process must
+restart to reload the patched injected library.
+
+**No WhatsApp account or chats were accessed during the patch/unit test.**
+The fix has not yet been confirmed against your account after restart.
+
+Relevant upstream reports:
+- https://github.com/wwebjs/whatsapp-web.js/issues/201845
+- https://github.com/wwebjs/whatsapp-web.js/issues/201919
+
 ## Important risk
 
 **whatsapp-web.js is an unofficial WhatsApp Web client.**

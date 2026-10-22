@@ -51,6 +51,14 @@ Host: Garuda Linux 16 GB Intel laptop, local repo under `/mnt/kingston/home/ther
 - NOT operationally verified: actual QR linking, incoming/outgoing personal messages, WhatsApp send/delivery receipts, realistic style samples, and unattended systemd service. This is unofficial and may cause account restriction.
 - See [personal WhatsApp integration](../integrations/whatsapp-personal/README.md) and [GitHub issue #50](https://github.com/Raebu/open_ci_hub/issues/50).
 
+## WhatsApp contacts regression and dependency patch — 22 October 2026
+
+- User paired personal WhatsApp Web successfully; existing `node index.js` was running and `Connected` shown, but typing `contacts` returned `Cannot list contacts: r`.
+- Matched reported WhatsApp Web ID rename `_serialized` → `$1` in `whatsapp-web.js@1.34.7`; installed a dependency-free, SHA-verified patch applier and a reviewable dependency patch that normalises message/chat IDs, guards undefined keys and isolates individual chat-model failures.
+- Library patch applies successfully without clearing the private `LocalAuth` session; tests cover both ID names. **Running process still requires a manual `quit` then `npm start` from the same WhatsApp terminal** to reload the patched library. Real `contacts` after restart not yet checked.
+- No background service activation; `autoSend=false`, approved contacts zero; no WhatsApp messages sent.
+- See [personal WhatsApp README](../integrations/whatsapp-personal/README.md) and issue #50.
+
 ## NOT yet complete or verified
 - Changed SHA → durable enqueue → admitted Docker execution → accurate provider status, logs and receipt, proven end to end.
 - GitLab project-specific review and allowlisting. Merely authenticating `glab` is not a validated Talent build.

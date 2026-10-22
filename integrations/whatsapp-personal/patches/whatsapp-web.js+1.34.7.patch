@@ -1,0 +1,114 @@
+diff --git a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
+--- a/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
++++ b/node_modules/whatsapp-web.js/src/util/Injected/Utils.js
+@@ -582,7 +582,7 @@
+ 
+         return window
+             .require('WAWebCollections')
+-            .Msg.get(newMsgKey._serialized);
++            .Msg.get(window.WWebJS.getMsgKeyId(newMsgKey));
+     };
+ 
+     window.WWebJS.editMessage = async (msg, content, options = {}) => {
+@@ -625,7 +625,7 @@
+         await window
+             .require('WAWebSendMessageEditAction')
+             .sendMessageEdit(msg, content, internalOptions);
+-        return window.require('WAWebCollections').Msg.get(msg.id._serialized);
++        return window.require('WAWebCollections').Msg.get(window.WWebJS.getMsgKeyId(msg.id));
+     };
+ 
+     window.WWebJS.toStickerData = async (mediaInfo) => {
+@@ -830,10 +830,15 @@
+ 
+         if (typeof msg.id.remote === 'object') {
+             msg.id = Object.assign({}, msg.id, {
+-                remote: msg.id.remote._serialized,
++                remote: window.WWebJS.getMsgKeyId(msg.id.remote),
+             });
+         }
+ 
++        // WhatsApp Web 2.3000.x sometimes names this field '$1'.
++        if (msg.id && typeof msg.id === 'object' && msg.id._serialized == null) {
++            const serialized = window.WWebJS.getMsgKeyId(msg.id);
++            if (serialized) msg.id = { ...msg.id, _serialized: serialized };
++        }
+         delete msg.pendingAckUpdate;
+ 
+         return msg;
+@@ -917,12 +922,19 @@
+         };
+     };
+ 
++    // Accept both property names: old WhatsApp Web uses _serialized, new
++    // WhatsApp Web 2.3000.x often uses $1. Never pass undefined to IndexedDB.
++    window.WWebJS.getMsgKeyId = (key) =>
++        key?._serialized ?? key?.$1 ?? undefined;
++
+     window.WWebJS.getChats = async () => {
+         const chats = window.require('WAWebCollections').Chat.getModelsArray();
+-        const chatPromises = chats.map((chat) =>
+-            window.WWebJS.getChatModel(chat),
+-        );
+-        return await Promise.all(chatPromises);
++        // One stale/malformed group should not break the whole contact list.
++        const results = await Promise.allSettled(chats.map(
++            chat => window.WWebJS.getChatModel(chat)
++        ));
++        return results.filter(r => r.status === 'fulfilled' && r.value)
++                      .map(r => r.value);
+     };
+ 
+     window.WWebJS.getChannels = async () => {
+@@ -939,6 +951,10 @@
+         if (!chat) return null;
+ 
+         const model = chat.serialize();
++        if (model?.id && typeof model.id === 'object' && model.id._serialized == null) {
++            const serialized = window.WWebJS.getMsgKeyId(model.id);
++            if (serialized) model.id = { ...model.id, _serialized: serialized };
++        }
+         model.isGroup = false;
+         model.isMuted = chat.mute?.expiration !== 0;
+         if (isChannel) {
+@@ -953,11 +969,16 @@
+             model.isGroup = true;
+             const chatWid = window
+                 .require('WAWebWidFactory')
+-                .createWid(chat.id._serialized);
++                .createWid(window.WWebJS.getMsgKeyId(chat.id));
+             const groupMetadata =
+                 window.require('WAWebCollections').GroupMetadata ||
+                 window.require('WAWebCollections').WAWebGroupMetadataCollection;
+-            await groupMetadata.update(chatWid);
++            try {
++                if (chatWid) await groupMetadata.update(chatWid);
++            } catch {
++                // LID group metadata can be missing from IndexedDB.
++                // Preserve the basic chat model rather than reject all chats.
++            }
+             const { toPn } = window.require('WAWebLidMigrationUtils');
+             const serializedMetadata = chat.groupMetadata.serialize();
+             for (const p of serializedMetadata.participants || []) {
+@@ -981,17 +1002,10 @@
+ 
+         model.lastMessage = null;
+         if (model.msgs && model.msgs.length) {
+-            const lastMessage = chat.lastReceivedKey
+-                ? window
+-                      .require('WAWebCollections')
+-                      .Msg.get(chat.lastReceivedKey._serialized) ||
+-                  (
+-                      await window
+-                          .require('WAWebCollections')
+-                          .Msg.getMessagesById([
+-                              chat.lastReceivedKey._serialized,
+-                          ])
+-                  )?.messages?.[0]
++            const keyId = window.WWebJS.getMsgKeyId(chat.lastReceivedKey);
++            const lastMessage = keyId
++                ? window.require('WAWebCollections').Msg.get(keyId) ||
++                  (await window.require('WAWebCollections').Msg.getMessagesById([keyId]))?.messages?.[0]
+                 : null;
+             lastMessage &&
+                 (model.lastMessage =

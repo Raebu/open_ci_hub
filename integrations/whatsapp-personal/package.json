@@ -7,9 +7,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "start": "node index.js",
+    "start": "node scripts/ensure-compat.js && node index.js",
     "test": "node --test test/*.test.js",
-    "init": "node index.js init"
+    "init": "node index.js init",
+    "postinstall": "node scripts/ensure-compat.js"
   },
   "dependencies": {
     "qrcode-terminal": "0.12.0",

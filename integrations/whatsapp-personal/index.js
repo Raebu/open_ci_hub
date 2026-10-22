@@ -10,6 +10,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const readline=require('node:readline');
+require('./scripts/ensure-compat').ensure();
 const {Client,LocalAuth}=require('whatsapp-web.js');
 const QR=require('qrcode-terminal');
 const {chatAllowed,needsReview,safeReply,shortHash,validConfig}=require('./policy');
@@ -207,11 +208,18 @@ function main(){
       if(!connected){note('WhatsApp is not connected.');return;}
       try {
         const chats=await client.getChats();
-        for(const chat of chats.filter(x=>!x.isGroup && /^\d{6,20}@(c\.us|lid)$/.test(x.id?._serialized||'')).slice(0,15)) {
+        const direct=chats.filter(x=>!x.isGroup && /^\d{6,20}@(c\.us|lid)$/.test(x.id?._serialized||''));
+        for(const chat of direct.slice(0,15)) {
           note((chat.name||'Unnamed contact').slice(0,65)+': '+chat.id._serialized);
         }
-        note('Copy only personally approved IDs into the private config file and restart.');
-      } catch(e) { note('Cannot list contacts: '+e.message); }
+        note(direct.length
+          ? 'Showing up to 15 individual chats. Copy only approved IDs into the private config file and restart.'
+          : 'No supported one-to-one chats returned. WhatsApp Web may still be synchronising.');
+      } catch(e) {
+        note(e?.message==='r'
+          ? 'WhatsApp Web contact compatibility error (r). Restart this terminal app to load the patched library.'
+          : 'Unable to list contacts: '+String(e?.message||e?.name||'unknown error').slice(0,140));
+      }
       return;
     }
     if(cmd==='status'){note('Online: '+connected+'; Auto: '+config().autoSend+'; allowlisted contacts: '+config().approvedChats.length);return;}
