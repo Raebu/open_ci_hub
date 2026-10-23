@@ -49,14 +49,15 @@ class OperationTests(unittest.TestCase):
 
     @patch('operations.invoke')
     def test_run_action_cli_is_safe_and_bounded(self, invoke):
-        operations.pipeline_action('github','org/repo',123,'retry')
-        self.assertEqual(invoke.call_args.args[0],['gh','run','rerun','123','--repo','org/repo'])
+        with self.assertRaises(PermissionError):
+            operations.pipeline_action('github','org/repo',123,'retry')
+        invoke.assert_not_called()
         operations.pipeline_action('gitlab','org/repo','12','cancel')
         self.assertEqual(invoke.call_args.args[0],['glab','ci','cancel','pipeline','12','--repo','org/repo'])
-        operations.pipeline_action('gitlab','a/b',12,'retry')
-        self.assertIn('projects/a%2Fb/pipelines/12/retry', invoke.call_args.args[0])
+        with self.assertRaises(PermissionError):
+            operations.pipeline_action('gitlab','a/b',12,'retry')
         with self.assertRaises(ValueError): operations.pipeline_action('github','owner/repo',123,'delete')
-        with self.assertRaises(ValueError): operations.pipeline_action('gitlab','owner/repo','invalid','retry')
+        with self.assertRaises(PermissionError): operations.pipeline_action('gitlab','owner/repo','invalid','retry')
         with self.assertRaises(ValueError): operations.pipeline_action('circleci','owner/repo',123,'cancel')
 
     @patch('operations.shutil.which', return_value='/usr/bin/gh')

@@ -1,5 +1,7 @@
 # Open CI Hub
 
+**Mandatory operating constraint:** [zero-additional-subscription, self-hosted-first policy](docs/ZERO-COST.md). Provider retries and cloud promotions are blocked where £0 exposure cannot be verified; existing hosting is preserved.
+
 An **open-source, provider-neutral, local-first CI/CD control centre** for GitHub Actions, GitLab CI/CD and CircleCI. Use the providers' native self-hosted runners to build on a computer you control instead of purchasing hosted runner minutes.
 
 **Release: v4 community preview; native onboarding is implemented in source and requires live verification.** Local Docker image builds/bootstrap and read-only provider checks have passed; real push builds across all three providers remain unverified. Do **not** treat it as a security-audited or production-certified service.

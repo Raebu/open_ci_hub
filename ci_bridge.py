@@ -203,9 +203,21 @@ def enqueue(provider, repo, sha, branch, event, manifest, broker=None):
         db.commit()
     return {"job_id":job,"status":"queued","duplicate":False}
 
+def repository_clone_argv(provider, repo, work):
+    """Use approved CLI identity without persisting tokens or changing Git config."""
+    if provider not in ("github", "gitlab") or not REPO.fullmatch(repo):
+        raise ValueError("Unsupported authenticated repository")
+    host="github.com" if provider=="github" else "gitlab.com"
+    cli="gh" if provider=="github" else "glab"
+    return ["git", "-c", "credential.helper=", "-c",
+            "credential.helper=!"+cli+" auth git-credential", "clone",
+            "--no-checkout", "--filter=blob:none", f"https://{host}/{repo}.git", str(work)]
+
+
 def run_cmd(argv, *, cwd=None, timeout=120):
     return subprocess.run(argv,cwd=cwd,timeout=timeout,check=False,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
-                          stdin=subprocess.DEVNULL,text=True,errors="replace")
+                          stdin=subprocess.DEVNULL,text=True,errors="replace",
+                          env={**os.environ,"GIT_TERMINAL_PROMPT":"0","GCM_INTERACTIVE":"never"})
 
 def tail(path, limit=12000):
     try:
@@ -304,8 +316,7 @@ def execute_one(job, manifest, broker=None):
         work.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
         if work.exists(): shutil.rmtree(work)
         work.mkdir(mode=0o700)
-        url=f"https://github.com/{repo}.git" if cfg["provider"]=="github" else f"https://gitlab.com/{repo}.git"
-        clone=run_cmd(["git","clone","--no-checkout","--filter=blob:none",url,str(work)],timeout=120)
+        clone=run_cmd(repository_clone_argv(cfg["provider"],repo,work),timeout=120)
         if clone.returncode: raise RuntimeError("Repository checkout failed: "+clone.stdout[-1200:])
         checkout=run_cmd(["git","-C",str(work),"checkout","--detach",payload["sha"]],timeout=120)
         if checkout.returncode: raise RuntimeError("Exact SHA checkout failed: "+checkout.stdout[-1200:])

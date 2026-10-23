@@ -118,6 +118,8 @@ class CloudflareVersions:
             raise RuntimeError("Split traffic deployment requires manual release review")
         return versions[0]["version_id"]
     def promote(self,version):
+        from cost_policy import deny_unverified_external_work
+        deny_unverified_external_work("cloud provider promotion")
         try: uuid.UUID(version)
         except (TypeError,ValueError): raise ValueError("Invalid immutable Worker version") from None
         out=self._call("POST",payload={"strategy":"percentage",
@@ -154,6 +156,8 @@ class VercelAlias:
             raise RuntimeError("Cannot establish previous deployment for Vercel alias")
         return deployment
     def promote(self,version):
+        from cost_policy import deny_unverified_external_work
+        deny_unverified_external_work("cloud provider promotion")
         if not isinstance(version,str) or not DEPLOY_ID.fullmatch(version):
             raise ValueError("Invalid immutable Vercel deployment identifier")
         meta=self._call("GET","/v13/deployments/"+urllib.parse.quote(version,safe=""))

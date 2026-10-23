@@ -12,6 +12,9 @@ from deployment_providers import CredentialStore, CloudflareVersions, VercelAlia
 
 class AdapterTests(unittest.TestCase):
     def setUp(self):
+        # Protocol tests run behind a mocked admission boundary.
+        gate=patch("cost_policy.deny_unverified_external_work")
+        gate.start(); self.addCleanup(gate.stop)
         self.tmp=tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name)
