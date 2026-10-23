@@ -14,7 +14,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#whatsapp-compose">✉ <span>Personal WhatsApp</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#whatsapp-compose">✉ <span>Personal WhatsApp</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#local-ci">◷ <span>Local CI</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -181,6 +181,15 @@
           <div id="internet-items" class="results" role="status" aria-live="polite"></div>
           <p class="small">Full here means public HTTP and HTTPS via ports 80/443. Private networks, cloud metadata endpoints and all direct container sockets stay blocked. An owner-controlled 0600 manifest enables trusted projects; this screen cannot bypass that policy.</p>
         </section>
+        <section id="local-ci">
+          <div class="section-heading"><div><h2>Local CI jobs</h2>
+            <p>Builds run on authorised hardware. Cloud retries are blocked.</p></div>
+            <button type="button" class="btn secondary" id="local-ci-refresh">Refresh jobs</button>
+          </div>
+          <div id="local-ci-items" class="results" aria-live="polite"></div>
+          <pre id="local-ci-evidence" tabindex="0" aria-label="Local CI execution evidence"></pre>
+        </section>
+
         <section id="deployments">
           <div class="section-head"><div><h2>Deployments &amp; release evidence</h2>
             <p>Approved environments, exact release commits, previous versions and audit history. Read-only; production actions require independent approval.</p></div>

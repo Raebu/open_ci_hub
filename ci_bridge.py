@@ -74,7 +74,17 @@ def load_manifest(path=MANIFEST):
             raise ValueError("CI network must be offline or full")
         if network=="full" and cfg.get("trusted_network_confirmed") is not True:
             raise PermissionError("Full public-Web egress requires explicit trusted-network approval")
-        parallel=cfg.get("max_parallel",2)
+        if type(cfg.get("retry_safe",False)) is not bool:
+            raise ValueError("retry_safe must be boolean")
+        quota=cfg.get("max_workspace_mb",2048)
+        if type(quota) is not int or not 64<=quota<=8192:
+            raise ValueError("max_workspace_mb must be 64–8192")
+        artifacts=cfg.get("artifacts",[])
+        if not isinstance(artifacts,list) or len(artifacts)>30 or any(
+            not isinstance(a,str) or not a or len(a)>300 or a.startswith("/") or
+            any(p in ("..",".git") for p in Path(a).parts) for a in artifacts):
+            raise ValueError("Artifacts must be at most 30 safe relative file paths")
+        parallel=cfg.get("max_parallel",1)
         if type(parallel) is not int or not 1<=parallel<=8:
             raise ValueError("max_parallel must be an integer between 1 and 8.")
         app=app_for(repo)
@@ -108,7 +118,7 @@ def ensure_scheduler(manifest, broker=None):
         expected={"ram_mb":cfg.get("ram_mb",1024),"vram_mb":0,"gpu_index":None}
         if profile != expected:
             broker.set_task_budget(app,"build",expected["ram_mb"],0,None,confirm=True)
-        desired=cfg.get("max_parallel",2)
+        desired=cfg.get("max_parallel",1)
         if limit != desired:
             broker.set_parallel(app,desired,confirm=True)
         with broker._db() as db:
@@ -117,6 +127,8 @@ def ensure_scheduler(manifest, broker=None):
                 sha TEXT NOT NULL, branch TEXT NOT NULL, event TEXT NOT NULL,
                 status TEXT NOT NULL, detail TEXT, created REAL NOT NULL, updated REAL NOT NULL,
                 FOREIGN KEY(job_id) REFERENCES jobs(id))""")
+    from ci_job_control import setup
+    setup(broker)
     return broker
 
 def verify_signature(provider, secret, body, headers):
@@ -180,7 +192,7 @@ def enqueue(provider, repo, sha, branch, event, manifest, broker=None):
         raise PermissionError("Full CI public-Web access is only approved for protected-branch push events.")
     broker=ensure_scheduler(manifest,broker)
     app=app_for(repo)
-    idempotency=hashlib.sha256(f"{provider}:{repo}:{sha}:{event}".encode()).hexdigest()
+    idempotency=hashlib.sha256(f"{provider}:{repo}:{branch}:{sha}:{event}".encode()).hexdigest()
     payload={"provider":provider,"repo":repo,"sha":sha,"branch":branch,"event":event}
     wire=broker._json_value(payload)
     now=time.time()
@@ -202,6 +214,14 @@ def enqueue(provider, repo, sha, branch, event, manifest, broker=None):
                       VALUES(?,?,?,?,?,?,'queued',?,?)""",(job,provider,repo,sha,branch,event,now,now))
         db.commit()
     return {"job_id":job,"status":"queued","duplicate":False}
+
+def repository_git_argv(provider, *args):
+    if provider not in ("github","gitlab"):
+        raise ValueError("Unsupported Git credential provider")
+    cli="gh" if provider=="github" else "glab"
+    return ["git","-c","credential.helper=","-c",
+            "credential.helper=!"+cli+" auth git-credential", *args]
+
 
 def repository_clone_argv(provider, repo, work):
     """Use approved CLI identity without persisting tokens or changing Git config."""
@@ -264,37 +284,11 @@ def claim_one(manifest, broker=None):
         if reason in blocked: return None,reason
     return None,(blocked[0] if blocked else "queue_empty")
 
-def monitored_container(argv, *, cwd, timeout, log_path, heartbeat, container_name):
-    deadline=time.monotonic()+timeout
-    log_path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
-    lost_lease=False
-    with log_path.open("ab") as stream:
-        proc=subprocess.Popen(argv,cwd=cwd,stdin=subprocess.DEVNULL,stdout=stream,stderr=subprocess.STDOUT,
-                              start_new_session=True)
-        next_heartbeat=time.monotonic()+LEASE_HEARTBEAT_SECONDS
-        while proc.poll() is None:
-            now=time.monotonic()
-            if now>=deadline:
-                try: run_cmd(["docker","kill",container_name],timeout=5)
-                except (OSError,subprocess.TimeoutExpired): pass
-                proc.terminate()
-                try: proc.wait(timeout=5)
-                except subprocess.TimeoutExpired: proc.kill();proc.wait(timeout=5)
-                stream.write(b"\nOpen CI Hub: step timed out; container termination requested.\n");stream.flush()
-                return 124,False
-            if now>=next_heartbeat:
-                if not heartbeat():
-                    lost_lease=True
-                    try: run_cmd(["docker","kill",container_name],timeout=5)
-                    except (OSError,subprocess.TimeoutExpired): pass
-                    proc.terminate()
-                    try: proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired: proc.kill();proc.wait(timeout=5)
-                    stream.write(b"\nOpen CI Hub: worker lease heartbeat failed; container termination requested.\n");stream.flush()
-                    return 125,True
-                next_heartbeat=time.monotonic()+LEASE_HEARTBEAT_SECONDS
-            time.sleep(1)
-        return proc.returncode, lost_lease
+def monitored_container(argv, *, cwd, timeout, log_path, heartbeat, container_name, **options):
+    from ci_execution import run_container
+    return run_container(argv,cwd=cwd,timeout=timeout,log_path=log_path,heartbeat=heartbeat,
+                         container_name=container_name,run=run_cmd,**options)
+
 
 def execute_one(job, manifest, broker=None):
     broker=ensure_scheduler(manifest,broker)
@@ -309,8 +303,15 @@ def execute_one(job, manifest, broker=None):
         provider_status(cfg,repo,payload["sha"],"pending","Open CI Hub local build queued",f"https://github.com/{repo}/commit/{payload['sha']}")
     except (OSError,subprocess.TimeoutExpired):
         pass
+    from ci_job_control import cancellation_requested, finish_cancel, save_receipt, collect_artifacts
+    from ci_execution import redact
+    started=time.time();deadline=time.monotonic()+cfg.get("max_seconds",900)
+    steps=[];artifacts=[];cancelled=False
     passed=False;detail="";lease_lost=False
     try:
+        if cancellation_requested(broker,job_id):
+            cancelled=True
+            raise RuntimeError("Cancelled before checkout")
         if cfg.get("network","offline")=="full" and payload["event"]!="push":
             raise RuntimeError("Network privilege changed since queue admission; rejected for safety")
         work.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -318,7 +319,7 @@ def execute_one(job, manifest, broker=None):
         work.mkdir(mode=0o700)
         clone=run_cmd(repository_clone_argv(cfg["provider"],repo,work),timeout=120)
         if clone.returncode: raise RuntimeError("Repository checkout failed: "+clone.stdout[-1200:])
-        checkout=run_cmd(["git","-C",str(work),"checkout","--detach",payload["sha"]],timeout=120)
+        checkout=run_cmd(repository_git_argv(cfg["provider"],"-C",str(work),"checkout","--detach",payload["sha"]),timeout=120)
         if checkout.returncode: raise RuntimeError("Exact SHA checkout failed: "+checkout.stdout[-1200:])
         got=run_cmd(["git","-C",str(work),"rev-parse","HEAD"],timeout=10)
         if got.returncode or got.stdout.strip()!=payload["sha"]:
@@ -330,7 +331,7 @@ def execute_one(job, manifest, broker=None):
         budget=max(256,int(job["resources"].get("effective_ram_mb",cfg.get("ram_mb",1024))))
         for step_index,step in enumerate(cfg["steps"]):
             container_name=f"open-ci-{job_id[:20]}-{step_index}"
-            argv=["docker","run","--rm","--name",container_name,"--network","none","--read-only",
+            argv=["docker","run","--rm","--pull=never","--log-driver=none","--name",container_name,"--network","none","--read-only",
                   "--tmpfs","/tmp:rw,nosuid,nodev,size=256m","--cap-drop=ALL",
                   "--security-opt=no-new-privileges","--pids-limit=128",
                   "--memory",f"{budget}m","--memory-swap",f"{budget}m","--cpus","1.0",
@@ -349,28 +350,38 @@ def execute_one(job, manifest, broker=None):
                     binary=ensure_static_bridge(ROOT/"ci_proxy_bridge.c",STATE)
                     argv+=docker_network_options(binary,egress)
                 argv.extend([image,*step["argv"]])
-                code,lease_lost=monitored_container(argv,cwd=ROOT,timeout=cfg.get("max_seconds",900),
-                                                    log_path=log,heartbeat=heartbeat,container_name=container_name)
+                step_started=time.time()
+                code,lease_lost=monitored_container(argv,cwd=ROOT,timeout=max(0,deadline-time.monotonic()),
+                    log_path=log,heartbeat=heartbeat,container_name=container_name,
+                    cancelled=lambda:cancellation_requested(broker,job_id),workspace=work,
+                    max_workspace_mb=cfg.get("max_workspace_mb",2048))
+                steps.append({"name":step["name"],"exit_code":code,"started":step_started,"finished":time.time()})
+                cancelled=code==130
             if lease_lost:
                 detail="Worker lease was lost; job remains reserved until safe recovery."
                 raise RuntimeError(detail)
             if code:
                 raise RuntimeError(f"Step {step['name']} failed (exit {code}): "+tail(log,3000))
+        artifacts=collect_artifacts(work,STATE/"artifacts"/job_id/str(job.get("attempt",1)),cfg.get("artifacts",[]))
         passed=True;detail="All approved local steps passed."
     except (RuntimeError,OSError,subprocess.TimeoutExpired) as exc:
-        detail=str(exc)[:1200]
+        detail=redact(str(exc))[:1200]
     finally:
-        if work.exists(): shutil.rmtree(work,ignore_errors=True)
+        if work.exists() and not lease_lost: shutil.rmtree(work,ignore_errors=True)
     if lease_lost:
         event_update(broker,job_id,"stranded",detail)
         return {"job_id":job_id,"status":"stranded","detail":detail,"commit":payload["sha"]}
     try:
-        completion=broker.complete(who,job_id,token,passed,{"status":"passed" if passed else "failed","detail":detail[:250]})
+        completion=(finish_cancel(broker,who,job_id,token) if cancelled else
+            broker.complete(who,job_id,token,passed,{"status":"passed" if passed else "failed","detail":detail[:250]},
+                            allow_retry=cfg.get("retry_safe",False)))
     except (PermissionError,RuntimeError,ValueError) as exc:
         event_update(broker,job_id,"stranded","Could not safely release worker lease: "+str(exc))
         return {"job_id":job_id,"status":"stranded","detail":detail,"commit":payload["sha"]}
     state=completion["status"]
-    if state=="completed":
+    if state=="cancelled":
+        event_state="cancelled";provider_state="failure"
+    elif state=="completed":
         event_state="passed";provider_state="success"
     elif state=="queued":
         event_state="queued";provider_state="pending"
@@ -383,8 +394,15 @@ def execute_one(job, manifest, broker=None):
                                  f"https://github.com/{repo}/commit/{payload['sha']}")
     except (OSError,subprocess.TimeoutExpired):
         reported=False
-    return {"job_id":job_id,"status":event_state,"detail":detail,"commit":payload["sha"],
-            "attempt":job.get("attempt"),"provider_status_reported":reported}
+    receipt={"schema":1,"job_id":job_id,"status":event_state,"detail":detail,"commit":payload["sha"],
+             "repository":repo,"provider":cfg["provider"],"branch":payload["branch"],
+             "image":cfg["image"],"steps":steps,"artifacts":artifacts,"started":started,"finished":time.time(),
+             "attempt":job.get("attempt"),"provider_status_reported":reported,
+             "execution":"authorised-local-docker","independently_attested":False}
+    if log.exists():
+        receipt["log_sha256"]=hashlib.sha256(log.read_bytes()).hexdigest()
+    save_receipt(broker,job_id,receipt)
+    return receipt
 
 def worker_once(manifest=None,broker=None):
     manifest=manifest or load_manifest()

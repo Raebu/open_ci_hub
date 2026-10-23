@@ -590,3 +590,34 @@ async function init(){
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }
 document.addEventListener('DOMContentLoaded',init);
+
+async function loadLocalCI(){
+  const root=document.getElementById('local-ci-items');
+  if(!root)return;
+  root.replaceChildren(el('p','Loading local job ledger…'));
+  try{
+    const result=await api('/api/ci/local');root.replaceChildren();
+    root.append(el('p','Available RAM: '+result.resources.memory_available_mb+' MiB · Reserved desktop headroom: '+result.resources.capacity.min_free_ram_mb+' MiB','small'));
+    for(const job of result.items){
+      const item=el('div',undefined,'result-item');
+      item.append(el('strong',job.repo+' · '+job.status));
+      item.append(el('p',job.sha.slice(0,12)+' · '+job.branch+' · '+job.job_id,'small'));
+      if(job.detail)item.append(el('p',job.detail,'small'));
+      const inspect=el('button','View logs and evidence','btn secondary');
+      inspect.type='button';inspect.onclick=async()=>{
+        try{const record=await api('/api/ci/local/job?job='+encodeURIComponent(job.job_id));
+          document.getElementById('local-ci-evidence').textContent=JSON.stringify(record.receipt||{status:record.scheduler_status},null,2)+'\n\n'+record.log;
+        }catch(err){document.getElementById('local-ci-evidence').textContent=err.message;}
+      };item.append(inspect);
+      if(['queued','running','stranded'].includes(job.status)){
+        const cancel=el('button','Cancel job','btn secondary');cancel.type='button';
+        cancel.onclick=async()=>{if(!confirm('Cancel this local CI job?'))return;
+          try{await api('/api/ci/local/cancel',{job_id:job.job_id,confirm:true});await loadLocalCI();}
+          catch(err){document.getElementById('local-ci-evidence').textContent=err.message;}
+        };item.append(cancel);
+      }root.append(item);
+    }
+    if(!result.items.length)root.append(el('p','No local CI jobs recorded.'));
+  }catch(err){root.replaceChildren(el('p',err.message));}
+}
+document.getElementById('local-ci-refresh')?.addEventListener('click',loadLocalCI);

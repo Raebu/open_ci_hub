@@ -334,7 +334,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue', '/api/deployments', '/api/ci/network'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue', '/api/deployments', '/api/ci/network', '/api/ci/local', '/api/ci/local/job'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -347,6 +347,16 @@ class WebConsole:
                                 return self.output(403, {'error':'Application management access required.'})
                             return self.output(200,console.apps.inventory() if path.endswith('inventory')
                                                else console.apps.queue_preview())
+                        if path in ('/api/ci/local','/api/ci/local/job'):
+                            if console.role(self) not in ('owner','editor'):
+                                return self.output(403, {'error':'CI management permission required.'})
+                            import ci_bridge
+                            if path.endswith('/job'):
+                                from ci_job_control import inspect
+                                return self.output(200,inspect(console.apps,ci_bridge.STATE,param('job')))
+                            return self.output(200,{'items':ci_bridge.status(console.apps),
+                                'resources':console.apps.resource_status(),
+                                'billing_policy':'local-only; cloud retries blocked'})
                         if path == '/api/ci/network':
                             if console.role(self) not in ('owner','editor'):
                                 return self.output(403, {'error':'CI internet policy needs management permission.'})
@@ -472,6 +482,16 @@ class WebConsole:
                         return self.output(202, {'message': 'Approval requested. Open the desktop dashboard to approve this identity.'})
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Sign in or request mobile approval first.'})
+                    if path == '/api/ci/local/cancel':
+                        if console.role(self) not in ('owner','editor'):
+                            return self.output(403, {'error':'CI management permission required.'})
+                        if data.get('confirm') is not True:
+                            return self.output(400, {'error':'Cancellation confirmation required.'})
+                        from ci_job_control import cancel
+                        actor=console.remote_identity(self) or 'local-owner'
+                        result=cancel(console.apps,data.get('job_id'),actor)
+                        console.audit.add(actor,'ci.cancel',data['job_id'],'requested')
+                        return self.output(200,result)
                     if path in ('/api/apps/control','/api/apps/priority'):
                         if console.role(self) not in ('owner','editor'):
                             return self.output(403, {'error':'Approved management identity required.'})
