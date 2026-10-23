@@ -22,7 +22,7 @@ async function generateReply({model, sender, conversation, examples, fetcher=fet
     'If unsure or this is personal, legal, financial, medical, urgent, distressing, contractual or requires a commitment, choose review.',
     'If the person is clearly not asking for a response or an answer would be inappropriate, choose review.',
     'Never claim to be human when asked directly if AI helped.',
-    'Return ONLY JSON: {"reply":"short natural WhatsApp response","needs_review":true|false}.',
+    'Return a JSON object with exactly two fields: reply (the actual message you would send as a plain text string, or an empty string when holding for review) and needs_review (a boolean). Do not return examples, placeholder labels, instructions, or field descriptions as the reply.',
     'Examples of the owner writing (style reference, NOT factual evidence):\\n'+examples.slice(0,1100)
   ].join('\\n');
   const history=conversation.slice(-6).map(m=>({role:m.fromMe?'assistant':'user',

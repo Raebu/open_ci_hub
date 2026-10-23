@@ -7,7 +7,8 @@ const RISK = [
   /\b(?:health|hospital|doctor|diagnosis|medication|medicine|emergency|suicid|self.harm|hurt myself|pregnant)\b/i,
   /\b(?:relationship|divorce|break.up|i love you|sex|sexual|fight|argument|upset|angry|distressed)\b/i,
   /\b(?:urgent|asap|right now|immediately|come over|meet me|book|buy|where do you live|address|postcode)\b/i,
-  /https?:\/\/|(?:\d{3,}[\s-]?){3,}/i
+  /https?:\/\/|(?:\d{3,}[\s-]?){3,}/i,
+  /\b(?:household|our future|the future|future together|discuss(?:ing)? (?:about )?(?:our )?future|plans? for (?:us|the family)|feel(?:ing)? (?:at )?peace|peace inside|feel(?:ing)? secure|reassur(?:e|ance)|words mean nothing|actions? (?:rather|instead) than words|what(?: is|'s) (?:gonna|going to) happen next)\b/i
 ];
 function chatAllowed(id, approved) {
   return typeof id==='string' && ALLOWED_ID.test(id) && approved instanceof Set && approved.has(id);
@@ -16,9 +17,18 @@ function needsReview(text) {
   if(typeof text!=='string' || !text.trim() || text.length>600) return true;
   return RISK.some(r=>r.test(text));
 }
+function looksLikePlaceholder(text) {
+  if(typeof text!=='string')return true;
+  const body=text.trim().replace(/[.?!]+$/g,'').trim();
+  if(!body)return true;
+  return /^(?:(?:a |the )?(?:short |brief |quick |simple )*(?:natural |friendly |casual |warm |personal )*(?:whats\s?app |text |chat )?(?:response|reply|message|text)|(?:insert|write|your|draft|sample|example|placeholder)\s+(?:reply|message|response)(?:\s+here)?|(?:reply|message|response)\s+(?:goes here|here)|tbd|todo)$/i.test(body)
+    || /\b(?:sample output|placeholder text|example response|as an ai language model|your reply here|short natural whatsapp response)\b/i.test(body)
+    || /^\s*(?:\{|\[).*(?:needs_review|reply)\s*[":]/i.test(body);
+}
 function safeReply(text) {
   return typeof text==='string' && text.trim().length>=1 && text.length<=450 &&
-    !needsReview(text) && !/\b(?:automated assistant|i am human|i'm definitely martin)\b/i.test(text);
+    !looksLikePlaceholder(text) && !needsReview(text) &&
+    !/\b(?:automated assistant|i am human|i'm definitely martin)\b/i.test(text);
 }
 function shortHash(value) {return createHash('sha256').update(String(value)).digest('hex').slice(0,24);}
 function validConfig(cfg) {
@@ -33,4 +43,4 @@ function validConfig(cfg) {
   if(!Number.isInteger(cfg.maxPerContactDay)||cfg.maxPerContactDay<1||cfg.maxPerContactDay>15)throw Error('Max daily replies must be 1-15');
   return cfg;
 }
-module.exports={chatAllowed,needsReview,safeReply,shortHash,validConfig};
+module.exports={chatAllowed,needsReview,safeReply,looksLikePlaceholder,shortHash,validConfig};
