@@ -535,6 +535,37 @@ async function previewOnboarding(){
     },'primary'));
   }catch(err){root.replaceChildren();notice(err.message,true)}
 }
+
+async function loadAutonomy(){
+  const root=$('autonomy-items');root.replaceChildren();
+  if(state.role!=='owner'&&state.role!=='editor'){root.append(el('p','Background mission details require management permission.'));return;}
+  try{
+    const data=await api('/api/autonomy');
+    const head=el('div',undefined,'result-row');
+    head.append(el('strong','Foreground-first policy: '+(data.admission?.eligible?'Ready':'Throttled')),
+      el('span',String(data.admission?.reason||'Unknown')+' · '+String(data.admission?.memory_available_mb??'?')+' MB available','small'));
+    root.append(head);
+    if(!data.configured){root.append(el('p','No background missions enrolled on this PC.','small'));return;}
+    if(!data.missions?.length){root.append(el('p','No missions submitted.','small'));return;}
+    for(const mission of data.missions){
+      const row=el('div',undefined,'result-row');
+      row.append(el('strong',mission.id),el('span',mission.status,'small'));
+      const actions=el('div',undefined,'controls');
+      for(const operation of (mission.status==='paused'?['resume','cancel']:
+        mission.status==='queued'?['pause','cancel']:[])){
+        actions.append(btn(operation==='resume'?'Resume':operation==='pause'?'Pause':'Cancel',
+          async()=>{
+            if(!confirm(operation+' mission '+mission.id+'? Running work will not be interrupted.'))return;
+            await api('/api/autonomy/control',{mission:mission.id,action:operation,confirm:true});
+            await loadAutonomy();
+          }));
+      }
+      row.append(actions);
+      root.append(row);
+    }
+  }catch(error){root.replaceChildren(el('p','Background status unavailable: '+error.message));}
+}
+
 async function init(){
   let secret=null;if(location.hash.startsWith('#access=')){secret=decodeURIComponent(location.hash.slice(8));history.replaceState(null,'',location.pathname+location.search);}
   if(secret){try{await api('/api/session',{secret});}catch(e){notice(e.message,true)}}
@@ -542,8 +573,9 @@ async function init(){
     try{await api('/api/logout',{});document.dispatchEvent(new Event('open-ci-logout'));notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();});
   $('apps-refresh').addEventListener('click',loadApps);
+  $('autonomy-refresh').addEventListener('click',loadAutonomy);
   $('apps-pause').addEventListener('click',()=>appControl('pause').catch(e=>notice(e.message,true)));
   $('apps-resume').addEventListener('click',()=>appControl('resume').catch(e=>notice(e.message,true)));
   $('apps-emergency').addEventListener('click',()=>appControl('emergency_stop').catch(e=>notice(e.message,true)));
@@ -585,7 +617,7 @@ async function init(){
   });
   configureOnboarding();
   await refresh();
-  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();
+  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();
     show('machine-enroll',state.role==='owner'&&state.mode==='desktop');}
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }

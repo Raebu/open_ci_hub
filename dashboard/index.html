@@ -14,7 +14,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#whatsapp-compose">✉ <span>Personal WhatsApp</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#local-ci">◷ <span>Local CI</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#whatsapp-compose">✉ <span>Personal WhatsApp</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#local-ci">◷ <span>Local CI</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#autonomy">◉ <span>Background Work</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -197,6 +197,13 @@
           </div>
           <div id="deployments-items" class="results" role="status" aria-live="polite"></div>
           <p class="small">No deployment is assumed healthy from a green hosted workflow. Real health receipts and staging gates are required. Secrets and raw release logs are never shown here.</p>
+        </section>
+        <section id="autonomy">
+          <div class="section-head"><div><h2>Background missions</h2>
+            <p>Independent browser and fixed-task jobs. Your KDE session stays separate; the human has priority.</p></div>
+            <button class="btn secondary" id="autonomy-refresh" type="button">↻ Refresh</button></div>
+          <div id="autonomy-items" class="results" aria-live="polite"></div>
+          <p class="small">Pause, resume and cancel are limited to missions without an active step, and require confirmation. Unsafe or interrupted jobs remain blocked for reconciliation. New missions still require local CLI approval; no arbitrary shell commands or automatic phone enrolment.</p>
         </section>
         <section id="machines">
           <div class="section-head"><div><h2>My computers</h2>
