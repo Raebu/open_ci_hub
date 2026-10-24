@@ -178,9 +178,9 @@ class DirectMcpTests(unittest.TestCase):
             original_bytes = file.read_bytes()
             expected_sha = hashlib.sha256(original_bytes).hexdigest()
             roots = [{"label": "projects", "path": str(project)}]
-            with patch("direct_pc_mcp.require_nonroot"), \\
-                 patch("direct_pc_mcp.require_capability"), \\
-                 patch("direct_pc_mcp._audit"), \\
+            with patch("direct_pc_mcp.require_nonroot"), \
+                 patch("direct_pc_mcp.require_capability"), \
+                 patch("direct_pc_mcp._audit"), \
                  patch("direct_pc_mcp._roots", return_value=roots):
                 read_result = mcp.read_pc_file(str(file))
                 self.assertIn("[REDACTED]", read_result["content"])
