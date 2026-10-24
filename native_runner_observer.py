@@ -49,6 +49,42 @@ def host_ci_reservations():
         return None
 
 
+def docker_runner_idle(name):
+    """Conservatively detect a *listener only*, never discount ambiguous jobs.
+
+    Idle dockers have memory limits, but their process RSS is already captured
+    by the host memory available reading. Reserve the full Docker cap for any
+    active or unknown process, job container, or failed telemetry.
+    """
+    profiles = {
+        "open-ci-github-runner": (
+            {"run.sh", "run-helper.sh", "Runner.Listener"}, "Runner.Listener"),
+        "open-ci-gitlab-runner": (
+            {"dumb-init", "gitlab-runner"}, "gitlab-runner"),
+    }
+    if name not in profiles:
+        return False
+    allowed, required = profiles[name]
+    try:
+        result = subprocess.run(
+            ['docker', 'top', name, '-eo', 'pid,comm,args'],
+            capture_output=True, text=True, timeout=3, check=False)
+        if result.returncode or not result.stdout or len(result.stdout) > 16384:
+            return False
+        rows = result.stdout.splitlines()
+        if not rows or not rows[0].startswith('PID') or not 1 < len(rows) <= 20:
+            return False
+        names = []
+        for line in rows[1:]:
+            parts = line.split(None, 2)
+            if len(parts) != 3 or not parts[0].isdecimal():
+                return False
+            names.append(parts[1])
+        return required in names and set(names).issubset(allowed)
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return False
+
+
 def runner_reservations():
     if not shutil.which('docker'):
         # No Docker CLI means provider usage cannot be authoritatively inspected.
@@ -57,7 +93,11 @@ def runner_reservations():
         ps=subprocess.run(['docker','ps','--format','{{.Names}}'],
             capture_output=True,text=True,timeout=3,check=False)
         if ps.returncode!=0:return None
-        names=[x.strip() for x in ps.stdout.splitlines() if MANAGED.fullmatch(x.strip())]
+        running_names=[x.strip() for x in ps.stdout.splitlines() if x.strip()]
+        names=[x for x in running_names if MANAGED.fullmatch(x)]
+        # A GitLab executor may run jobs in separate runner-* containers.
+        # If any are present, do not call its controller an idle listener.
+        unknown_ci_jobs=any(x.startswith('runner-') for x in running_names)
         if len(names)>128:return None
         total=0;count=0;cpu=0.0
         if names:
@@ -79,15 +119,17 @@ def runner_reservations():
                 seen.add(name)
                 memory,nano=map(int,parts[1:])
                 if memory<=0 or memory>512*1024**3:return None
-                total+=(memory+1024*1024-1)//(1024*1024)
-                cpu+=nano/1e9 if nano else DEFAULT_CPU_LIMIT
-                count+=1
+                active=unknown_ci_jobs or not docker_runner_idle(name)
+                if active:
+                    total+=(memory+1024*1024-1)//(1024*1024)
+                    cpu+=nano/1e9 if nano else DEFAULT_CPU_LIMIT
+                    count+=1
         host=host_ci_reservations()
         if host is None:return None
         return {'reserved_ram_mb':total+host['reserved_ram_mb'],
                 'active_runners':count+host['active_runners'],
                 'reserved_cpus':round(cpu+host['reserved_cpus'],2),
-                'trust':'Docker hard limits plus conservative reservations for host-native Runner.Worker and act jobs'}
+                'trust':'Active Docker runner reservations plus conservative native Runner.Worker and act reservations; idle listeners verified by process inventory'}
     except (OSError,subprocess.TimeoutExpired,ValueError):
         return None
 
