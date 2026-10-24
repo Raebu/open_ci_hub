@@ -68,7 +68,7 @@ Before claiming, and again after claiming, the worker requires:
 - Wi-Fi supplicant connected with a reported non-zero address.
 - A job with <=512MiB reserved RAM, zero GPU and an exact built-in task name.
 
-Each job runs in a child process with a POSIX 512MiB virtual memory hard limit,
+Each job runs in a child process with a POSIX virtual memory hard limit matching the approved budget (maximum 512MiB),
 10 seconds of CPU time, no core dumps, a 15-second wall time limit, and
 credentials scrubbed from the child process environment. The phone's
 subprocess has the Android sandbox permissions of Termux: that is NOT a
@@ -91,6 +91,8 @@ These local tests cannot prove Android battery behaviour or cross-device
 connectivity. A real end-to-end test must use a separately issued submit token,
 enqueue a harmless sample job, and verify its exact Hub job ID/result and
 phone's device health before considering deployment verified.
+
+The current Hub broker also admits jobs against the *Garuda host's* memory and thermal budget, even when the phone will execute the work. This conservatively limits offloading when the main machine is under pressure; cross-machine resource accounting is a separate unimplemented scheduler change.
 
 Future general cloud/Windows/Linux worker scheduling needs authenticated
 capability negotiation, per-device admission and separate sandboxing.
