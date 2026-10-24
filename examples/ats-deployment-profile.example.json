@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "project": "Raeburn Talent / ATS",
+  "enabled": false,
+  "source": {
+    "primary_repo": "https://gitlab.com/Theraeburngroup/main_ats",
+    "reference_repo": "https://github.com/Raebu/main_ats",
+    "protected_branch": "main",
+    "exact_sha": null
+  },
+  "artifacts": [
+    {
+      "name": "api-gateway",
+      "kind": "container",
+      "digest": null,
+      "status": "NOT_VERIFIED"
+    },
+    {
+      "name": "backend-services",
+      "kind": "container",
+      "digest": null,
+      "status": "NOT_VERIFIED"
+    },
+    {
+      "name": "frontend",
+      "kind": "container-or-static-bundle",
+      "digest": null,
+      "status": "NOT_VERIFIED"
+    },
+    {
+      "name": "clamav",
+      "kind": "container",
+      "digest": null,
+      "status": "NOT_VERIFIED"
+    }
+  ],
+  "required_checks": [
+    "dependency-and-image-security-scan",
+    "typecheck-lint-unit-tests",
+    "auth-and-tenant-boundaries",
+    "vacancy-approval-regression",
+    "cv-quarantine-clamav-eicar",
+    "candidate-and-recruiter-journeys",
+    "database-migration-compatibility",
+    "postgres-backup-restore",
+    "tls-health-and-audit"
+  ],
+  "staging": {
+    "enabled": false,
+    "adapter": "ssh-compose",
+    "host": null,
+    "environment_lock": "ats-staging",
+    "dns": null,
+    "deploy_order": [
+      "backup",
+      "compatibility-check",
+      "migrate-forward-only",
+      "services",
+      "api-gateway",
+      "frontends",
+      "clamav-ready-check",
+      "journey-smoke"
+    ],
+    "rollback": {
+      "allowed_only_if_schema_compatible": true,
+      "auto_db_restore": false,
+      "previous_image_digest": null
+    }
+  },
+  "production": {
+    "enabled": false,
+    "requires_same_sha_staging_receipt": true,
+    "requires_signed_review": true,
+    "requires_explicit_approval": true,
+    "auto_database_rollback": false
+  },
+  "security": {
+    "credential_delivery": "target-side-secret-manager",
+    "production_secrets_in_repo": false
+  },
+  "note": "Reference-only disabled deployment definition; no credentials, hosts or application instances have been approved."
+}

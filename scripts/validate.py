@@ -31,6 +31,8 @@ def main():
             if not shutil.which(binary):
                 raise RuntimeError(f'Install {binary} to complete validation.')
         run('Dashboard JavaScript syntax', ['node', '--check', 'dashboard/app.js'])
+        run('Personal WhatsApp JavaScript syntax', ['node', '--check', 'dashboard/whatsapp-personal.js'])
+        run('Personal WhatsApp writing/link tests', ['node', '--test', 'tests/test_whatsapp_personal.cjs'])
         run('All Compose profiles (no secret file resolution)', ['docker', 'compose', '--profile', '*', 'config', '--no-env-resolution', '-q'])
         if args.containers:
             suffix = uuid.uuid4().hex[:12]

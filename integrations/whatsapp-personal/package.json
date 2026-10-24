@@ -1,0 +1,25 @@
+{
+  "name": "@raeburn/open-ci-hub-personal-whatsapp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node scripts/ensure-compat.js && node index.js",
+    "test": "node --test test/*.test.js",
+    "init": "node index.js init",
+    "postinstall": "node scripts/ensure-compat.js",
+    "pause": "node reply_mode.js pause",
+    "resume": "node reply_mode.js resume",
+    "mode": "node reply_mode.js status"
+  },
+  "dependencies": {
+    "qrcode-terminal": "0.12.0",
+    "whatsapp-web.js": "1.34.7"
+  },
+  "overrides": {
+    "puppeteer": "25.15.0"
+  }
+}

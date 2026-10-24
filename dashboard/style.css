@@ -28,3 +28,11 @@
   #machine-items .result-row{overflow-wrap:anywhere;}
   input{font-size:16px!important;}
 }
+
+/* Personal WhatsApp composer: no local contact or message persistence. */
+#whatsapp-compose textarea{background:#0a1528;border:1px solid #3a4a63;color:#f4f6fb;border-radius:8px;padding:12px;min-width:0;width:100%;font:inherit;resize:vertical;line-height:1.55}
+#whatsapp-compose textarea:read-only{background:#0c192d;color:#d2e1f6}
+#whatsapp-compose .controls{margin:0;align-items:center}
+#whatsapp-status{border-left:3px solid #8de0c7;padding:10px 12px;background:#10273a;border-radius:5px;margin:0}
+#whatsapp-status.error{border-color:#ff9eaa;background:#3c232d;color:#ffe1e7}
+@media(max-width:520px){#whatsapp-compose textarea{font-size:16px}}

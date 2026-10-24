@@ -8,12 +8,13 @@
   <title>Open CI Hub</title>
   <link rel="stylesheet" href="/style.css">
   <script defer src="/app.js"></script>
+  <script defer src="/whatsapp-personal.js"></script>
 </head>
 <body>
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#whatsapp-compose">✉ <span>Personal WhatsApp</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#local-ci">◷ <span>Local CI</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -26,7 +27,8 @@
       </section>
       <div id="workspace" class="hidden">
         <section id="providers"><div class="section-head"><div><h2>Connected platforms</h2><p>Use your provider’s official browser sign-in. No API key pasting.</p></div><button class="btn secondary" type="button" id="refresh">↻ Refresh</button></div><div class="cards" id="cards"></div></section>
-        <section id="repositories"><div class="section-head"><div><h2>Create repository</h2><p>Create a new GitHub or GitLab repository directly from here. Private by default.</p></div></div>
+        <section id="whatsapp">
+          <div class="seead"><div><h2>Create repository</h2><p>Create a new GitHub or GitLab repository directly from here. Private by default.</p></div></div>
           <form id="new-repo" class="form-grid">
             <label>Provider<select id="repo-provider"><option value="github">GitHub</option><option value="gitlab">GitLab</option></select></label>
             <label>Repository name<input id="repo-name" placeholder="my-project or org/my-project" required maxlength="201" pattern="[A-Za-z0-9_.\/-]+"></label>
@@ -121,6 +123,80 @@
           <h3>Queued projects</h3>
           <div id="apps-queue" class="results" aria-live="polite"></div>
           <p class="small">Register app IDs and issue separate submitter/worker API tokens locally on the host. Jobs are executed by independently deployed application workers, never by the host terminal or CI runner.</p>
+        </section>
+        <section id="whatsapp-compose">
+          <div class="section-head"><div>
+            <h2>Personal WhatsApp · write &amp; send</h2>
+            <p>Prepare a personal message, review the recipient and open WhatsApp ready to send. Nothing is sent without your final action in WhatsApp.</p>
+          </div></div>
+          <div class="form-grid">
+            <label>Recipient's name (optional)
+              <input type="text" id="whatsapp-name" maxlength="80" autocomplete="off" placeholder="First name"/>
+            </label>
+            <label>WhatsApp number
+              <input type="tel" id="whatsapp-phone" maxlength="40" inputmode="tel" autocomplete="off" placeholder="+44 7700 900123"/>
+            </label>
+            <label>What are you writing?
+              <select id="whatsapp-intent">
+                <option value="hello">Hello / greeting</option>
+                <option value="thanks">Thank you</option>
+                <option value="followup">Follow-up</option>
+                <option value="checkin">Check in</option>
+                <option value="apology">Apology</option>
+              </select>
+            </label>
+            <label>Writing style
+              <select id="whatsapp-tone">
+                <option value="warm">Warm and personal</option>
+                <option value="casual">Casual</option>
+                <option value="professional">Professional</option>
+                <option value="brief">Short and direct</option>
+              </select>
+            </label>
+            <label class="wide">What do you want to say? (optional)
+              <textarea id="whatsapp-context" maxlength="500" rows="2" placeholder="A little context for the suggested draft"></textarea>
+            </label>
+            <div class="wide controls"><button id="whatsapp-write" class="btn secondary" type="button">Suggest wording</button></div>
+            <label class="wide">Suggested wording (doesn't replace your existing draft)
+              <textarea id="whatsapp-suggestion" rows="4" readonly placeholder="A writing suggestion appears here."></textarea>
+            </label>
+            <div class="wide controls"><button id="whatsapp-apply" class="btn secondary" type="button">Use this suggestion</button></div>
+            <label class="wide">Your message — editable until you send it
+              <textarea id="whatsapp-message" maxlength="2400" rows="6" placeholder="Write your personal WhatsApp message here."></textarea>
+            </label>
+            <div class="wide controls">
+              <button id="whatsapp-open" class="btn primary" type="button">Open in WhatsApp to send ↗</button>
+              <button id="whatsapp-copy" class="btn secondary" type="button">Copy message</button>
+              <button id="whatsapp-clear" class="btn secondary" type="button">Clear</button>
+            </div>
+            <p id="whatsapp-status" class="wide small" role="status" aria-live="polite">Your draft stays on this page. Open CI Hub never reads WhatsApp chats or sends messages automatically.</p>
+          </div>
+          <p class="small">Personal WhatsApp uses the official click-to-chat link. A prepared chat is <strong>not</strong> a sent or delivered message; check and press Send inside WhatsApp. No private WhatsApp contact lists or message histories are imported.</p>
+        </section>
+        <section id="internet">
+          <div class="section-head"><div><h2>CI internet access</h2>
+            <p>Per-project policy. Offline by default; approved Full mode uses a public-web gateway while Docker remains network-none.</p></div>
+            <button type="button" class="btn secondary" id="internet-refresh">↻ Refresh network</button>
+          </div>
+          <div id="internet-items" class="results" role="status" aria-live="polite"></div>
+          <p class="small">Full here means public HTTP and HTTPS via ports 80/443. Private networks, cloud metadata endpoints and all direct container sockets stay blocked. An owner-controlled 0600 manifest enables trusted projects; this screen cannot bypass that policy.</p>
+        </section>
+        <section id="local-ci">
+          <div class="section-heading"><div><h2>Local CI jobs</h2>
+            <p>Builds run on authorised hardware. Cloud retries are blocked.</p></div>
+            <button type="button" class="btn secondary" id="local-ci-refresh">Refresh jobs</button>
+          </div>
+          <div id="local-ci-items" class="results" aria-live="polite"></div>
+          <pre id="local-ci-evidence" tabindex="0" aria-label="Local CI execution evidence"></pre>
+        </section>
+
+        <section id="deployments">
+          <div class="section-head"><div><h2>Deployments &amp; release evidence</h2>
+            <p>Approved environments, exact release commits, previous versions and audit history. Read-only; production actions require independent approval.</p></div>
+            <button type="button" class="btn secondary" id="deployments-refresh">↻ Refresh deployments</button>
+          </div>
+          <div id="deployments-items" class="results" role="status" aria-live="polite"></div>
+          <p class="small">No deployment is assumed healthy from a green hosted workflow. Real health receipts and staging gates are required. Secrets and raw release logs are never shown here.</p>
         </section>
         <section id="machines">
           <div class="section-head"><div><h2>My computers</h2>
