@@ -492,7 +492,7 @@ async function previewOnboarding(){
 
 async function loadAutonomy(){
   const root=$('autonomy-items');root.replaceChildren();
-  if(state.role!=='owner'){root.append(el('p','Background mission details require the owner session.'));return;}
+  if(state.role!=='owner'&&state.role!=='editor'){root.append(el('p','Background mission details require management permission.'));return;}
   try{
     const data=await api('/api/autonomy');
     const head=el('div',undefined,'result-row');
@@ -504,6 +504,17 @@ async function loadAutonomy(){
     for(const mission of data.missions){
       const row=el('div',undefined,'result-row');
       row.append(el('strong',mission.id),el('span',mission.status,'small'));
+      const actions=el('div',undefined,'controls');
+      for(const operation of (mission.status==='paused'?['resume','cancel']:
+        mission.status==='queued'?['pause','cancel']:[])){
+        actions.append(btn(operation==='resume'?'Resume':operation==='pause'?'Pause':'Cancel',
+          async()=>{
+            if(!confirm(operation+' mission '+mission.id+'? Running work will not be interrupted.'))return;
+            await api('/api/autonomy/control',{mission:mission.id,action:operation,confirm:true});
+            await loadAutonomy();
+          }));
+      }
+      row.append(actions);
       root.append(row);
     }
   }catch(error){root.replaceChildren(el('p','Background status unavailable: '+error.message));}
