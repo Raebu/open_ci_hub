@@ -94,21 +94,32 @@ def inspect(provider):
     security=host.get('SecurityOpt')
     capdrop=host.get('CapDrop')
     restart=host.get('RestartPolicy')
-    if not (
-        type(memory)==int and 0<memory<=MAX_MEMORY and
-        type(swap)==int and swap==memory and
-        type(cpu)==int and 0<cpu<=MAX_CPUS and
-        type(pids)==int and 0<pids<=MAX_PIDS and
-        isinstance(capdrop,list) and 'ALL' in capdrop and
-        isinstance(security,list) and
-        any(isinstance(opt,str) and opt.lower()=='no-new-privileges:true'
-            for opt in security) and
-        isinstance(restart,dict) and restart.get('Name') in ('','no') and
-        host.get('Privileged') is False and
-        not host.get('NetworkMode')=='host'
-    ):
-        raise RuntimeError('Runner lacks verified resource/security caps or uses auto-restart; '
-                           'preserve it and inspect locally before migration.')
+    # Report only fixed, nonsecret safety-field names. Never emit raw HostConfig:
+    # it can contain mount locations, credentials or private networking details.
+    failures=[]
+    if not (type(memory)==int and 0<memory<=MAX_MEMORY):
+        failures.append('memory_limit')
+    if not (type(swap)==int and swap==memory):
+        failures.append('swap_limit')
+    if not (type(cpu)==int and 0<cpu<=MAX_CPUS):
+        failures.append('cpu_quota')
+    if not (type(pids)==int and 0<pids<=MAX_PIDS):
+        failures.append('pid_limit')
+    if not (isinstance(capdrop,list) and 'ALL' in capdrop):
+        failures.append('capabilities')
+    if not (isinstance(security,list) and
+            any(isinstance(opt,str) and opt.lower()=='no-new-privileges:true'
+                for opt in security)):
+        failures.append('no_new_privileges')
+    if not (isinstance(restart,dict) and restart.get('Name') in ('','no')):
+        failures.append('restart_policy')
+    if host.get('Privileged') is not False:
+        failures.append('privileged_mode')
+    if host.get('NetworkMode')=='host':
+        failures.append('host_network')
+    if failures:
+        raise RuntimeError('Runner lacks verified resource/security caps: '+
+                           ', '.join(failures)+'. Preserve container and volumes.')
     state=docker(['inspect','--format','{{.State.Status}}',name])
     if state not in ('created','exited','running'):
         raise RuntimeError('Runner state is not startable without intervention.')
