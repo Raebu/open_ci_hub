@@ -18,10 +18,12 @@ class ManagedWorkerTests(unittest.TestCase):
 
     def test_command_contains_hard_memory_and_swap_scope_not_payload(self):
         unit,cmd=m.build_command(self.job,self.handlers['video'])
-        self.assertEqual(unit,'open-ci-app-'+'a'*32+'.scope')
+        self.assertEqual(unit,'open-ci-app-'+'a'*32+'.service')
         self.assertIn('MemoryMax=1024M',cmd)
         self.assertIn('MemorySwapMax=0',cmd)
-        self.assertIn('--scope',cmd)
+        self.assertIn('--wait',cmd)
+        self.assertIn('--pipe',cmd)
+        self.assertNotIn('--scope',cmd)
         self.assertEqual(cmd[-2:],['/usr/bin/python3','/opt/company/worker.py'])
         self.assertNotIn('abc',' '.join(cmd))
         self.assertNotIn('/bin/sh',cmd)
@@ -66,7 +68,7 @@ class ManagedWorkerTests(unittest.TestCase):
                 return {'status':'queued','reason':args[-1]}
         with patch('managed_worker.subprocess.Popen',side_effect=OSError('dbus down')):
             value=m.run_one(Client(),{'job':self.job},self.handlers)
-        self.assertIn('systemd user scope unavailable',str(value))
+        self.assertIn('systemd user service unavailable',str(value))
 
     def test_success_uses_preapproved_handler_and_reports_json(self):
         self.job['resources'].update({'vram_mb':0,'gpu_index':None})
