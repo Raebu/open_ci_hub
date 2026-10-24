@@ -143,6 +143,30 @@ class JournalTests(unittest.TestCase):
         self.assertEqual(out["status"], "deferred")
         self.assertEqual(self.journal.ready_step("mission-alpha")["id"], "step-one")
 
+    def test_pause_resume_and_cancel_idempotence_guards(self):
+        self.journal.submit(sample_plan(), owner_approved=True)
+        with self.assertRaises(PermissionError):
+            self.journal.pause("mission-alpha")
+        self.assertEqual(self.journal.pause("mission-alpha", owner_approved=True)["status"], "paused")
+        self.assertIsNone(self.journal.ready_step("mission-alpha"))
+        with self.assertRaises(RuntimeError):
+            self.journal.pause("mission-alpha", owner_approved=True)
+        self.assertEqual(self.journal.resume("mission-alpha", owner_approved=True)["status"], "queued")
+        self.assertEqual(self.journal.ready_step("mission-alpha")["id"], "step-one")
+        self.journal.cancel("mission-alpha", owner_approved=True)
+        with self.assertRaises(RuntimeError):
+            self.journal.resume("mission-alpha", owner_approved=True)
+
+    def test_running_step_cannot_be_falsely_paused_or_cancelled(self):
+        self.journal.submit(sample_plan(), owner_approved=True)
+        self.journal.start_step("mission-alpha", "step-one")
+        with self.assertRaises(RuntimeError):
+            self.journal.pause("mission-alpha", owner_approved=True)
+        with self.assertRaises(RuntimeError):
+            self.journal.cancel("mission-alpha", owner_approved=True)
+        self.assertEqual(self.journal.snapshot("mission-alpha")["steps"][0]["status"],
+                         "running")
+
     def test_cancellation_requires_quiescent_job(self):
         self.journal.submit(sample_plan(), owner_approved=True)
         with self.assertRaises(PermissionError):

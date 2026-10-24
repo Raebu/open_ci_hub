@@ -78,13 +78,23 @@ async function execute(plan) {
  }
 }
 async function main(){
- let size=0,parts=[];
- for await(const chunk of process.stdin){
-   size+=chunk.length;guard(size<=16384,"Plan too large");parts.push(chunk);
+ const jobPath=process.env.OCI_AUTONOMY_PLAN_PATH;
+ let wire;
+ if(jobPath){
+   guard(jobPath==="/input/plan.json","Invalid mission file path");
+   guard(fs.statSync(jobPath).size<=16384,"Plan too large");
+   wire=fs.readFileSync(jobPath,"utf8");
+ }else{
+   let size=0,parts=[];
+   for await(const chunk of process.stdin){
+     size+=chunk.length;guard(size<=16384,"Plan too large");parts.push(chunk);
+   }
+   wire=Buffer.concat(parts).toString("utf8");
  }
- const req=JSON.parse(Buffer.concat(parts).toString("utf8"));
+ const req=JSON.parse(wire);
  process.stdout.write(JSON.stringify(await execute(req))+"\n");
 }
+
 main().catch(err=>{
  const msg=String(err?.message||"");
  const safe=/^(Invalid|Blocked|Malformed|Interaction|Unapproved|Private|Artifact|Plan)/.test(msg)

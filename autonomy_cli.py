@@ -19,9 +19,9 @@ import uuid
 import time
 
 from autonomy_core import Journal, PolicyError, admit_local, sample_host, public_url, validate_plan
+from autonomy_sandbox import SandboxUnavailable, browser_argv
 import ipaddress
 import socket
-import urllib.request
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_STATE = ROOT / ".local" / "autonomy"
@@ -45,34 +45,72 @@ def execute_fixed(step):
     raise PolicyError("Not a fixed task.")
 
 
-class RefuseRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
+class PinnedHTTPSConnection:
+    """Verified HTTPS/SNI to one already checked public address, no proxy or DNS replay."""
+    def __init__(self, hostname, ip, *, timeout=8):
+        import http.client
+        import ssl
+        self.host = hostname
+        self.ip = ip
+        self.ssl_context = ssl.create_default_context()
+        self.connection = http.client.HTTPSConnection(hostname, timeout=timeout,
+                                                      context=self.ssl_context)
+
+    def request(self, path):
+        import socket as network_socket
+        # Pin the validated address while preserving TLS SNI and hostname checks.
+        connection = self.connection
+        raw = network_socket.create_connection((self.ip, 443), timeout=connection.timeout)
+        try:
+            connection.sock = self.ssl_context.wrap_socket(raw, server_hostname=self.host)
+        except BaseException:
+            raw.close()
+            raise
+        connection.request("GET", path, headers={
+            "User-Agent": "OpenCIHub-Background/0.2",
+            "Accept": "text/html, text/plain, application/json",
+            "Accept-Encoding": "identity",
+            "Connection": "close"})
+
+    def getresponse(self):
+        return self.connection.getresponse()
+
+    def close(self):
+        self.connection.close()
 
 
 def fetch_readonly(url, allowlist):
-    """Fast API/network read, no browser, no headers/cookies/credentials forwarded."""
+    """Bounded API-first GET; public DNS is resolved once and TLS pins that IP."""
+    from urllib.parse import urlsplit
     public_url(url, frozenset(allowlist))
-    hostname = urllib.request.urlsplit(url).hostname
+    parsed = urlsplit(url)
     try:
-        candidates = socket.getaddrinfo(hostname, 443, type=socket.SOCK_STREAM)
-        if not candidates or any(
-                not ipaddress.ip_address(item[4][0]).is_global for item in candidates):
+        candidates = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+        ips = [row[4][0] for row in candidates]
+        if not ips or any(not ipaddress.ip_address(ip).is_global for ip in ips):
             return {"ok": False, "error": "nonpublic_network_address"}
-        opener = urllib.request.build_opener(RefuseRedirect())
-        request = urllib.request.Request(url, method="GET", headers={
-            "User-Agent": "OpenCIHub-Background/0.1"})
-        with opener.open(request, timeout=8) as response:
-            kind = response.headers.get_content_type()
-            if kind not in ("text/html", "text/plain", "application/json"):
+        # Use the resolved address without a second DNS query or user HTTP proxies.
+        route = parsed.path or "/"
+        if parsed.query:
+            route += "?" + parsed.query
+        connection = PinnedHTTPSConnection(parsed.hostname, ips[0])
+        try:
+            connection.request(route)
+            response = connection.getresponse()
+            if not 200 <= response.status < 300:
+                return {"ok": False, "error": "http_failure_or_redirect"}
+            mime = response.headers.get_content_type()
+            if mime not in ("text/html", "text/plain", "application/json"):
                 return {"ok": False, "error": "unapproved_content_type"}
-            data = response.read(65_537)
-            if len(data) > 65_536:
+            payload = response.read(65537)
+            if len(payload) > 65536:
                 return {"ok": False, "error": "response_too_large"}
-            return {"ok": True, "content_type": kind, "bytes": len(data),
-                    "sha256": hashlib.sha256(data).hexdigest(),
-                    "preview": data.decode("utf-8", "replace")[:1100]}
-    except (OSError, ValueError, urllib.error.HTTPError):
+            return {"ok": True, "content_type": mime, "bytes": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                    "preview": payload.decode("utf-8", "replace")[:1100]}
+        finally:
+            connection.close()
+    except (OSError, ValueError, TypeError):
         return {"ok": False, "error": "network_fetch_failed"}
 
 
@@ -97,24 +135,23 @@ def browser_job(plan, step, artifacts, *, node="node", timeout=45):
         # A user transient service, NOT --scope --pipe (invalid on this system).
         # cgroup v2 must enforce RAM/CPU quotas before any browser job starts.
         unit = "open-ci-autonomy-" + uuid.uuid4().hex
+        plan_path = Path(temp) / "plan.json"
+        plan_path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False),
+                             encoding="utf-8")
+        plan_path.chmod(0o600)
+        sandbox = browser_argv(BROWSER.parent, artifacts, plan_file=plan_path)
         argv = ["/usr/bin/systemd-run", "--user", "--wait", "--pipe",
                 "--quiet", "--collect", "--unit=" + unit,
-                "-p", "MemoryMax=768M", "-p", "MemoryHigh=640M",
+                "-p", "MemoryMax=768M", "-p", "MemoryHigh=720M",
                 "-p", "MemorySwapMax=0", "-p", "CPUQuota=60%",
-                "-p", "IOWeight=15", "-p", "TasksMax=96",
-                "-E", "HOME=" + temp,
-                "-E", "XDG_CACHE_HOME=" + temp,
-                "-E", "PATH=" + env["PATH"],
-                "-E", "OCI_CHROMIUM_PATH=" + env["OCI_CHROMIUM_PATH"],
-                "-E", "OCI_AUTONOMY_ARTIFACT_DIR=" + str(artifacts),
-                "-E", "DISPLAY=", "-E", "WAYLAND_DISPLAY=",
-                "--", "/usr/bin/node", str(BROWSER)]
+                "-p", "IOWeight=15", "-p", "TasksMax=384",
+                "--", *sandbox]
         process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL, env=os.environ.copy(),
                                    cwd=str(ROOT), start_new_session=True,
                                    preexec_fn=_low_priority)
         try:
-            stdout, _ = process.communicate(json.dumps(payload).encode(), timeout=timeout)
+            stdout, _ = process.communicate(b"", timeout=timeout)
         except subprocess.TimeoutExpired:
             # Kill the entire browser group, not just Node, to avoid background
             # Chromium continuing to use CPU/RAM after a timeout.
@@ -201,9 +238,10 @@ def main(argv=None):
     run.add_argument("mission")
     status = sub.add_parser("status")
     status.add_argument("mission")
-    cancel = sub.add_parser("cancel")
-    cancel.add_argument("mission")
-    cancel.add_argument("--confirm", action="store_true")
+    for action in ("pause", "resume", "cancel"):
+        control = sub.add_parser(action)
+        control.add_argument("mission")
+        control.add_argument("--confirm", action="store_true")
     sub.add_parser("host")
     args = parser.parse_args(argv)
     try:
@@ -223,8 +261,12 @@ def main(argv=None):
         elif args.cmd == "status":
             result = journal.snapshot(args.mission)
         else:
-            journal.cancel(args.mission, owner_approved=args.confirm)
-            result = {"status": "cancelled"}
+            if args.cmd not in ("pause", "resume", "cancel"):
+                raise PolicyError("Unsupported local command.")
+            op = getattr(journal, args.cmd)
+            result = op(args.mission, owner_approved=args.confirm)
+            if args.cmd == "cancel":
+                result = {"mission": args.mission, "status": "cancelled"}
         print(json.dumps(result, indent=2))
         return 0
     except (PolicyError, PermissionError, RuntimeError, KeyError, OSError, ValueError) as exc:

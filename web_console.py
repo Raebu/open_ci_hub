@@ -399,10 +399,10 @@ class WebConsole:
                         if path == '/api/health':
                             return self.output(200, system_health())
                         if path == '/api/autonomy':
-                            if console.role(self) != 'owner':
-                                return self.output(403, {'error':'Only the owner can inspect autonomy missions.'})
-                            from autonomy_dashboard import summary
-                            return self.output(200, summary())
+                            if console.role(self) not in ('owner','editor'):
+                                return self.output(403, {'error':'Management permission required for missions.'})
+                            from autonomy_dashboard import summary, STATE
+                            return self.output(200, summary(STATE))
                         if path == '/api/activity':
                             if console.role(self) != 'owner':
                                 return self.output(403, {'error':'Only the local owner can inspect the audit trail.'})
@@ -467,6 +467,23 @@ class WebConsole:
                         return self.output(202, {'message': 'Approval requested. Open the desktop dashboard to approve this identity.'})
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Sign in or request mobile approval first.'})
+                    if path == '/api/autonomy/control':
+                        if console.role(self) not in ('owner', 'editor'):
+                            return self.output(403, {'error':'Approved management identity required.'})
+                        if data.get('confirm') is not True or set(data) != {'mission','action','confirm'}:
+                            return self.output(400, {'error':'Explicit mission confirmation required.'})
+                        from autonomy_core import Journal, ID
+                        from autonomy_cli import DEFAULT_STATE
+                        mission, action = data.get('mission'), data.get('action')
+                        if not isinstance(mission,str) or not ID.fullmatch(mission):
+                            return self.output(400, {'error':'Invalid mission ID.'})
+                        if action not in ('pause','resume','cancel'):
+                            return self.output(400, {'error':'Unsupported mission action.'})
+                        journal=Journal(DEFAULT_STATE)
+                        answer=getattr(journal,action)(mission,owner_approved=True)
+                        console.audit.add(console.remote_identity(self) or 'local-owner',
+                                          'autonomy.'+action,mission,'success')
+                        return self.output(200,answer or {'mission':mission,'status':'cancelled'})
                     if path in ('/api/apps/control','/api/apps/priority'):
                         if console.role(self) not in ('owner','editor'):
                             return self.output(403, {'error':'Approved management identity required.'})

@@ -266,7 +266,7 @@ class Journal:
 
     def ready_step(self, mission):
         s = self.snapshot(mission)
-        if s["status"] in ("cancelled", "completed", "failed"):
+        if s["status"] not in ("queued", "running"):
             return None
         statuses = {r["id"]: r["status"] for r in s["steps"]}
         for step in s["plan"]["steps"]:
@@ -315,13 +315,46 @@ class Journal:
             db.commit()
         return {"mission": mission, "step": step, "status": overall, "evidence_sha256": proof}
 
-    def cancel(self, mission, *, owner_approved=False):
+    def pause(self, mission, *, owner_approved=False):
+        """Pause the *next* step; refuse to claim running work has stopped."""
         if owner_approved is not True:
             raise PermissionError("Owner approval required.")
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT status FROM missions WHERE id=?", (mission,)).fetchone()
             if not row or row["status"] not in ("queued", "running"):
+                raise RuntimeError("Only queued or idle missions may be paused.")
+            if db.execute("SELECT 1 FROM steps WHERE mission=? AND status='running'",
+                          (mission,)).fetchone():
+                raise RuntimeError("A running step must finish or be verified stopped before pausing.")
+            db.execute("UPDATE missions SET status='paused',updated=? WHERE id=?",
+                       (time.time(), mission))
+            db.commit()
+        return {"mission": mission, "status": "paused"}
+
+    def resume(self, mission, *, owner_approved=False):
+        if owner_approved is not True:
+            raise PermissionError("Owner approval required.")
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT status FROM missions WHERE id=?", (mission,)).fetchone()
+            if not row or row["status"] != "paused":
+                raise RuntimeError("Only safely paused missions can be resumed.")
+            if db.execute("SELECT 1 FROM steps WHERE mission=? AND status='running'",
+                          (mission,)).fetchone():
+                raise RuntimeError("Cannot resume while a step remains running.")
+            db.execute("UPDATE missions SET status='queued',updated=? WHERE id=?",
+                       (time.time(), mission))
+            db.commit()
+        return {"mission": mission, "status": "queued"}
+
+    def cancel(self, mission, *, owner_approved=False):
+        if owner_approved is not True:
+            raise PermissionError("Owner approval required.")
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT status FROM missions WHERE id=?", (mission,)).fetchone()
+            if not row or row["status"] not in ("queued", "running", "paused"):
                 raise RuntimeError("Mission unavailable.")
             if db.execute("SELECT 1 FROM steps WHERE mission=? AND status='running'",
                           (mission,)).fetchone():

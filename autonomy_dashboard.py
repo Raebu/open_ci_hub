@@ -10,7 +10,7 @@ STATE = ROOT / ".local" / "autonomy" / "autonomy.sqlite3"
 
 def summary(db_path: Path = STATE, *, metrics=sample_host):
     data = {"configured": False, "running": 0, "queued": 0, "failed": 0,
-            "missions": [], "execution": "owner-approved-local-cli"}
+            "paused": 0, "missions": [], "execution": "owner-approved-fixed-tasks"}
     safe_host = metrics()
     eligible, reason = admit_local(safe_host)
     data["admission"] = {"eligible": eligible, "reason": reason,
@@ -27,6 +27,6 @@ def summary(db_path: Path = STATE, *, metrics=sample_host):
                              "updated": r["updated"]} for r in rows]
         data["configured"] = True
         for row in rows:
-            if row["status"] in ("running", "queued", "failed"):
+            if row["status"] in ("running", "queued", "failed", "paused"):
                 data[row["status"]] += 1
     return data
