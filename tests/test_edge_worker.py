@@ -64,6 +64,15 @@ class EdgeTests(unittest.TestCase):
             self.assertNotIn("OCI_EDGE_WORKER_TOKEN", run.call_args.kwargs["env"])
             self.assertIn("-I", run.call_args.args[0])
 
+    def test_child_limit_matches_reservation(self):
+        with patch.object(e.subprocess, "run") as run:
+            run.return_value = Mock(returncode=0,
+                                    stdout=b'{"success":true,"result":{}}')
+            self.assertTrue(e.execute("json.inspect", {"text": "{}"}, ram_mb=128)[0])
+            self.assertEqual(run.call_args.kwargs["preexec_fn"].args, (128,))
+            self.assertEqual(e.execute("json.inspect", {"text": "{}"}, ram_mb=1024),
+                             (False, {"error": "unsupported_resource_profile"}))
+
     def test_unapproved_task_does_not_spawn(self):
         self.assertEqual(e.execute("bash", {}), (False, {"error": "task_not_approved"}))
 
