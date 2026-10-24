@@ -7,6 +7,7 @@ downloads, personal files, contact access, root or Docker.
 from __future__ import annotations
 import argparse
 import ast
+from functools import partial
 import hashlib
 import json
 import math
@@ -112,13 +113,15 @@ def child_main(task):
     print(json.dumps(outcome, separators=(",", ":"), allow_nan=False))
     return 0
 
-def enforce_limits():
-    maximum = MAX_RAM_MB * 1024 * 1024
+def enforce_limits(ram_mb):
+    maximum = ram_mb * 1024 * 1024
     resource.setrlimit(resource.RLIMIT_AS, (maximum, maximum))
     resource.setrlimit(resource.RLIMIT_CPU, (10, 11))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
-def execute(task, payload):
+def execute(task, payload, ram_mb=MAX_RAM_MB):
+    if type(ram_mb) is not int or not 64 <= ram_mb <= MAX_RAM_MB:
+        return False, {"error": "unsupported_resource_profile"}
     if task not in TASKS:
         return False, {"error": "task_not_approved"}
     if not isinstance(payload, (dict, list)):
@@ -133,7 +136,7 @@ def execute(task, payload):
         p = subprocess.run([sys.executable, "-I", str(Path(__file__).resolve()),
                             "_task", task], input=wire, capture_output=True,
                            timeout=15, check=False, env=clean_env,
-                           preexec_fn=enforce_limits)
+                           preexec_fn=partial(enforce_limits, ram_mb))
         if p.returncode or len(p.stdout) > 2048:
             return False, {"error": "task_execution_failed"}
         response = json.loads(p.stdout)
@@ -158,7 +161,7 @@ def complete_claim(client, job):
     elif not phone_ready()[0]:
         success, result = False, {"error": "device_safety_gate"}
     else:
-        success, result = execute(job.get("task"), job.get("payload"))
+        success, result = execute(job.get("task"), job.get("payload"), budget["ram_mb"])
     return client.complete(job["job_id"], job["lease_token"], success, result)
 
 def once(client):
