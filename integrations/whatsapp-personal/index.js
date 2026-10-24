@@ -15,10 +15,12 @@ const {Client,LocalAuth}=require('whatsapp-web.js');
 const QR=require('qrcode-terminal');
 const {chatAllowed,needsReview,safeReply,shortHash,validConfig}=require('./policy');
 const {generateReply}=require('./ollama');
+const {microReply}=require('./micro_reply');
 const {learnOwnerStyle}=require('./style_learning');
 const {parseDirectSend,parseExistingChatSend,verifiedExistingChat}=require('./direct_send');
 const {isSelfChat}=require('./recipient_identity');
 const {summarise,readAudit}=require('./receipts');
+const {startManualControl}=require('./manual_control');
 
 const configDir=path.join(os.homedir(),'.config','open-ci-hub');
 const configPath=path.join(configDir,'personal-whatsapp.json');
@@ -109,6 +111,7 @@ function main(){
   const recentChats=[];
   const daily=todayAutoCounts();
   let connected=false;
+  const controlServer=startManualControl({stateDir,client,isConnected:()=>connected,audit,shortHash,isSelfChat,note:console.log});
   const rl=readline.createInterface({input:process.stdin,output:process.stdout});
   function note(text){process.stdout.write(text+'\n');}
   function dayCount(id){
@@ -216,6 +219,17 @@ function main(){
         note('Owner review needed for '+shortHash(id)+' (sensitive context).');
         return;
       }
+      const examples=style();
+      // Immediate approved low-risk response without loading a large language
+      // model into memory. This works during host memory pressure and never
+      // claims knowledge of the owner's day, plans or personal circumstances.
+      const lowRisk = microReply(pendingText,examples);
+      const previous=latest.slice(0,-1);
+      if(lowRisk && !previous.slice(-3).some(m=>needsReview(m.body))){
+        await send(id,lowRisk);
+        audit('auto-micro-reply',id,lowRisk);
+        return;
+      }
       const memory=fs.readFileSync('/proc/meminfo','utf8');
       const available=Number((/MemAvailable:\s*(\d+) kB/.exec(memory)||[])[1]||0);
       if(available<4096*1024) {
@@ -223,7 +237,6 @@ function main(){
         note('AI held: under 4 GiB available system memory. No message sent.');
         return;
       }
-      const examples=style();
       const response=await generateReply({model:fresh.ollamaModel,sender:id,
         conversation:latest,examples});
       if(response.needsReview){
@@ -367,6 +380,7 @@ function main(){
     exiting=true;
     for(const timer of pending.values())clearTimeout(timer);
     rl.close();
+    try{controlServer.close();}catch{}
     try{await client.destroy();}catch{}
     process.exit(0);
   };
