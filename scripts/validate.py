@@ -31,6 +31,7 @@ def main():
             if not shutil.which(binary):
                 raise RuntimeError(f'Install {binary} to complete validation.')
         run('Dashboard JavaScript syntax', ['node', '--check', 'dashboard/app.js'])
+        run('Background browser worker syntax', ['node', '--check', 'integrations/background-browser/browser.mjs'])
         run('All Compose profiles (no secret file resolution)', ['docker', 'compose', '--profile', '*', 'config', '--no-env-resolution', '-q'])
         if args.containers:
             suffix = uuid.uuid4().hex[:12]
