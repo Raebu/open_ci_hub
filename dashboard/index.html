@@ -13,7 +13,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#autonomy">◉ <span>Background Work</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -121,6 +121,13 @@
           <h3>Queued projects</h3>
           <div id="apps-queue" class="results" aria-live="polite"></div>
           <p class="small">Register app IDs and issue separate submitter/worker API tokens locally on the host. Jobs are executed by independently deployed application workers, never by the host terminal or CI runner.</p>
+        </section>
+        <section id="autonomy">
+          <div class="section-head"><div><h2>Background missions</h2>
+            <p>Independent browser and fixed-task jobs. Your KDE session stays separate; the human has priority.</p></div>
+            <button class="btn secondary" id="autonomy-refresh" type="button">↻ Refresh</button></div>
+          <div id="autonomy-items" class="results" aria-live="polite"></div>
+          <p class="small">New missions are explicitly authorised with the local CLI. No remote command entry or automatic phone enrolment is enabled. Browser jobs run headlessly and untrusted sites are not a security sandbox.</p>
         </section>
         <section id="machines">
           <div class="section-head"><div><h2>My computers</h2>

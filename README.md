@@ -18,6 +18,15 @@ current validation, activation commands and remaining release gates.
 
 **Important:** Mobile access uses the same live PC-backed workspace. It does **not** sync to a hosted account while the PC is offline. GitHub/GitLab/CircleCI require separate permissions. CircleCI pipeline browsing/retry is not yet implemented: its runner integration is available through the installer and runner controls. Provider-hosted storage/networking and plan limits may still apply.
 
+## Human-first background autonomy (opt-in)
+
+A headless Chromium worker can process locally authorised, bounded web/data
+missions without taking focus or keyboard/mouse input from KDE. CPU/RAM limits,
+HTTPS host allowlists, evidence receipts, a low-impact daemon and a read-only
+owner dashboard are provided. This is not a general remote desktop or an
+unrestricted CI agent. See [background autonomy](docs/BACKGROUND-AUTONOMY.md)
+for installation, verified outcomes and remaining security gates.
+
 ## Optional Android edge worker
 
 A restricted, non-root Android/Termux worker for small approved compute tasks is available. It uses the private application API and will not execute arbitrary CI scripts or access personal phone data. See [Android edge worker setup and safety](docs/ANDROID-EDGE-WORKER.md); it is not yet installed or verified on a physical phone.

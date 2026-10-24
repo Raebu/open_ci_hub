@@ -10,3 +10,6 @@ __pycache__/
 .vscode/
 
 dist/
+
+# Local opt-in Playwright dependency tree; lockfile is committed.
+integrations/background-browser/node_modules/

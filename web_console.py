@@ -334,7 +334,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue', '/api/autonomy'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -398,6 +398,11 @@ class WebConsole:
                             return self.output(200, {'items': list_artifacts(param('provider'), param('repo'), param('run'))})
                         if path == '/api/health':
                             return self.output(200, system_health())
+                        if path == '/api/autonomy':
+                            if console.role(self) != 'owner':
+                                return self.output(403, {'error':'Only the owner can inspect autonomy missions.'})
+                            from autonomy_dashboard import summary
+                            return self.output(200, summary())
                         if path == '/api/activity':
                             if console.role(self) != 'owner':
                                 return self.output(403, {'error':'Only the local owner can inspect the audit trail.'})
