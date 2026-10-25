@@ -1,0 +1,41 @@
+# Opt-in template. Do not enable until the short-lived/isolated native runner
+# and the project's .open-ci-hub/ci.sh have been inspected and authorised.
+# This runner runs untrusted branch source. Never use your personal host shell.
+name: Open CI Hub — all refs on local isolated runner
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  pull_request:
+    branches: ['**']
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open-ci-hub-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test:
+    if: >-
+      github.actor == vars.OPEN_CI_TRUSTED_ACTOR &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, linux, local-ci-isolated]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact event revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Require project-specific CI recipe
+        run: |
+          test -f .open-ci-hub/ci.sh || {
+            echo "::error::Missing reviewed .open-ci-hub/ci.sh recipe; no green fallback"
+            exit 2
+          }
+      - name: Run reviewed repository CI in disposable isolation
+        run: bash .open-ci-hub/ci.sh
