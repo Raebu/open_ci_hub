@@ -1,8 +1,14 @@
 # Open CI Hub
 
+**Mandatory operating constraint:** [zero-additional-subscription, self-hosted-first policy](docs/ZERO-COST.md). Provider retries and cloud promotions are blocked where £0 exposure cannot be verified; existing hosting is preserved.
+
 An **open-source, provider-neutral, local-first CI/CD control centre** for GitHub Actions, GitLab CI/CD and CircleCI. Use the providers' native self-hosted runners to build on a computer you control instead of purchasing hosted runner minutes.
 
 **Release: v4 community preview; native onboarding is implemented in source and requires live verification.** Local Docker image builds/bootstrap and read-only provider checks have passed; real push builds across all three providers remain unverified. Do **not** treat it as a security-audited or production-certified service.
+
+Delivery and cross-chat handover: [canonical project checklist](https://github.com/Raebu/open_ci_hub/issues/48), [current verified state](docs/PROJECT-HANDOVER.md) and [reusable project continuity standard](docs/PROJECT-CONTINUITY-STANDARD.md).
+
+For the optional unattended provider watcher and local resource-aware build worker, see [streamlined autonomous CI](docs/STREAMLINED-AUTONOMOUS-CI.md).
 
 See the [engineering delivery and evidence](docs/ENGINEERING-2026-10-19.md) for
 current validation, activation commands and remaining release gates.
@@ -11,6 +17,7 @@ current validation, activation commands and remaining release gates.
 
 - Responsive dashboard with **Sign in** and **Register runner** buttons. Authorization uses the **official provider CLIs and browser**, not copy/paste API keys.
 - Native provider runner support: GitHub Actions, GitLab, CircleCI, with separate Docker Compose profiles. No host Docker socket or home-directory mount by default.
+- Draft Hub-owned CI trigger bridge: authenticated GitHub/GitLab webhooks, exact-SHA queueing, and shared resource-aware parallel admission through the existing application broker. Not yet wired into the installer/dashboard or production-verified; see [bridge implementation and release gates](docs/HUB-OWNED-CI-BRIDGE.md).
 - Browse GitHub/GitLab repositories, create private or public repositories (with confirmation), inspect recent pipelines, and explicitly retry/cancel GitHub or GitLab runs.
 - Control runners, inspect Docker/disk/CLI readiness, and view a **local SQLite management audit log**.
 - Optional **mobile access through Tailscale Serve**, using a trusted tailnet identity with an owner-approved viewer or editor role.
@@ -161,6 +168,22 @@ Open CI Hub now distinguishes native provider pipeline statuses from [runner-rep
 ## Explicitly authorised Host Terminal
 
 A separate **Terminal** tab can create an actor-scoped interactive Linux pseudo-terminal on the real host, under the regular user account. It is a new shell, **not a mirror of an existing KDE Konsole window**. It is disabled until the host owner explicitly runs the enablement command and grants each mobile editor separately. See [Host Terminal security and activation](docs/HOST-TERMINAL.md). No CI runner receives arbitrary host console privileges, and a successful PR run does not imply the host agent is deployed on the PC.
+
+## Personal WhatsApp — writing and handoff
+
+The authenticated dashboard now includes a **Personal WhatsApp** composer: edit a draft, create a tone-specific writing suggestion without erasing your work, copy the text, and open the recipient's WhatsApp conversation with the message prefilled. **Only pressing Send inside WhatsApp actually sends the message.** This is not an unofficial personal WhatsApp API and does not download or store your WhatsApp conversations or contacts. Normal ChatGPT can also prepare a personal message through the direct-PC connector and open it for final review once that connector is deployed. See [supported personal WhatsApp workflow](docs/WHATSAPP-PERSONAL.md).
+
+## Opt-in personal WhatsApp terminal (unofficial)
+
+The optional [personal WhatsApp terminal companion](integrations/whatsapp-personal/README.md) implements the user's proposed `whatsapp-web.js` / `LocalAuth` / QR integration. It can read incoming individual WhatsApp Web messages and send manual replies; opt-in automatic replies use the user's privately approved writing samples and the existing local Ollama model. Unknown contacts, groups, sensitive conversations and excessive reply volumes are excluded. **No account is paired and no automatic sending is enabled by this code.** The library is unofficial, and using it for automatic messages may lead to personal WhatsApp account restrictions. It is intentionally separate from the CI worker and deployment subsystem.
+
+## Controlled CI internet access
+
+See [CI Network](docs/CI-NETWORK.md) for owner-approved public-Web HTTPS/HTTP access in local CI while retaining Docker network isolation, private LAN denial and existing resource limits. The dashboard's CI Internet view shows effective repository policies.
+
+## Governed deployment engine (staging foundation)
+
+[Deployment engine and multi-target roadmap](docs/DEPLOYMENT-ENGINE.md) (tracked in [deployment issue #49](https://github.com/Raebu/open_ci_hub/issues/49)) covers environment-locked release promotion, signed-artifact checks, local staging health/rollback and an audit record built on the existing `release_manager.py`. The [Raeburn Talent deployment profile](docs/ATS-DEPLOYMENT-PROFILE.md) documents ATS-specific application gates without embedding them in CI core. The source includes *opt-in* Cloudflare Worker version, Vercel immutable alias and SSH/Compose staging adapters plus a credential store and read-only deployment dashboard. None are enabled without an owner-installed private policy, signed target metadata and scoped secrets. Automatic production remains disabled pending independent CI attestation, provider rollback verification, environment isolation and human-approved policy.
 
 ## Signed deployment and rollback (optional)
 

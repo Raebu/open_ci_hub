@@ -35,6 +35,9 @@ def list_pipelines(repo):
 
 def pipeline_action(repo, value, action):
     value = workflow_id(value)
+    if action == 'retry':
+        from cost_policy import deny_unverified_external_work
+        deny_unverified_external_work('CircleCI workflow retry')
     if action not in ('cancel', 'retry'):
         raise ValueError('Unsupported CircleCI operation.')
     # CLI mutations accept a global UUID, so verify it belongs to the selected
