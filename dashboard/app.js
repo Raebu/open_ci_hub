@@ -42,7 +42,58 @@ function renderDevices(data){let root=$('device-users');root.replaceChildren();i
   if(!Object.keys(approved).length)b.append(el('p','No mobile users approved.','small'));
   for(const [u,role] of Object.entries(approved)){let row=el('div',undefined,'user');row.append(el('span',`${u} (${role})`),btn('Revoke',async()=>{if(!confirm('Revoke access for '+u+'?'))return;await api('/api/mobile/revoke',{user:u});notice('Access revoked.');await refresh();}));b.append(row)}root.append(b);
 }
-async function refresh(){try{const data=await api('/api/overview');state.mode=data.mode;state.role=data.role;$('mode').textContent=data.mode==='mobile'?'Secure mobile session':'Local desktop session';show('access',false);show('workspace',true);state.ready=true;show('repositories',state.role!=='viewer');show('onboarding',state.role!=='viewer');show('signout',state.role==='owner');renderProviders(data);renderDevices(data)}catch(e){state.ready=false;show('workspace',false);show('access',true);show('signout',false);if(e.status===401&&e.data?.mobile){$('access-title').textContent='Approve this mobile device';$('access-detail').textContent=`Signed into Tailscale as ${e.data.identity}. Request permission, then approve it from the desktop dashboard.`;show('pair',true)}else{$('access-title').textContent='Open CI Hub desktop session required';$('access-detail').textContent='Launch python hub.py dashboard on your PC. It opens a private administrator link in your browser.';show('pair',false)}if(e.status!==401)notice(e.message,true)}}
+async function refresh(){
+  let data;
+  try {
+    data = await api('/api/overview');
+  } catch (error) {
+    state.ready = false;
+    show('workspace', false);
+    show('access', true);
+    show('signout', false);
+    if (error.status === 401 && error.data?.mobile) {
+      $('access-title').textContent = 'Approve this mobile device';
+      $('access-detail').textContent = 'Signed into Tailscale as ' + error.data.identity + '. Request permission, then approve it from the desktop dashboard.';
+      show('pair', true);
+      notice('', false);
+    } else if (error.status === 401 && location.hostname.endsWith('.ts.net')) {
+      $('access-title').textContent = 'Private mobile identity unavailable';
+      $('access-detail').textContent = 'Connect this device to the same Tailscale network and check that Tailscale Serve is forwarding your verified identity.';
+      show('pair', false);
+      notice('', false);
+    } else if (error.status === 401) {
+      $('access-title').textContent = 'Open CI Hub desktop session required';
+      $('access-detail').textContent = 'Launch python hub.py dashboard on your PC. It opens a private administrator link in your browser.';
+      show('pair', false);
+      notice('', false);
+    } else {
+      $('access-title').textContent = 'Unable to connect to Open CI Hub';
+      $('access-detail').textContent = 'The dashboard could not check your session. Verify the private connection and try again.';
+      show('pair', false);
+      notice(error.message, true);
+    }
+    return false;
+  }
+  try {
+    state.mode = data.mode;
+    state.role = data.role;
+    $('mode').textContent = data.mode === 'mobile' ? 'Secure mobile session' : 'Local desktop session';
+    show('access', false);
+    show('workspace', true);
+    show('repositories', data.role !== 'viewer');
+    show('onboarding', data.role !== 'viewer');
+    show('signout', data.role === 'owner');
+    renderProviders(data);
+    renderDevices(data);
+    state.ready = true;
+    notice('', false);
+    return true;
+  } catch (error) {
+    state.ready = false;
+    notice('Dashboard could not render: ' + error.message, true);
+    return false;
+  }
+}
 
 function safeLink(href,label){
   const a=el('a',label);const u=String(href||'');
