@@ -114,6 +114,9 @@ def list_pipelines(provider: str, repo: str) -> list[dict]:
 
 def pipeline_action(provider: str, repo: str, run_id, action: str) -> None:
     repo = safe_repo(repo)
+    if action == 'retry':
+        from cost_policy import deny_unverified_external_work
+        deny_unverified_external_work('provider pipeline retry')
     if provider == 'circleci':
         from providers.circleci_cockpit import pipeline_action as circle_action
         return circle_action(repo, run_id, action)

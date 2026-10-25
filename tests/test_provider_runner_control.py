@@ -69,7 +69,7 @@ class ProviderGuardTests(unittest.TestCase):
 
     def test_failure_reports_only_invalid_fields(self):
         with patch('provider_runner_control.docker',
-                   side_effect=self.docker(cfg=self.cfg())):
+                   side_effect=self.docker(provider='gitlab',cfg=self.cfg())):
             self.assertTrue(p.inspect('gitlab')['bounded'])
 
     def test_requires_exact_compose_labels(self):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a pre-approved app handler inside a systemd RAM-limited user scope.
+"""Run a pre-approved app handler inside a systemd RAM-limited transient user service.
 
 Host owner installs handlers. API payload is JSON passed to stdin; no shell.
 Linux cgroups v2 enforce MemoryMax/MemorySwapMax when systemd permits scope
@@ -64,8 +64,11 @@ def build_command(job,handler):
     # The same MemoryMax applies to CPU and Intel GPU shared-RAM work.
     unit='open-ci-app-'+job['job_id']
     if not re.fullmatch(r'open-ci-app-[a-f0-9]{32}',unit):
-        raise RuntimeError('Invalid unique worker scope.')
-    args=['/usr/bin/systemd-run','--user','--scope','--quiet',
+        raise RuntimeError('Invalid unique worker unit.')
+    # On systemd 257+, --scope and --pipe are mutually incompatible.
+    # A --wait transient user service preserves stdin/stdout piping,
+    # propagates the exact handler exit status and retains cgroup limits.
+    args=['/usr/bin/systemd-run','--user','--wait','--quiet',
           '--collect','--pipe','--unit='+unit,
           '-p','MemoryMax='+str(ram)+'M',
           '-p','MemorySwapMax=0',
@@ -74,10 +77,10 @@ def build_command(job,handler):
           '-p','CPUWeight=50',
           '-p','TasksMax=128',
           '--',*handler['argv']]
-    return unit+'.scope',args
+    return unit+'.service',args
 
 def stop_scope(unit,process):
-    """Terminate entire scope, not only the systemd-run wrapper process."""
+    """Terminate entire transient service, not only the systemd-run wrapper."""
     try:
         subprocess.run(['/usr/bin/systemctl','--user','--no-ask-password',
                         'stop',unit],stdin=subprocess.DEVNULL,
@@ -92,7 +95,7 @@ def stop_scope(unit,process):
 
 def scope_confirmed_inactive(unit):
     """A wrapper exiting is not evidence every systemd scope child has exited."""
-    if not re.fullmatch(r'open-ci-app-[a-f0-9]{32}\.scope',unit):
+    if not re.fullmatch(r'open-ci-app-[a-f0-9]{32}\.service',unit):
         return False
     try:
         r=subprocess.run(['/usr/bin/systemctl','--user','--no-ask-password',
@@ -178,7 +181,7 @@ def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
                                  stderr=subprocess.STDOUT,env=env,cwd=str(Path.home()),
                                  start_new_session=True)
     except OSError:
-        return client.complete(jid,token,False,{'error':'systemd user scope unavailable.'})
+        return client.complete(jid,token,False,{'error':'systemd user service unavailable.'})
     supervisor=threading.Thread(target=watch,daemon=True)
     supervisor.start()
     try:
@@ -193,7 +196,7 @@ def run_one(client,claim,handlers,*,telemetry=gpu_memory_inventory,
         # Never acknowledge and release a lease after a kill unless the
         # systemd scope really ended. It remains reserved/stranded otherwise.
         if not scope_confirmed_inactive(unit):
-            return {'status':'stranded','reason':'scope_termination_unverified'}
+            return {'status':'stranded','reason':'service_termination_unverified'}
         return client.complete(jid,token,False,{'error':(failure[0] if failure else reason)})
     if process.returncode:
         return client.complete(jid,token,False,{'error':'Approved application handler returned nonzero.'})

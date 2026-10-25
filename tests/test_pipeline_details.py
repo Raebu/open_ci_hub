@@ -52,7 +52,7 @@ class DetailTests(unittest.TestCase):
     def test_circleci_rejects_workflow_outside_selected_project(self):
         with patch.object(circle, 'workflows', return_value=[]), patch.object(circle, 'invoke') as mutation:
             with self.assertRaises(ValueError):
-                circle.pipeline_action('a/b', WID, 'retry')
+                circle.pipeline_action('a/b', WID, 'cancel')
             mutation.assert_not_called()
 
     def test_circleci_uuid_and_confirmed_mutation(self):

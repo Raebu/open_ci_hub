@@ -1,0 +1,50 @@
+{
+  "id": "background-demo",
+  "hosts": [
+    "example.com"
+  ],
+  "limits": {
+    "max_cost_usd": 0,
+    "max_seconds": 35,
+    "allow_browser_interaction": false
+  },
+  "steps": [
+    {
+      "id": "digest-demo",
+      "kind": "digest",
+      "needs": [],
+      "input": {
+        "text": "Open CI Hub background work"
+      }
+    },
+    {
+      "id": "inspect-demo",
+      "kind": "inspect",
+      "needs": [
+        "digest-demo"
+      ],
+      "input": {
+        "text": "{\"background\":true,\"owner\":\"Raeburn\"}"
+      }
+    },
+    {
+      "id": "browse-demo",
+      "kind": "browse",
+      "needs": [
+        "inspect-demo"
+      ],
+      "input": {
+        "url": "https://example.com/",
+        "actions": [
+          {
+            "type": "extract",
+            "selector": "body"
+          },
+          {
+            "type": "screenshot"
+          }
+        ]
+      }
+    }
+  ]
+}
