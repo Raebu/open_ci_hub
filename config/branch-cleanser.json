@@ -1,0 +1,7 @@
+{
+  "schema": "open-ci-hub.branch-cleanser.v1",
+  "repository": "Raebu/open_ci_hub",
+  "base": "main",
+  "min_age_hours": 72,
+  "protected": []
+}
