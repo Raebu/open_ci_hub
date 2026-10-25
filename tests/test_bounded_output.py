@@ -69,14 +69,14 @@ class BoundedPipeTests(unittest.TestCase):
         with patch('managed_worker.subprocess.run') as stub:
             stub.return_value.returncode=1
             stub.return_value.stdout=''
-            self.assertFalse(worker.scope_confirmed_inactive('open-ci-app-'+'c'*32+'.scope'))
-        self.assertFalse(worker.scope_confirmed_inactive('any-shell.scope'))
+            self.assertFalse(worker.scope_confirmed_inactive('open-ci-app-'+'c'*32+'.service'))
+        self.assertFalse(worker.scope_confirmed_inactive('any-shell.service'))
 
     def test_verified_inactive_scope_is_safe_to_reconcile(self):
         completed=subprocess.CompletedProcess([],0,
              'ActiveState=inactive\nControlGroup=\nLoadState=loaded\n','')
         with patch('managed_worker.subprocess.run',return_value=completed):
-            self.assertTrue(worker.scope_confirmed_inactive('open-ci-app-'+'c'*32+'.scope'))
+            self.assertTrue(worker.scope_confirmed_inactive('open-ci-app-'+'c'*32+'.service'))
 
 if __name__=='__main__':
     unittest.main()

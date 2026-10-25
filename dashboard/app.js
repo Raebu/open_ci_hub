@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {mode:'desktop', ready:false, pipelineBusy:false, pipelineSelected:false, statuses:new Map()};
+const state = {mode:'desktop', ready:false, pipelineBusy:false, pipelineSelected:false, statuses:new Map(), failureCache:new Map(), failurePromises:new Map()};
 const show = (id,on) => $(id).classList.toggle('hidden',!on);
 function notice(msg,error=false){const x=$('notice');x.textContent=msg;x.classList.toggle('error',error);show('notice',!!msg)}
 async function api(path, body){
@@ -66,6 +66,72 @@ async function browseRepositories(){
     }
   }catch(e){root.replaceChildren();notice(e.message,true)}
 }
+async function explainCiWorkflow(){
+  const provider=$('pipeline-provider').value, repo=$('pipeline-repo').value.trim();
+  const root=$('ci-workflow-report');
+  root.replaceChildren(el('p','Checking workflow policy…'));
+  if(provider!=='github'){
+    root.replaceChildren(el('p','This workflow-file allowlist applies to the GitHub personal runner pool. GitLab failure reasons are shown under failed native jobs.'));
+    return;
+  }
+  try{
+    const report=await api('/api/ci/workflow?provider=github&repo='+encodeURIComponent(repo));
+    root.replaceChildren(el('strong',report.verified?'GitHub workflow is eligible':'Workflow rejected — '+report.code),
+                         el('p',report.message),el('p','Next: '+report.suggestion,'small'));
+    for(const issue of report.issues||[]){
+      const line=el('article',undefined,'result-row');
+      line.append(el('strong',issue.workflow+' — '+issue.code),
+                  el('p',issue.reason),el('p','Fix: '+issue.next_step,'small'));
+      root.append(line);
+    }
+  }catch(e){root.replaceChildren(el('p','Workflow diagnostics unavailable: '+e.message));}
+}
+async function showFailurePreview(provider,repo,run,root){
+  const key=provider+':'+repo+':'+run;
+  let cached=state.failureCache.get(key);
+  if(!cached || Date.now()-cached.at>120000){
+    let inFlight=state.failurePromises.get(key);
+    if(!inFlight){
+      inFlight=api('/api/ci/failure?provider='+encodeURIComponent(provider)+
+        '&repo='+encodeURIComponent(repo)+'&run='+encodeURIComponent(run)+'&logs=1');
+      state.failurePromises.set(key,inFlight);
+      inFlight.finally(()=>state.failurePromises.delete(key)).catch(()=>{});
+    }
+    try{
+      const data=await inFlight;
+      cached={at:Date.now(),data};
+      state.failureCache.set(key,cached);
+    }catch(e){
+      if(root.isConnected)root.replaceChildren(el('p','Failure details unavailable: '+e.message,'small'));
+      return;
+    }
+  }
+  if(!root.isConnected)return;
+  const data=cached.data;
+  root.replaceChildren(el('p',data.message,'small'));
+  if(data.commit)root.append(el('p','Commit: '+data.commit+' · Attempt: '+(data.attempt||'?'),'small'));
+  if(data.run_url)root.append(safeLink(data.run_url,'Open original workflow run'));
+  for(const job of data.failures||[]){
+    const line=el('div',undefined,'result-row');
+    line.append(el('strong',job.job+' · '+job.state),
+                el('p',job.reason,'small'),
+                el('p','Runner: '+(job.runner_assigned?job.runner:'NOT ASSIGNED')+
+                  ' · Job #'+job.job_id+
+                  (job.exit_code_from_log!==null&&job.exit_code_from_log!==undefined
+                    ?' · Observed exit code: '+job.exit_code_from_log:''),
+                  'small'));
+    if(job.log_state==='available'){
+      line.append(el('p',job.excerpt_kind==='error_context'
+        ?'Actual failing log lines (redacted):':'End of job log (no error marker found):','small'),
+        el('pre',job.log_excerpt||'No log text returned.','job-log'),
+        el('p','Selected excerpt only; full provider log and artifacts retain more details.','small'));
+    }else{
+      line.append(el('p','Exact error text unavailable: '+(job.log_note||'Provider did not return a transcript.'),'small'));
+    }
+    if(job.url)line.append(safeLink(job.url,'Open original job and logs'));
+    root.append(line);
+  }
+}
 async function browsePipelines(){
   if(state.pipelineBusy)return;state.pipelineBusy=true;state.pipelineSelected=true;
   const provider=$('pipeline-provider').value,repo=$('pipeline-repo').value.trim(),root=$('pipeline-items');
@@ -73,10 +139,23 @@ async function browsePipelines(){
   try{
     const data=await api(`/api/pipelines?provider=${encodeURIComponent(provider)}&repo=${encodeURIComponent(repo)}`);
     root.replaceChildren();if(!data.items.length){root.append(el('p','No pipeline runs returned.'));return;}
+    let failurePreviews=0;
     for(const x of data.items){const row=el('article',undefined,'result-row'),left=el('div'),actions=el('div',undefined,'controls');
       const name=el('strong',x.title||'Pipeline');
       left.append(name,el('p',`#${x.id} · ${x.status} · ${x.branch||'unknown branch'} · ${x.created||''}`));
       if(x.url)left.append(safeLink(x.url,'Open in provider'));
+      if(['failure','failed','timed_out'].includes(String(x.status).toLowerCase()) &&
+         provider!=='circleci'){
+        const details=el('div',undefined,'ci-failure-summary');
+        if(failurePreviews<3){
+          failurePreviews++;
+          details.append(el('p','Checking provider job failure reasons…','small'));
+          void showFailurePreview(provider,repo,x.id,details);
+        }else{
+          details.append(el('p','Failed — choose Jobs, logs & artifacts to inspect.','small'));
+        }
+        left.append(details);
+      }
       if(state.role!=='viewer')for(const action of ['retry','cancel'])actions.append(btn(action==='retry'?'Retry':'Cancel',async()=>{
         if(!confirm(`Are you sure you want to ${action} pipeline #${x.id} for ${repo}?`))return;
         const out=await api('/api/pipeline',{provider,repo,id:x.id,action,confirm:true});notice(out.message);
@@ -96,6 +175,9 @@ async function showJobDetails(provider,repo,run){
   const root=$('job-details');root.replaceChildren(el('h3',`Pipeline #${run}: native jobs`));
   root.append(btn('Close job details',async()=>root.replaceChildren()));
   const query=`provider=${encodeURIComponent(provider)}&repo=${encodeURIComponent(repo)}&run=${encodeURIComponent(run)}`;
+  const failureRoot=el('div',undefined,'ci-failure-report');
+  root.append(failureRoot);
+  await showFailurePreview(provider,repo,run,failureRoot);
   try{
     const proof=await api('/api/execution-evidence?'+query);
     const label=proof.verification==='runner-reported'?'Receipt available — not independently attested':'Execution unproven';
@@ -397,6 +479,52 @@ async function appControl(action){
   await loadApps();
 }
 
+async function loadInternet(){
+  const root=$('internet-items');root.replaceChildren(el('p','Loading network access policies…','small'));
+  try{
+    const result=await api('/api/ci/network');
+    root.replaceChildren();
+    if(!result.projects.length)root.append(el('p','No approved CI repository profiles configured.','small'));
+    for(const project of result.projects){
+      const item=el('article',undefined,'result-row');
+      const details=el('div');
+      details.append(el('strong',project.repo));
+      details.append(el('p','Network: '+(project.mode==='full'?'Full public web (controlled)':'Offline')+
+        ' · '+(project.trusted?'Trusted opt-in':'Default isolation')+
+        ' · provider '+project.provider,'small'));
+      details.append(el('p','Approved branches: '+project.branches.join(', '),'small'));
+      item.append(details);root.append(item);
+    }
+    root.append(el('p',result.note||'Network policy is private and owner-controlled.','small'));
+  }catch(err){root.replaceChildren(el('p',err.message,'small'));}
+}
+async function loadDeployments(){
+  const root=$('deployments-items');root.replaceChildren(el('p','Loading verified release records…','small'));
+  try{
+    const result=await api('/api/deployments');
+    root.replaceChildren();
+    if(!result.targets.length){
+      root.append(el('p','No deployment targets activated. Configure a reviewed private target policy before enabling staging.','small'));
+    }
+    for(const target of result.targets){
+      const card=el('article',undefined,'result-row'), body=el('div');
+      body.append(el('strong',target.target+' · '+target.environment));
+      body.append(el('p','Adapter: '+target.adapter+' · '+(target.enabled?'Approved':'Disabled')+
+        ' · '+target.last_status,'small'));
+      if(target.current_commit)body.append(el('p','Commit '+target.current_commit.slice(0,12)+
+        ' · release '+(target.current_digest||'').slice(0,12),'small'));
+      if(target.previous_release)body.append(el('p','Previous release '+target.previous_release.slice(0,12),'small'));
+      if(target.recent_failure)body.append(el('p','Last failure '+target.recent_failure,'small'));
+      const hist=el('details');hist.append(el('summary','Release history ('+target.recent_history.length+')'));
+      const history=el('div',undefined,'results');
+      for(const item of [...target.recent_history].reverse()){
+        history.append(el('p',item.when+' · '+item.phase+' · '+item.sha.slice(0,12),'small'));
+      }
+      hist.append(history);body.append(hist);card.append(body);root.append(card);
+    }
+    root.append(el('p',result.note||'Status is based on local evidence, not a live provider health check.','small'));
+  }catch(err){root.replaceChildren(el('p',err.message,'small'));}
+}
 async function loadMachines(){
   const root=$('machine-items');root.replaceChildren(el('p','Loading trusted PCs…'));
   try{
@@ -451,15 +579,47 @@ async function previewOnboarding(){
     },'primary'));
   }catch(err){root.replaceChildren();notice(err.message,true)}
 }
+
+async function loadAutonomy(){
+  const root=$('autonomy-items');root.replaceChildren();
+  if(state.role!=='owner'&&state.role!=='editor'){root.append(el('p','Background mission details require management permission.'));return;}
+  try{
+    const data=await api('/api/autonomy');
+    const head=el('div',undefined,'result-row');
+    head.append(el('strong','Foreground-first policy: '+(data.admission?.eligible?'Ready':'Throttled')),
+      el('span',String(data.admission?.reason||'Unknown')+' · '+String(data.admission?.memory_available_mb??'?')+' MB available','small'));
+    root.append(head);
+    if(!data.configured){root.append(el('p','No background missions enrolled on this PC.','small'));return;}
+    if(!data.missions?.length){root.append(el('p','No missions submitted.','small'));return;}
+    for(const mission of data.missions){
+      const row=el('div',undefined,'result-row');
+      row.append(el('strong',mission.id),el('span',mission.status,'small'));
+      const actions=el('div',undefined,'controls');
+      for(const operation of (mission.status==='paused'?['resume','cancel']:
+        mission.status==='queued'?['pause','cancel']:[])){
+        actions.append(btn(operation==='resume'?'Resume':operation==='pause'?'Pause':'Cancel',
+          async()=>{
+            if(!confirm(operation+' mission '+mission.id+'? Running work will not be interrupted.'))return;
+            await api('/api/autonomy/control',{mission:mission.id,action:operation,confirm:true});
+            await loadAutonomy();
+          }));
+      }
+      row.append(actions);
+      root.append(row);
+    }
+  }catch(error){root.replaceChildren(el('p','Background status unavailable: '+error.message));}
+}
+
 async function init(){
   let secret=null;if(location.hash.startsWith('#access=')){secret=decodeURIComponent(location.hash.slice(8));history.replaceState(null,'',location.pathname+location.search);}
   if(secret){try{await api('/api/session',{secret});}catch(e){notice(e.message,true)}}
   $('signout').addEventListener('click',async()=>{
-    try{await api('/api/logout',{});notice('Signed out of this desktop session.');await refresh();}
+    try{await api('/api/logout',{});document.dispatchEvent(new Event('open-ci-logout'));notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();});
   $('apps-refresh').addEventListener('click',loadApps);
+  $('autonomy-refresh').addEventListener('click',loadAutonomy);
   $('apps-pause').addEventListener('click',()=>appControl('pause').catch(e=>notice(e.message,true)));
   $('apps-resume').addEventListener('click',()=>appControl('resume').catch(e=>notice(e.message,true)));
   $('apps-emergency').addEventListener('click',()=>appControl('emergency_stop').catch(e=>notice(e.message,true)));
@@ -468,6 +628,8 @@ async function init(){
     $('apps-mode-apply').disabled=state.mode==='mobile'&&$('apps-mode').value==='performance';
   });
   $('machines-refresh').addEventListener('click',loadMachines);
+  $('deployments-refresh').addEventListener('click',loadDeployments);
+  $('internet-refresh').addEventListener('click',loadInternet);
   $('machine-enroll').addEventListener('submit',async e=>{
     e.preventDefault();
     const name=$('machine-name').value.trim(),host=$('machine-host').value.trim().toLowerCase();
@@ -485,6 +647,7 @@ async function init(){
   terminalControls();
   $('host-action').addEventListener('change',hostTargets);
   $('host-form').addEventListener('submit',async e=>{e.preventDefault();const button=$('host-prepare');button.disabled=true;try{await requestHostAction();}catch(err){notice(err.message,true)}finally{hostTargets();}});
+  $('ci-explain').addEventListener('click',explainCiWorkflow);
   $('browse-repos').addEventListener('click',browseRepositories);
   $('onboard-provider').addEventListener('change',configureOnboarding);
   $('onboard-form').addEventListener('submit',async e=>{e.preventDefault();await previewOnboarding();});
@@ -498,8 +661,39 @@ async function init(){
   });
   configureOnboarding();
   await refresh();
-  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();
+  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();
     show('machine-enroll',state.role==='owner'&&state.mode==='desktop');}
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }
 document.addEventListener('DOMContentLoaded',init);
+
+async function loadLocalCI(){
+  const root=document.getElementById('local-ci-items');
+  if(!root)return;
+  root.replaceChildren(el('p','Loading local job ledger…'));
+  try{
+    const result=await api('/api/ci/local');root.replaceChildren();
+    root.append(el('p','Available RAM: '+result.resources.memory_available_mb+' MiB · Reserved desktop headroom: '+result.resources.capacity.min_free_ram_mb+' MiB','small'));
+    for(const job of result.items){
+      const item=el('div',undefined,'result-item');
+      item.append(el('strong',job.repo+' · '+job.status));
+      item.append(el('p',job.sha.slice(0,12)+' · '+job.branch+' · '+job.job_id,'small'));
+      if(job.detail)item.append(el('p',job.detail,'small'));
+      const inspect=el('button','View logs and evidence','btn secondary');
+      inspect.type='button';inspect.onclick=async()=>{
+        try{const record=await api('/api/ci/local/job?job='+encodeURIComponent(job.job_id));
+          document.getElementById('local-ci-evidence').textContent=JSON.stringify(record.receipt||{status:record.scheduler_status},null,2)+'\n\n'+record.log;
+        }catch(err){document.getElementById('local-ci-evidence').textContent=err.message;}
+      };item.append(inspect);
+      if(['queued','running','stranded'].includes(job.status)){
+        const cancel=el('button','Cancel job','btn secondary');cancel.type='button';
+        cancel.onclick=async()=>{if(!confirm('Cancel this local CI job?'))return;
+          try{await api('/api/ci/local/cancel',{job_id:job.job_id,confirm:true});await loadLocalCI();}
+          catch(err){document.getElementById('local-ci-evidence').textContent=err.message;}
+        };item.append(cancel);
+      }root.append(item);
+    }
+    if(!result.items.length)root.append(el('p','No local CI jobs recorded.'));
+  }catch(err){root.replaceChildren(el('p',err.message));}
+}
+document.getElementById('local-ci-refresh')?.addEventListener('click',loadLocalCI);

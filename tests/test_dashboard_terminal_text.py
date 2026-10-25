@@ -19,7 +19,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const script = fs.readFileSync('dashboard/app.js', 'utf8');
-const context = {document: {addEventListener() {}}, TextDecoder};
+const context = {document: {addEventListener() {}, getElementById() { return null; }}, TextDecoder};
 vm.createContext(context);
 vm.runInContext(script, context);
 const filter = vm.runInContext('terminalTextFilter', context);

@@ -47,12 +47,73 @@ class NativeObserverTests(unittest.TestCase):
         inspected='\n'.join('/'+x+' 2147483648 1500000000' for x in names.splitlines()[:4])
         with patch('native_runner_observer.shutil.which',return_value='/usr/bin/docker'),\
              patch('native_runner_observer.subprocess.run',side_effect=[
-                 self.respond(names),self.respond(inspected)]) as runner:
+                 self.respond(names),self.respond(inspected),
+                 self.respond('PID COMMAND COMMAND\n100 unexpected /worker'),
+                 self.respond('PID COMMAND COMMAND\n101 unexpected /worker'),
+                 self.respond('')]) as runner:
             result=ci.runner_reservations()
         self.assertEqual(result['active_runners'],4)
         self.assertEqual(result['reserved_ram_mb'],8192)
         self.assertEqual(result['reserved_cpus'],6.0)
-        self.assertEqual(runner.call_count,2)
+        self.assertEqual(runner.call_count,5)
+    def test_verified_idle_controllers_do_not_reserve_unused_memory(self):
+        names='open-ci-github-runner\nopen-ci-gitlab-runner\n'
+        info='/open-ci-github-runner 2147483648 0\n/open-ci-gitlab-runner 2147483648 0'
+        idle_gh='PID COMMAND COMMAND\n1 run.sh /bin/bash\n2 run-helper.sh /bin/bash\n3 Runner.Listener /home/runner/bin/Runner.Listener run'
+        idle_gl='PID COMMAND COMMAND\n4 dumb-init /entrypoint\n5 gitlab-runner gitlab-runner run'
+        with patch('native_runner_observer.shutil.which', return_value='/usr/bin/docker'), \
+             patch('native_runner_observer.subprocess.run', side_effect=[
+                 self.respond(names), self.respond(info),
+                 self.respond(idle_gh), self.respond(idle_gl), self.respond('')]):
+            result=ci.runner_reservations()
+        self.assertEqual(result['reserved_ram_mb'],0)
+        self.assertEqual(result['active_runners'],0)
+
+    def test_runner_process_or_telemetry_error_keeps_full_reservation(self):
+        names='open-ci-github-runner\n'
+        info='/open-ci-github-runner 2147483648 0'
+        for top in (
+            self.respond('PID COMMAND COMMAND\n1 Runner.Listener run\n2 Runner.Worker build'),
+            self.respond('PID COMMAND COMMAND\n1 unfamiliar /child'),
+            self.respond('',1),
+        ):
+            with self.subTest(output=top.stdout):
+                with patch('native_runner_observer.shutil.which',return_value='/usr/bin/docker'), \
+                     patch('native_runner_observer.subprocess.run',side_effect=[
+                         self.respond(names), self.respond(info), top, self.respond('')]):
+                    result=ci.runner_reservations()
+                self.assertEqual(result['reserved_ram_mb'],2048)
+
+    def test_gitlab_job_container_prevents_idle_discount(self):
+        names='open-ci-gitlab-runner\nrunner-abc123-project\n'
+        info='/open-ci-gitlab-runner 2147483648 0'
+        idle_gl='PID COMMAND COMMAND\n4 dumb-init /entrypoint\n5 gitlab-runner gitlab-runner run'
+        with patch('native_runner_observer.shutil.which',return_value='/usr/bin/docker'), \
+             patch('native_runner_observer.subprocess.run',side_effect=[
+                 self.respond(names), self.respond(info), self.respond('')]):
+            result=ci.runner_reservations()
+        self.assertEqual(result['reserved_ram_mb'],2048)
+
+    def test_reserves_headroom_for_native_actions_and_act_jobs(self):
+        processes='Runner.Listener /usr/bin/Runner.Listener listen\nRunner.Worker /opt/runner/bin/Runner.Worker spawnclient\nact /home/user/bin/act pull_request\nbash bash -c Runner.Worker example\n'
+        with patch('native_runner_observer.shutil.which',return_value='/usr/bin/ps'),\
+             patch('native_runner_observer.subprocess.run',side_effect=[
+                 self.respond(''),self.respond(processes)]):
+            result=ci.runner_reservations()
+        self.assertEqual(result['reserved_ram_mb'],10240)
+        self.assertEqual(result['active_runners'],2)
+        self.assertEqual(result['reserved_cpus'],3.5)
+
+    def test_host_process_enumeration_unavailable_fails_closed(self):
+        with patch('native_runner_observer.shutil.which',return_value='/usr/bin/ps'),\
+             patch('native_runner_observer.subprocess.run',side_effect=[
+                 self.respond(''),self.respond('',1)]):
+            self.assertIsNone(ci.runner_reservations())
+    def test_host_process_enumeration_does_not_count_command_text_as_job(self):
+        with patch('native_runner_observer.shutil.which',return_value='/usr/bin/ps'),\
+             patch('native_runner_observer.subprocess.run',side_effect=[
+                 self.respond(''),self.respond('bash bash -c Runner.Worker spawnclient\nRunner.Listener idle\n')]):
+            self.assertEqual(ci.runner_reservations()['reserved_ram_mb'],0)
     def test_unbounded_runner_or_docker_failure_fail_closed(self):
         with patch('native_runner_observer.shutil.which',return_value='/usr/bin/docker'),\
              patch('native_runner_observer.subprocess.run',side_effect=[

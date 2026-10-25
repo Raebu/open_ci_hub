@@ -51,6 +51,27 @@ class ProviderGuardTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,'resource/security caps'):
                     p.inspect('github')
 
+    def test_real_host_legacy_caps_are_reported_without_leaking_config(self):
+        config=self.cfg()
+        config.update({'MemorySwap':4*1024**3,'NanoCpus':0,
+                       'RestartPolicy':{'Name':'unless-stopped'},
+                       'Binds':['/private/example:/secret'],
+                       'Env':['PRIVATE_TOKEN=do-not-disclose']})
+        with patch('provider_runner_control.docker',
+                   side_effect=self.docker(cfg=config)):
+            with self.assertRaises(RuntimeError) as raised:
+                p.inspect('github')
+        message=str(raised.exception)
+        for field in ('swap_limit','cpu_quota','restart_policy'):
+            self.assertIn(field,message)
+        self.assertNotIn('do-not-disclose',message)
+        self.assertNotIn('/private/example',message)
+
+    def test_failure_reports_only_invalid_fields(self):
+        with patch('provider_runner_control.docker',
+                   side_effect=self.docker(provider='gitlab',cfg=self.cfg())):
+            self.assertTrue(p.inspect('gitlab')['bounded'])
+
     def test_requires_exact_compose_labels(self):
         with patch('provider_runner_control.docker',
             side_effect=self.docker(labels={'com.docker.compose.project':'other',
