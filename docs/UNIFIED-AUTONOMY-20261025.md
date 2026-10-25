@@ -6,7 +6,7 @@ Ed25519 mission receipts, and a private Xvfb display controller. It preserves
 the active native CI services and never moves the user's KDE mouse.
 
 **Not all ten ambitions are production-validated.** Physical device enrolment,
-the official Xvfb package, real free-cloud billing connections, and external
+live graphical task orchestration, real free-cloud billing connections and external
 security attestation remain separate release gates. A branch merge is not
 proof that a physical device has run any jobs.
 
@@ -100,11 +100,12 @@ never imaginary online flags.
 
 The private virtual desktop controller uses Xvfb display :91 with a private
 Xauthority cookie and a bounded user systemd service. It is independent
-of KDE. The official package is not installed: the host's pkexec command
-failed because it lacks working setuid root. Do not bypass that security
-policy. The desktop owner may install the official package in Konsole:
+of KDE. The system-wide installer was blocked by pkexec, so the verified
+official signed Arch package was installed in a private, hash-pinned owner
+directory without root. A separate 1280x720 authenticated display was
+successfully started and verified with xdpyinfo (see
+docs/XVFB-PRIVATE-DESKTOP.md). Controller commands:
 
-    sudo pacman -S --needed xorg-server-xvfb
     python3 virtual_desktop.py check
     python3 virtual_desktop.py start --confirm
     python3 virtual_desktop.py stop --confirm
@@ -152,7 +153,7 @@ deliberate fail-closed boundary, NOT a claim of guaranteed £0 cloud operation.
 ## Ten-feature release status
 
 1. Background browser — actual Garuda HTTPS navigation and screenshots verified.
-2. Separate GUI — private Xvfb control source and tests complete; package and live GUI pending.
+2. Separate GUI — signed user Xvfb installed, authenticated 1280x720 display verified; general GUI task orchestration pending.
 3. Human priority — local cgroups, admission and remote 2-minute capacity checks; 30-minute foreground stress test pending.
 4. API/browser/vision — local screenshot-to-Ollama binding implemented; live vision under spare RAM pending.
 5. Multi-device fleet — scoped Windows/Linux/Android job dispatch implemented; physical Samsung/S25 receipts and cloud accounts pending.

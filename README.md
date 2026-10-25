@@ -40,7 +40,8 @@ readiness in the mobile dashboard, local Ollama screenshot observation,
 a bounded language-plan composer, private Xvfb lifecycle, and Ed25519
 owner evidence manifests. These do **not** authorise arbitrary remote shell,
 live paid cloud VMs or production release automation. Actual phone/Windows
-enrolment, Xvfb installation and independent security tests remain required.
+enrolment and independent security tests remain required. The signed
+private [Xvfb display](docs/XVFB-PRIVATE-DESKTOP.md) has now been tested.
 
 ## Branch hygiene and automatic cleanup (opt-in)
 

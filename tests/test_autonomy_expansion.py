@@ -7,7 +7,7 @@ from unittest.mock import patch
 from autonomy_core import Journal,PolicyError
 from autonomy_attestation import make_key,manifest_from_journal,sign_manifest,verify_receipt
 from autonomy_planner import compose
-from virtual_desktop import xauthority,start
+from virtual_desktop import create_authority,selected_binary,start
 
 class SignedReceiptTests(unittest.TestCase):
     def test_end_to_end_signature(self):
@@ -58,10 +58,18 @@ class PlanningTests(unittest.TestCase):
 
 class VirtualDisplayTests(unittest.TestCase):
     def test_separate_screen_and_owner_guard(self):
-        from struct import unpack
-        auth=xauthority(":91",bytes(range(16)))
-        self.assertEqual(unpack(">H",auth[:2])[0],256)
-        self.assertIn(b"MIT-MAGIC-COOKIE-1",auth)
+        import tempfile
+        import subprocess
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/"Xauthority"
+            create_authority(path,":91",bytes(range(16)))
+            self.assertEqual(path.stat().st_mode & 0o077,0)
+            listing=subprocess.run(["/usr/bin/xauth","-f",str(path),"list"],
+                                   capture_output=True,text=True,timeout=5)
+            self.assertEqual(listing.returncode,0)
+            self.assertIn("MIT-MAGIC-COOKIE-1",listing.stdout)
+            with self.assertRaises(ValueError):
+                create_authority(path,":91",bytes(range(16)))
         with self.assertRaises(PermissionError):
             start()
         with patch("virtual_desktop.admit_local",return_value=(False,"interactive_cpu_pressure")):
