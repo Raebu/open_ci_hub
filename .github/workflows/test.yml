@@ -1,11 +1,11 @@
-# Development test harness for local act only. Automatic CI is owned by Open CI Hub.
-# GitHub Actions may run only an inert trigger job. The authenticated direct webhook
-# is the automatic CI entry point; local act alone may execute substantive tests.
+# Development test harness for local act only. Automatic CI is owned by the local execution service.
+# GitHub Actions push/PR runs must remain inert; substantive steps run only when ACT=true.
 name: Open CI Hub local act test harness
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: ['**']
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -20,16 +20,27 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Explain why this run is inert on GitHub Actions
-        if: ${{ env.ACT != 'true' }}
-        run: echo "No CI executed by GitHub Actions. Use the Open CI Hub local execution bridge; ACT=true is reserved for local act."
+      - id: execution-mode
+        name: Gate substantive tests to local act only
+        shell: bash
+        run: |
+          if [ "${ACT:-}" = "true" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "Local act detected; substantive tests are enabled."
+          elif [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "GitHub Actions is an inert trigger/harness run; Open CI Hub owns execution."
+          else
+            echo "Cannot establish a trusted local act execution context; refusing to skip tests silently." >&2
+            exit 2
+          fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        if: ${{ env.ACT == 'true' }}
+        if: ${{ steps.execution-mode.outputs.run_tests == 'true' }}
       - name: Record full Python test execution locally
-        if: ${{ env.ACT == 'true' }}
+        if: ${{ steps.execution-mode.outputs.run_tests == 'true' }}
         run: python3 execution_evidence.py run --name python-unittest --output .local/ci-proof/receipt.json --timeout 540 -- python3 -m unittest discover -s tests -v
       - name: Show sanitised failure details
-        if: ${{ always() && env.ACT == 'true' && failure() }}
+        if: ${{ always() && steps.execution-mode.outputs.run_tests == 'true' && failure() }}
         run: |
           if test -f .local/ci-proof/python-unittest.log; then
             tail -n 160 .local/ci-proof/python-unittest.log
@@ -37,10 +48,10 @@ jobs:
             echo 'No unittest transcript was produced'
           fi
       - name: Verify receipt matches actual execution transcript
-        if: ${{ always() && env.ACT == 'true' }}
+        if: ${{ always() && steps.execution-mode.outputs.run_tests == 'true' }}
         run: python3 execution_evidence.py verify .local/ci-proof/receipt.json
       - name: Upload self-hosted execution proof (not independent attestation)
-        if: ${{ always() && env.ACT == 'true' }}
+        if: ${{ always() && steps.execution-mode.outputs.run_tests == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: open-ci-hub-execution-proof
