@@ -285,9 +285,51 @@ async function requestHostAction(){
   }catch(err){results.replaceChildren(el('p',err.message));notice(err.message,true);}
 }
 
+// The mobile UI is a bounded text transcript, not an xterm emulator.
+// Fish/bash prompts and colourised tools send ANSI CSI/OSC sequences. Strip
+// them across poll boundaries so escape fragments never appear as literal text.
+class TerminalTextFilter {
+  constructor(){this.reset();}
+  reset(){this.mode='text';this.previous='';this.sequenceLength=0;}
+  push(chunk){
+    let out='';
+    for(const ch of chunk){
+      const code=ch.charCodeAt(0);
+      if(this.mode==='text'){
+        if(code===27){this.mode='escape';this.sequenceLength=0;}
+        else if(code===10||code===9||code>=32){if(code!==127&&!(code>=128&&code<=159))out+=ch;}
+        // Ignore BEL, CR, backspace and other nonprintable controls. This
+        // plain-text view does not emulate cursor movement or full-screen apps.
+      }else{
+        this.sequenceLength++;
+        if(this.sequenceLength>8192){this.mode='text';continue;}
+        if(this.mode==='escape'){
+          if(ch==='[')this.mode='csi';
+          else if(ch===']')this.mode='osc';
+          else if(ch==='P'||ch==='^'||ch==='_')this.mode='string';
+          else if('()*+-./'.includes(ch))this.mode='charset';
+          else if(code!==27)this.mode='text';
+        }else if(this.mode==='csi'){
+          // CSI parameters and intermediates end at the final 0x40..0x7e.
+          if(code>=64&&code<=126||code<32||code>63)this.mode='text';
+        }else if(this.mode==='osc'||this.mode==='string'){
+          if(code===27){this.previous=this.mode;this.mode='string-escape';}
+          else if(code===7&&this.mode==='osc')this.mode='text';
+        }else if(this.mode==='string-escape'){
+          if(ch==='\\')this.mode='text'; // ESC backslash = ST
+          else if(code!==27)this.mode=this.previous;
+        }else if(this.mode==='charset'){
+          this.mode='text';
+        }
+      }
+    }
+    return out;
+  }
+}
 let terminalSession=null;
 let terminalPolling=false;
-const terminalDecoder=new TextDecoder('utf-8');
+let terminalDecoder=new TextDecoder('utf-8');
+const terminalTextFilter=new TerminalTextFilter();
 function terminalControls(){
   const connected=!!terminalSession;
   $('terminal-open').disabled=connected||!(hostInfo?.available&&hostInfo?.terminal_enabled)||(state.role!=='owner'&&state.role!=='editor');
@@ -308,7 +350,7 @@ async function terminalRead(){
     const data=await api('/api/host/terminal/read',{session_id:terminalSession});
     if(data.data_b64){
       const bytes=Uint8Array.from(atob(data.data_b64),c=>c.charCodeAt(0));
-      terminalMessage(terminalDecoder.decode(bytes,{stream:true}));
+      terminalMessage(terminalTextFilter.push(terminalDecoder.decode(bytes,{stream:true})));
     }
     if(!data.running){
       terminalMessage('\n[Shell exited; session no longer running]\n');
@@ -327,6 +369,8 @@ async function terminalOpen(){
       '\n\nThis session can read and change your files. Only continue on your trusted device.'))return;
   const opened=await api('/api/host/terminal/open',{preview_token:p.preview_token,confirm:true});
   terminalSession=opened.session_id;
+  terminalDecoder=new TextDecoder('utf-8');
+  terminalTextFilter.reset();
   $('terminal-output').textContent='';
   $('terminal-status').textContent='Interactive user shell · idle expiry '+opened.idle_timeout+'s';
   terminalControls();
@@ -435,6 +479,52 @@ async function appControl(action){
   await loadApps();
 }
 
+async function loadInternet(){
+  const root=$('internet-items');root.replaceChildren(el('p','Loading network access policies…','small'));
+  try{
+    const result=await api('/api/ci/network');
+    root.replaceChildren();
+    if(!result.projects.length)root.append(el('p','No approved CI repository profiles configured.','small'));
+    for(const project of result.projects){
+      const item=el('article',undefined,'result-row');
+      const details=el('div');
+      details.append(el('strong',project.repo));
+      details.append(el('p','Network: '+(project.mode==='full'?'Full public web (controlled)':'Offline')+
+        ' · '+(project.trusted?'Trusted opt-in':'Default isolation')+
+        ' · provider '+project.provider,'small'));
+      details.append(el('p','Approved branches: '+project.branches.join(', '),'small'));
+      item.append(details);root.append(item);
+    }
+    root.append(el('p',result.note||'Network policy is private and owner-controlled.','small'));
+  }catch(err){root.replaceChildren(el('p',err.message,'small'));}
+}
+async function loadDeployments(){
+  const root=$('deployments-items');root.replaceChildren(el('p','Loading verified release records…','small'));
+  try{
+    const result=await api('/api/deployments');
+    root.replaceChildren();
+    if(!result.targets.length){
+      root.append(el('p','No deployment targets activated. Configure a reviewed private target policy before enabling staging.','small'));
+    }
+    for(const target of result.targets){
+      const card=el('article',undefined,'result-row'), body=el('div');
+      body.append(el('strong',target.target+' · '+target.environment));
+      body.append(el('p','Adapter: '+target.adapter+' · '+(target.enabled?'Approved':'Disabled')+
+        ' · '+target.last_status,'small'));
+      if(target.current_commit)body.append(el('p','Commit '+target.current_commit.slice(0,12)+
+        ' · release '+(target.current_digest||'').slice(0,12),'small'));
+      if(target.previous_release)body.append(el('p','Previous release '+target.previous_release.slice(0,12),'small'));
+      if(target.recent_failure)body.append(el('p','Last failure '+target.recent_failure,'small'));
+      const hist=el('details');hist.append(el('summary','Release history ('+target.recent_history.length+')'));
+      const history=el('div',undefined,'results');
+      for(const item of [...target.recent_history].reverse()){
+        history.append(el('p',item.when+' · '+item.phase+' · '+item.sha.slice(0,12),'small'));
+      }
+      hist.append(history);body.append(hist);card.append(body);root.append(card);
+    }
+    root.append(el('p',result.note||'Status is based on local evidence, not a live provider health check.','small'));
+  }catch(err){root.replaceChildren(el('p',err.message,'small'));}
+}
 async function loadMachines(){
   const root=$('machine-items');root.replaceChildren(el('p','Loading trusted PCs…'));
   try{
@@ -489,15 +579,47 @@ async function previewOnboarding(){
     },'primary'));
   }catch(err){root.replaceChildren();notice(err.message,true)}
 }
+
+async function loadAutonomy(){
+  const root=$('autonomy-items');root.replaceChildren();
+  if(state.role!=='owner'&&state.role!=='editor'){root.append(el('p','Background mission details require management permission.'));return;}
+  try{
+    const data=await api('/api/autonomy');
+    const head=el('div',undefined,'result-row');
+    head.append(el('strong','Foreground-first policy: '+(data.admission?.eligible?'Ready':'Throttled')),
+      el('span',String(data.admission?.reason||'Unknown')+' · '+String(data.admission?.memory_available_mb??'?')+' MB available','small'));
+    root.append(head);
+    if(!data.configured){root.append(el('p','No background missions enrolled on this PC.','small'));return;}
+    if(!data.missions?.length){root.append(el('p','No missions submitted.','small'));return;}
+    for(const mission of data.missions){
+      const row=el('div',undefined,'result-row');
+      row.append(el('strong',mission.id),el('span',mission.status,'small'));
+      const actions=el('div',undefined,'controls');
+      for(const operation of (mission.status==='paused'?['resume','cancel']:
+        mission.status==='queued'?['pause','cancel']:[])){
+        actions.append(btn(operation==='resume'?'Resume':operation==='pause'?'Pause':'Cancel',
+          async()=>{
+            if(!confirm(operation+' mission '+mission.id+'? Running work will not be interrupted.'))return;
+            await api('/api/autonomy/control',{mission:mission.id,action:operation,confirm:true});
+            await loadAutonomy();
+          }));
+      }
+      row.append(actions);
+      root.append(row);
+    }
+  }catch(error){root.replaceChildren(el('p','Background status unavailable: '+error.message));}
+}
+
 async function init(){
   let secret=null;if(location.hash.startsWith('#access=')){secret=decodeURIComponent(location.hash.slice(8));history.replaceState(null,'',location.pathname+location.search);}
   if(secret){try{await api('/api/session',{secret});}catch(e){notice(e.message,true)}}
   $('signout').addEventListener('click',async()=>{
-    try{await api('/api/logout',{});notice('Signed out of this desktop session.');await refresh();}
+    try{await api('/api/logout',{});document.dispatchEvent(new Event('open-ci-logout'));notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();});
   $('apps-refresh').addEventListener('click',loadApps);
+  $('autonomy-refresh').addEventListener('click',loadAutonomy);
   $('apps-pause').addEventListener('click',()=>appControl('pause').catch(e=>notice(e.message,true)));
   $('apps-resume').addEventListener('click',()=>appControl('resume').catch(e=>notice(e.message,true)));
   $('apps-emergency').addEventListener('click',()=>appControl('emergency_stop').catch(e=>notice(e.message,true)));
@@ -506,6 +628,8 @@ async function init(){
     $('apps-mode-apply').disabled=state.mode==='mobile'&&$('apps-mode').value==='performance';
   });
   $('machines-refresh').addEventListener('click',loadMachines);
+  $('deployments-refresh').addEventListener('click',loadDeployments);
+  $('internet-refresh').addEventListener('click',loadInternet);
   $('machine-enroll').addEventListener('submit',async e=>{
     e.preventDefault();
     const name=$('machine-name').value.trim(),host=$('machine-host').value.trim().toLowerCase();
@@ -537,8 +661,39 @@ async function init(){
   });
   configureOnboarding();
   await refresh();
-  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();
+  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();
     show('machine-enroll',state.role==='owner'&&state.mode==='desktop');}
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
 }
 document.addEventListener('DOMContentLoaded',init);
+
+async function loadLocalCI(){
+  const root=document.getElementById('local-ci-items');
+  if(!root)return;
+  root.replaceChildren(el('p','Loading local job ledger…'));
+  try{
+    const result=await api('/api/ci/local');root.replaceChildren();
+    root.append(el('p','Available RAM: '+result.resources.memory_available_mb+' MiB · Reserved desktop headroom: '+result.resources.capacity.min_free_ram_mb+' MiB','small'));
+    for(const job of result.items){
+      const item=el('div',undefined,'result-item');
+      item.append(el('strong',job.repo+' · '+job.status));
+      item.append(el('p',job.sha.slice(0,12)+' · '+job.branch+' · '+job.job_id,'small'));
+      if(job.detail)item.append(el('p',job.detail,'small'));
+      const inspect=el('button','View logs and evidence','btn secondary');
+      inspect.type='button';inspect.onclick=async()=>{
+        try{const record=await api('/api/ci/local/job?job='+encodeURIComponent(job.job_id));
+          document.getElementById('local-ci-evidence').textContent=JSON.stringify(record.receipt||{status:record.scheduler_status},null,2)+'\n\n'+record.log;
+        }catch(err){document.getElementById('local-ci-evidence').textContent=err.message;}
+      };item.append(inspect);
+      if(['queued','running','stranded'].includes(job.status)){
+        const cancel=el('button','Cancel job','btn secondary');cancel.type='button';
+        cancel.onclick=async()=>{if(!confirm('Cancel this local CI job?'))return;
+          try{await api('/api/ci/local/cancel',{job_id:job.job_id,confirm:true});await loadLocalCI();}
+          catch(err){document.getElementById('local-ci-evidence').textContent=err.message;}
+        };item.append(cancel);
+      }root.append(item);
+    }
+    if(!result.items.length)root.append(el('p','No local CI jobs recorded.'));
+  }catch(err){root.replaceChildren(el('p',err.message));}
+}
+document.getElementById('local-ci-refresh')?.addEventListener('click',loadLocalCI);

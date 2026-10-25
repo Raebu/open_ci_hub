@@ -457,13 +457,13 @@ class Broker:
             db.commit()
         return {'job_id':job,'lease_seconds':LEASE_SECONDS}
 
-    def complete(self,who,job,lease_token,success,result):
+    def complete(self,who,job,lease_token,success,result,*,allow_retry=True):
         if type(success) is not bool:raise ValueError('Explicit success boolean is required.')
         output=self._json_value(result,MAX_RESULT)
         with self._db() as db:
             db.execute('BEGIN IMMEDIATE')
             state=self._leased(db,who,job,lease_token)
-            status='completed' if success else ('queued' if state['attempts']<MAX_ATTEMPTS else 'failed')
+            status='completed' if success else ('queued' if allow_retry and state['attempts']<MAX_ATTEMPTS else 'failed')
             db.execute('UPDATE jobs SET status=?,result=?,lease_hash=NULL,lease_until=NULL,'
                        'updated=? WHERE id=?',
                        (status,output,time.time(),job))

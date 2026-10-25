@@ -75,8 +75,19 @@ def disk_state():
             'min_free_percent':min(x['free_percent'] for x in results),
             'mounts':results}
 
+def swap_state():
+    try:
+        mem={}
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if ":" in line:
+                key,value=line.split(":",1)
+                mem[key]=int(value.strip().split()[0])
+        return {"swap_total_mb":mem.get("SwapTotal",0)//1024,"swap_free_mb":mem.get("SwapFree",0)//1024,"mem_available_mb":mem.get("MemAvailable",0)//1024}
+    except (OSError,ValueError,IndexError):
+        return None
+
 def sample():
-    return {'temperature_c':package_temperature_c(),
+    return {"swap":swap_state(),'temperature_c':package_temperature_c(),
             'memory_pressure_pct':linux_pressure(),
             'load_per_cpu':system_load(),
             'battery':battery_state(),
@@ -92,8 +103,20 @@ def admission(mode,telemetry,base_limit):
     load=data.get('load_per_cpu')
     battery=data.get('battery')
     disk=data.get('disk')
+    swap=data.get('swap')
     ceiling=1 if mode=='quiet' else base_limit
     reason='normal'
+    # Reject NEW work when RAM or swap headroom is exhausted.
+    if isinstance(swap,dict):
+        available=swap.get('mem_available_mb')
+        free=swap.get('swap_free_mb')
+        total=swap.get('swap_total_mb')
+        if type(available)==int and available<3072:
+            return {'max_parallel':0,'reason':'critical_ram_headroom','swap':swap}
+        if type(total)==int and total>0 and type(free)==int and free<512:
+            return {'max_parallel':0,'reason':'critical_swap_exhaustion','swap':swap}
+        if type(available)==int and available<5120:
+            ceiling=min(ceiling,1);reason='ram_headroom_throttle'
     # Performance mode may use the owner's configured base ceiling, not override it.
     if isinstance(disk,dict):
         free=disk.get('min_free_mb')

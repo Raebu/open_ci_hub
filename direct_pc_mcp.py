@@ -23,7 +23,7 @@ import sys
 import tempfile
 import threading
 import time
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 from urllib.request import urlopen
 
 from hub import secure_write
@@ -107,6 +107,21 @@ SECRET_PATTERNS = [
 ]
 
 TOOLS = [
+    {
+        "name": "prepare_personal_whatsapp_message",
+        "description": "Prepare one personal WhatsApp message using official click-to-chat; optionally open a prefilled conversation on the owner's desktop after explicit approval. This does NOT send, read messages, or confirm delivery: the owner must press Send in WhatsApp.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipient": {"type": "string", "minLength": 8, "maxLength": 26},
+                "message": {"type": "string", "minLength": 1, "maxLength": 1800},
+                "open_on_desktop": {"type": "boolean"},
+                "confirm_open": {"type": "boolean"},
+            },
+            "required": ["recipient", "message"],
+            "additionalProperties": False,
+        },
+    },
     {
         "name": "get_pc_status",
         "description": "Read live Garuda system resources, Open CI Hub service health, enabled local capabilities and approved browsing roots. Read-only.",
@@ -765,7 +780,7 @@ def read_pc_file(path: str) -> dict:
     target, label, _ = _resolve_user_path(path, must_exist=True)
     text, digest, redaction_count = _read_text_file(target)
     _audit("read_pc_file", str(target), "success", {"sha256": digest, "redactions": redaction_count})
-    return {"path": str(target), "root_type": label, "content": text,
+    return {"path": str(target), "root_type": label, "file_text": text,
             "sha256": digest, "redactions_applied": redaction_count,
             "note": "Content is redacted for common credential patterns; this is not a guarantee that every secret format is detected."}
 
@@ -930,6 +945,8 @@ def _run_bounded(argv: list[str], *, cwd: str | None = None, env: dict | None = 
         except (OSError, ProcessLookupError):
             pass
         reader.join(timeout=2)
+    if process.stdout is not None and not reader.is_alive():
+        process.stdout.close()
     output = collected.decode("utf-8", "replace")
     redacted, redactions = _redact(output)
     return {
@@ -1214,9 +1231,44 @@ def desktop_click(x: int, y: int, button: str = "left") -> dict:
     return {"clicked": True, "x": x, "y": y, "button": button}
 
 
+def prepare_personal_whatsapp_message(recipient: str, message: str,
+                                       *, open_on_desktop: bool = False,
+                                       confirm_open: bool = False) -> dict:
+    """WhatsApp Messenger: prepare official chat link, never automate the Send control."""
+    if not isinstance(recipient, str) or not isinstance(message, str):
+        raise ValueError("WhatsApp recipient and message must be text.")
+    phone = re.sub(r"[\s().-]", "", recipient.strip())
+    if not re.fullmatch(r"\+?[1-9][0-9]{6,14}", phone):
+        raise ValueError("Use the full international WhatsApp number including country code.")
+    digits = phone.lstrip("+")
+    draft = message.strip()
+    if not draft or len(draft) > 1800:
+        raise ValueError("WhatsApp message must contain 1 to 1,800 characters.")
+    if type(open_on_desktop) is not bool or type(confirm_open) is not bool:
+        raise ValueError("WhatsApp confirmation flags must be boolean.")
+    url = "https://wa.me/" + digits + "?text=" + quote(draft, safe="")
+    if len(url) > 2048:
+        raise ValueError("Message too long for the desktop WhatsApp link.")
+    if not open_on_desktop:
+        return {"status": "prepared", "url": url,
+                "sent": False, "note": "Open this link and press Send in WhatsApp yourself."}
+    if not confirm_open:
+        raise PermissionError("Explicit confirmation required to open personal WhatsApp on desktop.")
+    opened = desktop_open_url(url)
+    return {"status": "opened_for_owner_review", "opened": bool(opened.get("launched")),
+            "sent": False, "note": "WhatsApp has been opened, not sent. Owner must press Send."}
+
+
 def invoke_tool(name: str, arguments: dict) -> dict:
     if not isinstance(arguments, dict):
         raise ValueError("Tool arguments must be a JSON object.")
+    if name == "prepare_personal_whatsapp_message":
+        if set(arguments) - {"recipient", "message", "open_on_desktop", "confirm_open"} or not {"recipient", "message"}.issubset(arguments):
+            raise ValueError("Expected recipient/message and optional opening confirmation only.")
+        return prepare_personal_whatsapp_message(
+            arguments["recipient"], arguments["message"],
+            open_on_desktop=arguments.get("open_on_desktop", False),
+            confirm_open=arguments.get("confirm_open", False))
     if name == "get_pc_status":
         if arguments:
             raise ValueError("This tool accepts no arguments.")
