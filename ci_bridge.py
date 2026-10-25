@@ -64,6 +64,12 @@ def load_manifest(path=MANIFEST):
                 or not isinstance(step.get("argv"),list) or not 1<=len(step["argv"])<=30
                 or any(not isinstance(a,str) or not a or len(a)>1000 or "\x00" in a for a in step["argv"])):
                 raise ValueError("Invalid locally approved argv step.")
+            # Each step may opt into a separately trusted, digest-pinned runtime.
+            # No mutable tags, no pulls, and no changes to the resource sandbox.
+            if "image" in step and (
+                not isinstance(step["image"], str) or not IMAGE.fullmatch(step["image"])
+            ):
+                raise ValueError("Per-step CI image must be pinned by sha256 digest.")
         if type(cfg.get("max_seconds",900)) is not int or not 30<=cfg.get("max_seconds",900)<=3600:
             raise ValueError("max_seconds must be an integer between 30 and 3600.")
         ram=cfg.get("ram_mb",1024)
@@ -330,6 +336,11 @@ def execute_one(job, manifest, broker=None):
             raise RuntimeError("Digest-pinned build image is not present locally; owner must provision it.")
         budget=max(256,int(job["resources"].get("effective_ram_mb",cfg.get("ram_mb",1024))))
         for step_index,step in enumerate(cfg["steps"]):
+            step_image=step.get("image",image)
+            if step_image != image:
+                step_inspect=run_cmd(["docker","image","inspect",step_image],timeout=15)
+                if step_inspect.returncode:
+                    raise RuntimeError("Pinned per-step CI image is not present locally.")
             container_name=f"open-ci-{job_id[:20]}-{step_index}"
             argv=["docker","run","--rm","--pull=never","--log-driver=none","--name",container_name,"--network","none","--read-only",
                   "--tmpfs","/tmp:rw,nosuid,nodev,size=256m","--cap-drop=ALL",
@@ -349,7 +360,7 @@ def execute_one(job, manifest, broker=None):
                 if enabled:
                     binary=ensure_static_bridge(ROOT/"ci_proxy_bridge.c",STATE)
                     argv+=docker_network_options(binary,egress)
-                argv.extend([image,*step["argv"]])
+                argv.extend([step_image,*step["argv"]])
                 step_started=time.time()
                 code,lease_lost=monitored_container(argv,cwd=ROOT,timeout=max(0,deadline-time.monotonic()),
                     log_path=log,heartbeat=heartbeat,container_name=container_name,
