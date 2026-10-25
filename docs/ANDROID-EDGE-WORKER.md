@@ -35,17 +35,26 @@ phone-file access or disabling of Android security protections is required.
 
 Only on the trusted owner Hub, after inspecting the existing app inventory:
 
-    python3 app_runtime.py register raeburn-edge --tasks python.syntax,json.inspect,hash.benchmark --confirm
-    python3 app_runtime.py parallel raeburn-edge --max-parallel 1 --confirm
-    python3 app_runtime.py issue raeburn-edge worker --confirm
-    python3 app_runtime.py issue raeburn-edge submit --confirm
+    python3 app_runtime.py register s25-edge --tasks python.syntax,json.inspect,hash.benchmark --confirm
+    python3 app_runtime.py budget s25-edge python.syntax --ram-mb 128 --confirm
+    python3 app_runtime.py budget s25-edge json.inspect --ram-mb 128 --confirm
+    python3 app_runtime.py budget s25-edge hash.benchmark --ram-mb 128 --confirm
+    python3 app_runtime.py parallel s25-edge --max-parallel 1 --confirm
+    python3 app_runtime.py issue s25-edge worker --confirm
+    python3 app_runtime.py edge-enroll s25-edge --kind android_arm64 --confirm
+    python3 app_runtime.py issue s25-edge submit --confirm
 
 Never commit credentials or paste them into chat. Keep separate worker and submit
 tokens; the worker token belongs only in the phone session, never in scripts or
-command arguments. Broker's default 512MiB task budget is within this worker's
-cap and reserves no GPU. App registration refuses duplicate app IDs.
+command arguments. The newly enrolled edge path uses owner-reviewed **128MiB** tasks so the
+remote broker can enforce bounded device reservations without counting
+the phone as Garuda RAM. The phone reports fresh available memory and
+battery/charging state at every job claim. The Hub binds this report to
+its uniquely issued worker token and approved device architecture;
+stale or unverifiable devices cannot claim work. Do not share the token.
+App registration refuses duplicate app IDs.
 
-Copy edge_worker.py and application_client.py from the reviewed trusted revision
+Copy the CURRENT edge_worker.py and application_client.py from the reviewed trusted revision
 to a private Termux working directory, then inside Termux:
 
     read -r -p "Hub HTTPS URL: " OCI_EDGE_URL
@@ -92,7 +101,11 @@ connectivity. A real end-to-end test must use a separately issued submit token,
 enqueue a harmless sample job, and verify its exact Hub job ID/result and
 phone's device health before considering deployment verified.
 
-The current Hub broker also admits jobs against the *Garuda host's* memory and thermal budget, even when the phone will execute the work. This conservatively limits offloading when the main machine is under pressure; cross-machine resource accounting is a separate unimplemented scheduler change.
+An explicitly owner-enrolled phone has its own server-trusted readiness
+TTL and remote RAM/charging admission, so a small approved task can run
+even when the Garuda host is busy. Only the three built-in fixed tasks
+are eligible. A legacy unenrolled app continues using the stricter
+Garuda host gate. This is not arbitrary multi-device CI script execution.
 
 Future general cloud/Windows/Linux worker scheduling needs authenticated
 capability negotiation, per-device admission and separate sandboxing.

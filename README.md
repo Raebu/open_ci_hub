@@ -25,6 +25,17 @@ current validation, activation commands and remaining release gates.
 
 **Important:** Mobile access uses the same live PC-backed workspace. It does **not** sync to a hosted account while the PC is offline. GitHub/GitLab/CircleCI require separate permissions. CircleCI pipeline browsing/retry is not yet implemented: its runner integration is available through the installer and runner controls. Provider-hosted storage/networking and plan limits may still apply.
 
+## Private edge fleet and visual autonomy (reviewed source)
+
+The [unified autonomy release guide](docs/UNIFIED-AUTONOMY-20261025.md) adds
+owner-enrolled Windows ARM64, Linux and Android fixed-operation workers over
+the existing Tailscale-protected app API, live device admission and fleet
+readiness in the mobile dashboard, local Ollama screenshot observation,
+a bounded language-plan composer, private Xvfb lifecycle, and Ed25519
+owner evidence manifests. These do **not** authorise arbitrary remote shell,
+live paid cloud VMs or production release automation. Actual phone/Windows
+enrolment, Xvfb installation and independent security tests remain required.
+
 ## Branch hygiene and automatic cleanup (opt-in)
 
 The [verified branch cleanser](docs/BRANCH-CLEANSER.md) audits GitHub against immutable commit SHAs, PR state and local worktrees, then archives exact tips before safely retiring only merged inactive branches after 72 hours. A resource-capped daily timer is available via explicit owner enrolment; unique/unmerged work is never automatically deleted.

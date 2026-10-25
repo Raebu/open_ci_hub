@@ -491,6 +491,20 @@ async function loadApps(){
       }
       root.append(el('p','Resource reservations are admission controls; RAM hard limits require protected worker cgroups. VRAM is monitored, not hardware-enforced.','small'));
     }
+    const fleet=inventory.fleet_devices||[];
+    root.append(el('h3','Remote edge fleet · owner approved'));
+    if(!fleet.length){
+      root.append(el('p','No remote workers enrolled. Windows ARM64 and Android devices are opt-in; no cloud machine is silently assumed free.','small'));
+    }
+    for(const machine of fleet){
+      const item=el('article',undefined,'result-row');
+      const label=machine.app+' · '+machine.kind+' · '+(machine.online?'Ready':'Offline or throttled');
+      item.append(el('strong',label),el('p',
+        'Tasks: '+machine.tasks.join(', ')+
+        ' · Free RAM: '+(machine.free_ram_mb===null?'unavailable':machine.free_ram_mb+' MiB')+
+        ' · Billing: '+machine.billing,'small'));
+      root.append(item);
+    }
     if(!inventory.apps.length){root.append(el('p','No applications registered yet. Use the local owner CLI to authorise one.'));return;}
     for(const app of inventory.apps){
       const card=el('article',undefined,'result-row');

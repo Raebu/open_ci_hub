@@ -188,7 +188,7 @@ def _low_priority():
     resource.setrlimit(resource.RLIMIT_CPU, (25, 26))
 
 
-def run_one(journal, mission, *, sensor=sample_host, browser=browser_job):
+def run_one(journal, mission, *, sensor=sample_host, browser=browser_job, observer=None):
     state = journal.snapshot(mission)
     if state["status"] == "needs_reconciliation":
         return {"status": "blocked", "reason": "previous_process_unverified"}
@@ -200,7 +200,7 @@ def run_one(journal, mission, *, sensor=sample_host, browser=browser_job):
     task = journal.ready_step(mission)
     if task is None:
         return {"status": state["status"], "reason": "no_ready_step"}
-    ok, reason = admit_local(sensor())
+    ok, reason = admit_local(sensor(), min_free_mb=6144 if task["kind"] == "vision" else 4096)
     if not ok:
         return {"status": "deferred", "reason": reason}
     journal.start_step(mission, task["id"])
@@ -213,6 +213,18 @@ def run_one(journal, mission, *, sensor=sample_host, browser=browser_job):
                              timeout=min(state["plan"]["limits"]["max_seconds"], 45))
         elif task["kind"] == "fetch":
             result = fetch_readonly(task["input"]["url"], state["plan"]["hosts"])
+        elif task["kind"] == "vision":
+            from visual_observer import observe, screenshot_from_step
+            source = task["input"]["source_step"]
+            previous = next(row for row in state["steps"] if row["id"] == source)
+            if previous["status"] != "completed":
+                result = {"ok":False, "error":"source_not_completed"}
+            else:
+                evidence = json.loads(previous["result"])
+                screenshot = screenshot_from_step(
+                    journal.folder/"artifacts"/mission/source, evidence)
+                result = (observer or observe)(
+                    screenshot, task["input"]["question"])
         else:
             result = execute_fixed(task)
         receipt = journal.finish_step(mission, task["id"],

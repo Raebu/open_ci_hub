@@ -60,6 +60,11 @@ class ApplicationClient:
             raise ValueError('Invalid job ID.')
         return self._request('GET','/api/v1/jobs/'+job_id)
 
+    def availability(self,platform_name,architecture,free_ram_mb,charging):
+        return self._request('POST','/api/v1/workers/availability',{
+            'platform':platform_name,'architecture':architecture,
+            'free_ram_mb':free_ram_mb,'charging':charging})
+
     def claim(self):
         return self._request('POST','/api/v1/workers/claim',{})
 

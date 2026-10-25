@@ -91,6 +91,7 @@ class EdgeTests(unittest.TestCase):
             "task": "python.syntax", "payload": {"source": "x=1"},
             "resources": {"ram_mb": 512, "vram_mb": 0}}}
         client.complete.return_value = {"status": "completed"}
+        client.availability.return_value = {"enrolled": True, "online": True}
         self.assertEqual(e.once(client)["hub_status"], "completed")
         client.complete.assert_called_once_with("a" * 32, "private", True, {"valid": True})
 
