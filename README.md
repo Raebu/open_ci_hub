@@ -25,6 +25,10 @@ current validation, activation commands and remaining release gates.
 
 **Important:** Mobile access uses the same live PC-backed workspace. It does **not** sync to a hosted account while the PC is offline. GitHub/GitLab/CircleCI require separate permissions. CircleCI pipeline browsing/retry is not yet implemented: its runner integration is available through the installer and runner controls. Provider-hosted storage/networking and plan limits may still apply.
 
+## Branch hygiene and automatic cleanup (opt-in)
+
+The [verified branch cleanser](docs/BRANCH-CLEANSER.md) audits GitHub against immutable commit SHAs, PR state and local worktrees, then archives exact tips before safely retiring only merged inactive branches after 72 hours. A resource-capped daily timer is available via explicit owner enrolment; unique/unmerged work is never automatically deleted.
+
 ## Human-first background autonomy (opt-in)
 
 A headless Chromium worker can process locally authorised, bounded web/data
