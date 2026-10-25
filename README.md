@@ -25,6 +25,12 @@ current validation, activation commands and remaining release gates.
 
 **Important:** Mobile access uses the same live PC-backed workspace. It does **not** sync to a hosted account while the PC is offline. GitHub/GitLab/CircleCI require separate permissions. CircleCI pipeline browsing/retry is not yet implemented: its runner integration is available through the installer and runner controls. Provider-hosted storage/networking and plan limits may still apply.
 
+## Persistent private dashboard service
+
+The [owner-user systemd installer](docs/DASHBOARD-SERVICE.md) restores the
+authenticated Tailscale-backed dashboard on login and after application
+failure, without restarting CI workers or changing credentials.
+
 ## Private edge fleet and visual autonomy (reviewed source)
 
 The [unified autonomy release guide](docs/UNIFIED-AUTONOMY-20261025.md) adds
