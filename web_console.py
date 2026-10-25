@@ -302,6 +302,8 @@ class WebConsole:
                             result=console.apps.submit(who,data.get('task'),data.get('payload'),
                                                        data.get('idempotency_key'))
                             return self.output(200 if result['duplicate'] else 201,result)
+                        if path=='/api/v1/workers/availability':
+                            return self.output(200,console.apps.edge_availability(who,data))
                         if path=='/api/v1/workers/claim':
                             return self.output(200,console.apps.claim(who))
                         if path=='/api/v1/workers/complete':

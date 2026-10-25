@@ -168,6 +168,25 @@ def once(client):
     ok, reason = phone_ready()
     if not ok:
         return {"status": "skipped", "reason": reason}
+    # Optional modern device enrollment. Each Android phone has its own
+    # scoped app token, not an unrestricted GitHub runner credential.
+    if hasattr(client, "availability"):
+        left=None
+        try:
+            from pathlib import Path
+            for item in Path("/proc/meminfo").read_text().splitlines():
+                if item.startswith("MemAvailable:"):
+                    left=int(item.split()[1])//1024
+                    break
+        except (OSError,ValueError):
+            pass
+        if type(left) is not int:
+            return {"status":"skipped","reason":"memory_telemetry_unavailable"}
+        presence=client.availability("Android","arm64",left,True)
+        if not isinstance(presence,dict) or presence.get("enrolled") is not True:
+            return {"status":"skipped","reason":"owner_enrolment_required"}
+        if presence.get("online") is not True:
+            return {"status":"skipped","reason":"device_capacity_gate"}
     claim = client.claim()
     if not isinstance(claim, dict):
         raise ValueError("Invalid Hub claim response")

@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 ID = re.compile(r"^[a-z][a-z0-9_-]{2,47}$")
 HOST = re.compile(r"^(?:[a-z0-9-]+\.)+[a-z]{2,63}$")
 MAX_PLAN_BYTES = 16_384
-SAFE_KINDS = frozenset({"browse", "digest", "inspect", "fetch"})
+SAFE_KINDS = frozenset({"browse", "digest", "inspect", "fetch", "vision"})
 SAFE_BROWSER_ACTIONS = frozenset({"extract", "screenshot", "click", "fill"})
 MUTATING_ACTIONS = frozenset({"click", "fill"})
 MAX_STEPS = 20
@@ -119,6 +119,18 @@ def validate_plan(plan):
                     raise PolicyError("Oversized form value.")
                 if typ in MUTATING_ACTIONS and not limits["allow_browser_interaction"]:
                     raise PolicyError("Browser interaction needs local owner approval.")
+        elif kind == "vision":
+            if (set(data) != {"source_step", "question"} or
+                not isinstance(data.get("source_step"), str) or
+                data["source_step"] not in needs or
+                not isinstance(data.get("question"), str) or
+                not 8 <= len(data["question"]) <= 350 or
+                not any(prior["id"] == data["source_step"] and
+                        prior["kind"] == "browse" and
+                        sum(a["type"] == "screenshot"
+                            for a in prior["input"]["actions"]) == 1
+                        for prior in steps[:len(seen)])):
+                raise PolicyError("Vision requires one dependency on a prior screenshot step.")
         elif kind == "fetch":
             if set(data) != {"url"} or not hostset:
                 raise PolicyError("Fetch requires a validated public HTTPS URL.")

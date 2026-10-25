@@ -20,6 +20,7 @@ import time
 
 from hub import LOCAL
 from resource_guard import ResourceGate
+import fleet_devices
 
 APP = re.compile(r'^[a-z][a-z0-9-]{1,48}$')
 TASK = re.compile(r'^[a-z][a-z0-9_.-]{1,64}$')
@@ -69,6 +70,7 @@ class Broker:
                     ON jobs(app, status, created);
             ''')
             ResourceGate.setup(db)
+            fleet_devices.setup(db)
             cols={x['name'] for x in db.execute('PRAGMA table_info(jobs)')}
             if 'priority' not in cols:
                 db.execute('ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0')
@@ -160,7 +162,26 @@ class Broker:
                            'WHERE c.token_hash=? AND c.revoked=0 AND a.enabled=1',(digest,)).fetchone()
         if not row or not hmac.compare_digest(row['token_hash'],digest):
             raise PermissionError('Application credential was not recognised.')
-        return {'app':row['app'],'role':row['role'],'tasks':json.loads(row['tasks'])}
+        return {'app':row['app'],'role':row['role'],'tasks':json.loads(row['tasks']),
+                'credential_hash':digest}
+
+    def enroll_edge(self,app,kind,*,confirm=False):
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            receipt=fleet_devices.enroll(db,app,kind,confirm=confirm)
+            db.commit()
+        return receipt
+
+    def edge_availability(self,who,data):
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            result=fleet_devices.report(db,who,data)
+            db.commit()
+        return result
+
+    def edge_devices(self):
+        with self._db() as db:
+            return fleet_devices.listing(db)
 
     @staticmethod
     def _require(who,role):
@@ -403,7 +424,8 @@ class Broker:
                        'result=? WHERE status="leased" AND lease_until<=?',
                        (now,json.dumps({'error':'Lease expired; original worker may still be running. '
                            'Host owner must verify termination before recovery.'}),now))
-            snapshot=self.resource_gate.snapshot(db)
+            is_edge=db.execute('SELECT 1 FROM fleet_devices WHERE app=?',(app,)).fetchone() is not None
+            snapshot=None if is_edge else self.resource_gate.snapshot(db)
             candidates=db.execute('SELECT id,task,payload,attempts FROM jobs '
                                   'WHERE app=? AND status="queued" '
                                   'ORDER BY priority DESC,created,id LIMIT 100',(app,)).fetchall()
@@ -412,10 +434,26 @@ class Broker:
                 return {'job':None,'reason':'queue_empty'}
             selected=None;budget=None;blocked='capacity_exhausted'
             for row in candidates:
-                profile,reason=self.resource_gate.admit(db,app,row['task'],snapshot)
-                if profile:
-                    selected,budget=row,profile
-                    break
+                if is_edge:
+                    profile=self.resource_gate.profile(db,app,row['task'])
+                    reason=fleet_devices.admit(db,who,row['task'],profile['ram_mb'])
+                    controls=self.resource_gate.controls(db)
+                    active=db.execute('SELECT COUNT(*) FROM jobs WHERE app=? '
+                        'AND status IN ("leased","stranded")',(app,)).fetchone()[0]
+                    if controls['paused']:
+                        reason='admissions_paused'
+                    elif active>=self.resource_gate.app_limit(db,app):
+                        reason='remote_device_parallel_limit'
+                    if reason=='ready' and profile['vram_mb']!=0:
+                        reason='remote_gpu_jobs_forbidden'
+                    if reason=='ready':
+                        selected,budget=row,profile
+                        break
+                else:
+                    profile,reason=self.resource_gate.admit(db,app,row['task'],snapshot)
+                    if profile:
+                        selected,budget=row,profile
+                        break
                 blocked=reason
             if selected is None:
                 db.commit()
@@ -487,6 +525,7 @@ class Broker:
                 item['max_parallel']=self.resource_gate.app_limit(db,item['app'])
             resources=self.resource_gate.snapshot(db)
         return {'apps':list(apps.values()),'resources':resources,
+                'fleet_devices':self.edge_devices(),
                 'runtime':'parallel-admission-broker',
                 'execute_untrusted_code':False}
 
@@ -510,6 +549,10 @@ def main(argv=None):
     sub=parser.add_subparsers(dest='cmd',required=True)
     reg=sub.add_parser('register');reg.add_argument('app');reg.add_argument('--tasks',required=True)
     reg.add_argument('--confirm',action='store_true')
+    edge=sub.add_parser('edge-enroll');edge.add_argument('app')
+    edge.add_argument('--kind',choices=sorted(fleet_devices.KINDS),required=True)
+    edge.add_argument('--confirm',action='store_true')
+    sub.add_parser('edge-list')
     issue=sub.add_parser('issue');issue.add_argument('app');issue.add_argument('role',choices=sorted(ROLE))
     issue.add_argument('--confirm',action='store_true')
     revoke=sub.add_parser('revoke');revoke.add_argument('sha256');revoke.add_argument('--confirm',action='store_true')
@@ -542,6 +585,8 @@ def main(argv=None):
     try:
         broker=Broker(args.state)
         if args.cmd=='register':out=broker.register(args.app,args.tasks.split(','),confirm=args.confirm)
+        elif args.cmd=='edge-enroll':out=broker.enroll_edge(args.app,args.kind,confirm=args.confirm)
+        elif args.cmd=='edge-list':out=broker.edge_devices()
         elif args.cmd=='issue':out=broker.issue(args.app,args.role,confirm=args.confirm)
         elif args.cmd=='revoke':out=broker.revoke(args.sha256,confirm=args.confirm)
         elif args.cmd=='budget':out=broker.set_task_budget(args.app,args.task,
