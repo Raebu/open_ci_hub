@@ -6,11 +6,15 @@ and systemd cgroup limits; network isolation is deliberately NOT claimed.
 """
 from __future__ import annotations
 from pathlib import Path
+import os
+import stat
 
 class SandboxUnavailable(RuntimeError):
     pass
 
-def browser_argv(browser_folder: Path, artifacts: Path, *, plan_file=None, session_file=None, bwrap="/usr/bin/bwrap"):
+def browser_argv(browser_folder: Path, artifacts: Path, *, plan_file=None,
+                 session_file=None, virtual_display=False,
+                 authority_file=None, socket_file=None, bwrap="/usr/bin/bwrap"):
     browser_folder, artifacts = Path(browser_folder), Path(artifacts)
     if not Path(bwrap).is_file():
         raise SandboxUnavailable("bubblewrap is required for autonomous browser jobs.")
@@ -29,6 +33,18 @@ def browser_argv(browser_folder: Path, artifacts: Path, *, plan_file=None, sessi
             session_file.stat().st_mode & 0o077 or
             session_file.stat().st_size>262144):
             raise SandboxUnavailable("Decrypted browser session must be private and bounded.")
+    if virtual_display:
+        if authority_file is None or socket_file is None:
+            raise SandboxUnavailable("Private Xvfb X11 authority/socket must be specified.")
+        authority_file,socket_file=Path(authority_file),Path(socket_file)
+        if (authority_file.is_symlink() or not authority_file.is_file() or
+            authority_file.stat().st_uid!=os.getuid() or
+            authority_file.stat().st_mode & 0o077 or
+            authority_file.stat().st_size>4096 or
+            socket_file.is_symlink() or
+            not stat.S_ISSOCK(socket_file.stat().st_mode) or
+            socket_file.name!="X91"):
+            raise SandboxUnavailable("Untrusted Xvfb credentials or display socket.")
     # No --ro-bind /, /home, /mnt, /run/user or Docker socket.
     # The browser source directory is read-only, and /artifacts is the ONLY
     # writable user filesystem mount. /tmp is an ephemeral private tmpfs.
@@ -67,6 +83,14 @@ def browser_argv(browser_folder: Path, artifacts: Path, *, plan_file=None, sessi
         argv += ["--dir", "/input",
                  "--ro-bind", str(plan_file.resolve()), "/input/plan.json",
                  "--setenv", "OCI_AUTONOMY_PLAN_PATH", "/input/plan.json"]
+    if virtual_display:
+        argv += ["--dir","/tmp/.X11-unix",
+                 "--bind",str(socket_file.resolve()),"/tmp/.X11-unix/X91",
+                 "--dir","/xauth",
+                 "--ro-bind",str(authority_file.resolve()),"/xauth/authority",
+                 "--setenv","DISPLAY",":91",
+                 "--setenv","XAUTHORITY","/xauth/authority",
+                 "--setenv","OCI_AUTONOMY_VIRTUAL_DESKTOP","private_xvfb"]
     if session_file is not None:
         argv += ["--dir","/session",
                  "--ro-bind",str(session_file.resolve()),"/session/state.json",

@@ -44,6 +44,10 @@ an owner grants standing permission for the exact site with
 read-only screenshot/extraction missions, not account changes. See the
 vault guide for revocation and separate website-session expiry.
 
+## Approved invisible graphical missions
+
+[Private Xvfb mission acceptance](docs/PRIVATE-GUI-ACCEPTANCE.md) explains how the existing background browser can execute a reviewed graphical step in display :91 without touching KDE. Real Chromium screenshot acceptance passed, while unrestricted visual AI and physical remote devices remain separate gates.
+
 ## Private edge fleet and visual autonomy (reviewed source)
 
 The [unified autonomy release guide](docs/UNIFIED-AUTONOMY-20261025.md) adds

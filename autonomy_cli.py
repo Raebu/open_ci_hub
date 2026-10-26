@@ -160,8 +160,16 @@ def browser_job(plan, step, artifacts, *, node="node", timeout=45, session_host=
             except BaseException:
                 session_file.unlink(missing_ok=True)
                 raise
+        private_display=step["input"].get("display")=="private_xvfb"
+        desktop={}
+        if private_display:
+            from virtual_desktop import status as desktop_status, BASE
+            if not (desktop_status()["active"] and desktop_status()["socket_present"]):
+                return {"ok":False,"error":"private_display_not_ready"}
+            desktop={"virtual_display":True,"authority_file":BASE/"Xauthority",
+                     "socket_file":Path("/tmp/.X11-unix/X91")}
         sandbox = browser_argv(BROWSER.parent, artifacts, plan_file=plan_path,
-                               session_file=session_file)
+                               session_file=session_file, **desktop)
         argv = ["/usr/bin/systemd-run", "--user", "--wait", "--pipe",
                 "--quiet", "--collect", "--unit=" + unit,
                 "-p", "MemoryMax=768M", "-p", "MemoryHigh=720M",

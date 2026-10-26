@@ -29,8 +29,10 @@ async function execute(plan) {
  const timeout=Math.min(30000,Math.max(5000,Number(plan.timeoutMs)||12000));
  const browser=await chromium.launch({
    executablePath:process.env.OCI_CHROMIUM_PATH||"/usr/bin/chromium",
-   headless:true,timeout:timeout,
-   args:["--disable-dev-shm-usage","--no-first-run","--no-default-browser-check"]});
+   headless:process.env.OCI_AUTONOMY_VIRTUAL_DESKTOP!=="private_xvfb",
+   timeout:timeout,
+   args:["--disable-dev-shm-usage","--no-first-run","--no-default-browser-check",
+         "--ozone-platform=x11"]});
  let context;
  try {
    const stateFile=process.env.OCI_AUTONOMY_SESSION_STATE;
