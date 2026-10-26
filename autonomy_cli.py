@@ -114,10 +114,20 @@ def fetch_readonly(url, allowlist):
         return {"ok": False, "error": "network_fetch_failed"}
 
 
-def browser_job(plan, step, artifacts, *, node="node", timeout=45):
+def browser_job(plan, step, artifacts, *, node="node", timeout=45, session_host=None):
     """Browser process has NO connection to user's KDE/Wayland X11 session."""
     if step["kind"] != "browse":
         raise PolicyError("Not a browser step.")
+    if session_host is not None:
+        from urllib.parse import urlsplit
+        from autonomy_core import valid_host
+        valid_host(session_host)
+        if (plan["hosts"]!=[session_host] or
+            urlsplit(step["input"]["url"]).hostname!=session_host or
+            plan["limits"]["allow_browser_interaction"] or
+            any(a["type"] not in ("screenshot","extract")
+                for a in step["input"]["actions"])):
+            raise PermissionError("Cached login may only be used for a read-only single-site mission.")
     artifacts = Path(artifacts)
     artifacts.mkdir(parents=True, mode=0o700, exist_ok=False)
     if os.name == "posix":
@@ -139,7 +149,19 @@ def browser_job(plan, step, artifacts, *, node="node", timeout=45):
         plan_path.write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False),
                              encoding="utf-8")
         plan_path.chmod(0o600)
-        sandbox = browser_argv(BROWSER.parent, artifacts, plan_file=plan_path)
+        session_file=None
+        if session_host is not None:
+            from browser_session_vault import load, _state
+            session_file=Path(temp)/"session.json"
+            fd=os.open(session_file,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+            try:
+                with os.fdopen(fd,"wb") as f:
+                    f.write(_state(session_host,load(session_host)))
+            except BaseException:
+                session_file.unlink(missing_ok=True)
+                raise
+        sandbox = browser_argv(BROWSER.parent, artifacts, plan_file=plan_path,
+                               session_file=session_file)
         argv = ["/usr/bin/systemd-run", "--user", "--wait", "--pipe",
                 "--quiet", "--collect", "--unit=" + unit,
                 "-p", "MemoryMax=768M", "-p", "MemoryHigh=720M",
@@ -188,7 +210,8 @@ def _low_priority():
     resource.setrlimit(resource.RLIMIT_CPU, (25, 26))
 
 
-def run_one(journal, mission, *, sensor=sample_host, browser=browser_job, observer=None):
+def run_one(journal, mission, *, sensor=sample_host, browser=browser_job,
+            observer=None, session_host=None):
     state = journal.snapshot(mission)
     if state["status"] == "needs_reconciliation":
         return {"status": "blocked", "reason": "previous_process_unverified"}
@@ -203,14 +226,30 @@ def run_one(journal, mission, *, sensor=sample_host, browser=browser_job, observ
     ok, reason = admit_local(sensor(), min_free_mb=6144 if task["kind"] == "vision" else 4096)
     if not ok:
         return {"status": "deferred", "reason": reason}
+    if session_host is not None:
+        # Validate/decrypt before consuming a durable step lease. Wrong site
+        # or locked desktop keyring must not become a failed mission step.
+        from urllib.parse import urlsplit
+        from browser_session_vault import load
+        if (task["kind"] != "browse" or state["plan"]["hosts"] != [session_host]
+            or urlsplit(task["input"]["url"]).hostname != session_host
+            or state["plan"]["limits"]["allow_browser_interaction"]
+            or any(a["type"] not in ("extract","screenshot")
+                   for a in task["input"]["actions"])):
+            raise PermissionError("Cached login requires a single-site read-only browser step.")
+        load(session_host)
     journal.start_step(mission, task["id"])
     try:
         if task["kind"] == "browse":
             artifact = journal.folder / "artifacts" / mission / task["id"]
             # Parent itself is private; never allow arbitrary file destinations.
             artifact.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            result = browser(state["plan"], task, artifact,
-                             timeout=min(state["plan"]["limits"]["max_seconds"], 45))
+            options={"timeout":min(state["plan"]["limits"]["max_seconds"], 45)}
+            if session_host is not None:
+                options["session_host"]=session_host
+            result = browser(state["plan"], task, artifact, **options)
+        elif session_host is not None:
+            raise PermissionError("Cached login cannot be applied to non-browser tasks.")
         elif task["kind"] == "fetch":
             result = fetch_readonly(task["input"]["url"], state["plan"]["hosts"])
         elif task["kind"] == "vision":
@@ -242,12 +281,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state", type=Path, default=DEFAULT_STATE)
     sub = parser.add_subparsers(dest="cmd", required=True)
+    rehearsal = sub.add_parser("rehearse")
+    rehearsal.add_argument("plan", type=Path)
     submit = sub.add_parser("submit")
     submit.add_argument("plan", type=Path)
     submit.add_argument("--confirm", action="store_true")
     submit.add_argument("--confirm-interaction", action="store_true")
     run = sub.add_parser("run-once")
     run.add_argument("mission")
+    run.add_argument("--reuse-login",metavar="HOST",
+                     help="Use exact-site encrypted browser session for this read-only step.")
+    run.add_argument("--confirm-session",action="store_true")
     status = sub.add_parser("status")
     status.add_argument("mission")
     for action in ("pause", "resume", "cancel"):
@@ -259,6 +303,13 @@ def main(argv=None):
     try:
         if args.cmd == "host":
             return print(json.dumps({"host": sample_host(), "admission": admit_local(sample_host())})) or 0
+        if args.cmd == "rehearse":
+            from mission_rehearsal import rehearse
+            payload = args.plan.read_bytes()
+            if len(payload) > 16384:
+                raise PolicyError("Plan exceeds limit.")
+            print(json.dumps(rehearse(json.loads(payload)), indent=2))
+            return 0
         journal = Journal(args.state)
         if args.cmd == "submit":
             payload = args.plan.read_bytes()
@@ -269,7 +320,9 @@ def main(argv=None):
                 raise PermissionError("Interaction needs a second explicit confirmation.")
             result = journal.submit(plan, owner_approved=args.confirm)
         elif args.cmd == "run-once":
-            result = run_one(journal, args.mission)
+            if args.reuse_login and not args.confirm_session:
+                raise PermissionError("Reusable authenticated browser requires --confirm-session.")
+            result = run_one(journal, args.mission,session_host=args.reuse_login)
         elif args.cmd == "status":
             result = journal.snapshot(args.mission)
         else:

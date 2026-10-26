@@ -31,6 +31,15 @@ The [owner-user systemd installer](docs/DASHBOARD-SERVICE.md) restores the
 authenticated Tailscale-backed dashboard on login and after application
 failure, without restarting CI workers or changing credentials.
 
+## Reusable encrypted website sessions (owner opt-in)
+
+The [browser session vault](docs/BROWSER-SESSION-VAULT.md) uses encrypted,
+site-scoped Playwright login state with the owner desktop Secret Service.
+A separately approved read-only browser mission can reuse it, without
+copying passwords to GitHub, mobile workers or the mission log. It is
+disabled until the desktop owner initialises the keyring and signs in.
+The background daemon never implicitly reuses cached logins.
+
 ## Private edge fleet and visual autonomy (reviewed source)
 
 The [unified autonomy release guide](docs/UNIFIED-AUTONOMY-20261025.md) adds
