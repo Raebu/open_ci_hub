@@ -1,6 +1,7 @@
 """Owner-approved remote device dispatch, isolation and zero-cloud-billing guard."""
 from pathlib import Path
 from resource_guard import ResourceGate
+import hashlib
 import tempfile
 import unittest
 import app_runtime as runtime
@@ -27,6 +28,34 @@ class FleetBrokerTests(unittest.TestCase):
         self.assertEqual(outcome["kind"],"windows_arm64")
         with self.assertRaises(Exception):
             self.b.enroll_edge("samsung-edge","windows_arm64",confirm=True)
+
+    def test_edge_rebind_rotates_worker_and_invalidates_old_token(self):
+        b=runtime.Broker(Path(self.tmp.name)/"rebind-state")
+        tasks=["python.syntax","json.inspect","hash.benchmark"]
+        b.register("s25-edge",tasks,confirm=True)
+        old_token=b.issue("s25-edge","worker",confirm=True)["token"]
+        b.enroll_edge("s25-edge","android_arm64",confirm=True)
+        new_token="oci_v1_"+"N"*64
+        new_hash=hashlib.sha256(new_token.encode()).hexdigest()
+        result=b.rebind_edge("s25-edge",new_hash,confirm=True)
+        self.assertTrue(result["rebound"])
+        self.assertTrue(result["previous_worker_revoked"])
+        with self.assertRaises(PermissionError):
+            b.auth(old_token)
+        self.assertEqual(b.auth(new_token)["credential_hash"],new_hash)
+        device=b.edge_devices()[0]
+        self.assertFalse(device["online"])
+        self.assertIsNone(device["last_seen"])
+
+    def test_edge_rebind_requires_confirmation_and_blocks_active_jobs(self):
+        with self.assertRaises(PermissionError):
+            self.b.rebind_edge("samsung-edge","a"*64)
+        with self.assertRaises(ValueError):
+            self.b.rebind_edge("samsung-edge","not-a-hash",confirm=True)
+        self.b.enroll_edge("samsung-edge","windows_arm64",confirm=True)
+        with self.assertRaises(RuntimeError):
+            self.b.rebind_edge("samsung-edge","b"*64,confirm=True)
+        self.assertEqual(self.b.edge_devices()[0]["approved"],True)
 
     def test_unenrolled_broker_uses_old_safe_host_policy(self):
         # Existing app worker continues to use host safety policy, no silent bypass.

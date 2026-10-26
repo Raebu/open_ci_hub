@@ -55,6 +55,9 @@ class EdgeTests(unittest.TestCase):
         success, result = e.execute("python.syntax", {"source": "x = 1"})
         self.assertTrue(success, result)
         self.assertTrue(result["valid"])
+        limited_success, limited_result = e.execute("json.inspect", {"text": "{}"}, ram_mb=128)
+        self.assertTrue(limited_success, limited_result)
+        self.assertTrue(limited_result["valid"])
 
     def test_no_token_sent_to_child(self):
         with patch.object(e.subprocess, "run") as run:
@@ -69,7 +72,10 @@ class EdgeTests(unittest.TestCase):
             run.return_value = Mock(returncode=0,
                                     stdout=b'{"success":true,"result":{}}')
             self.assertTrue(e.execute("json.inspect", {"text": "{}"}, ram_mb=128)[0])
-            self.assertEqual(run.call_args.kwargs["preexec_fn"].args, (128,))
+            command = run.call_args.args[0]
+            self.assertIn("--ram-mb", command)
+            self.assertEqual(command[command.index("--ram-mb") + 1], "128")
+            self.assertNotIn("preexec_fn", run.call_args.kwargs)
             self.assertEqual(e.execute("json.inspect", {"text": "{}"}, ram_mb=1024),
                              (False, {"error": "unsupported_resource_profile"}))
 

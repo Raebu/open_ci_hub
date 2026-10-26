@@ -75,7 +75,7 @@ for installation, verified outcomes and remaining security gates.
 
 ## Optional Android edge worker
 
-A restricted, non-root Android/Termux worker for small approved compute tasks is available. It uses the private application API and will not execute arbitrary CI scripts or access personal phone data. See [Android edge worker setup and safety](docs/ANDROID-EDGE-WORKER.md); it is not yet installed or verified on a physical phone.
+A restricted, non-root Android/Termux worker is installed and enrolled on a physical Samsung Galaxy S25. End-to-end Hub jobs have been verified for its three fixed tasks; it does not execute arbitrary CI scripts or access personal phone data. See [Android edge worker setup and safety](docs/ANDROID-EDGE-WORKER.md) for evidence and the remaining boot/recovery limitation.
 
 ## Installation in five minutes (after installing prerequisites)
 

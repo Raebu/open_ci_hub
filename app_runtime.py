@@ -172,6 +172,46 @@ class Broker:
             db.commit()
         return receipt
 
+    def rebind_edge(self,app,token_hash,*,confirm=False):
+        app=self._check_app(app)
+        if confirm is not True:
+            raise PermissionError("Owner confirmation required to rebind a device credential.")
+        if not isinstance(token_hash,str) or not re.fullmatch(r"[a-f0-9]{64}",token_hash):
+            raise ValueError("Expected a SHA-256 worker-token hash.")
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                app_row=db.execute("SELECT tasks,enabled FROM apps WHERE app=?",(app,)).fetchone()
+                devices=db.execute("SELECT credential_hash,kind,allowed_tasks,approved FROM fleet_devices WHERE app=?",(app,)).fetchall()
+                workers=db.execute("SELECT token_hash FROM credentials WHERE app=? AND role=? AND revoked=0",(app,"worker")).fetchall()
+                if not app_row or app_row["enabled"]!=1:
+                    raise ValueError("Application is not enabled.")
+                tasks=json.loads(app_row["tasks"])
+                if not tasks or not set(tasks)<=fleet_devices.SUPPORTED:
+                    raise ValueError("Application includes tasks not approved for remote devices.")
+                if len(devices)!=1 or devices[0]["approved"]!=1 or devices[0]["kind"] not in fleet_devices.KINDS:
+                    raise RuntimeError("Exactly one approved device is required.")
+                if set(json.loads(devices[0]["allowed_tasks"]))!=set(tasks):
+                    raise RuntimeError("Device task scope does not match the application.")
+                if len(workers)!=1 or workers[0]["token_hash"]!=devices[0]["credential_hash"]:
+                    raise RuntimeError("Existing worker credential is not uniquely bound to the device.")
+                if db.execute("SELECT 1 FROM credentials WHERE token_hash=?",(token_hash,)).fetchone():
+                    raise ValueError("This credential hash has already been used.")
+                active=db.execute("SELECT COUNT(*) FROM jobs WHERE app=? AND status IN (?,?,?)",(app,"queued","leased","stranded")).fetchone()[0]
+                if active:
+                    raise RuntimeError("Queued, leased or stranded jobs exist; device rebinding is paused.")
+                old_hash=workers[0]["token_hash"]
+                db.execute("UPDATE credentials SET revoked=1 WHERE token_hash=? AND app=? AND role=? AND revoked=0",(old_hash,app,"worker"))
+                db.execute("INSERT INTO credentials(token_hash,app,role,created,revoked) VALUES(?,?,?,?,0)",(token_hash,app,"worker",time.time()))
+                changed=db.execute("UPDATE fleet_devices SET credential_hash=?,free_ram_mb=NULL,charging=NULL,last_seen=0 WHERE app=? AND credential_hash=? AND approved=1",(token_hash,app,old_hash)).rowcount
+                if changed!=1:
+                    raise RuntimeError("Device credential binding changed unexpectedly.")
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+        return {"app":app,"rebound":True,"previous_worker_revoked":True,"device_health":"requires_fresh_report"}
+
     def edge_availability(self,who,data):
         with self._db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -553,6 +593,8 @@ def main(argv=None):
     edge.add_argument('--kind',choices=sorted(fleet_devices.KINDS),required=True)
     edge.add_argument('--confirm',action='store_true')
     sub.add_parser('edge-list')
+    rebind=sub.add_parser('edge-rebind');rebind.add_argument('app');rebind.add_argument('sha256')
+    rebind.add_argument('--confirm',action='store_true')
     issue=sub.add_parser('issue');issue.add_argument('app');issue.add_argument('role',choices=sorted(ROLE))
     issue.add_argument('--confirm',action='store_true')
     revoke=sub.add_parser('revoke');revoke.add_argument('sha256');revoke.add_argument('--confirm',action='store_true')
@@ -587,6 +629,7 @@ def main(argv=None):
         if args.cmd=='register':out=broker.register(args.app,args.tasks.split(','),confirm=args.confirm)
         elif args.cmd=='edge-enroll':out=broker.enroll_edge(args.app,args.kind,confirm=args.confirm)
         elif args.cmd=='edge-list':out=broker.edge_devices()
+        elif args.cmd=='edge-rebind':out=broker.rebind_edge(args.app,args.sha256,confirm=args.confirm)
         elif args.cmd=='issue':out=broker.issue(args.app,args.role,confirm=args.confirm)
         elif args.cmd=='revoke':out=broker.revoke(args.sha256,confirm=args.confirm)
         elif args.cmd=='budget':out=broker.set_task_budget(args.app,args.task,

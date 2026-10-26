@@ -5,10 +5,7 @@ local-only screenshot interpretation, controlled natural-language mission drafts
 Ed25519 mission receipts, and a private Xvfb display controller. It preserves
 the active native CI services and never moves the user's KDE mouse.
 
-**Not all ten ambitions are production-validated.** Physical device enrolment,
-live graphical task orchestration, real free-cloud billing connections and external
-security attestation remain separate release gates. A branch merge is not
-proof that a physical device has run any jobs.
+**Not all ten ambitions are production-validated.** The S25 Android device is now enrolled and has completed all three fixed edge tasks end-to-end (2026-10-26). The Windows ARM64 device, live graphical task orchestration, real free-cloud billing connections and external security attestation remain separate release gates. A branch merge alone is not proof that a physical device has run jobs.
 
 ## Owner enrolment of two devices
 
@@ -81,20 +78,20 @@ hostname and securely input the worker token, then:
     python edge_worker.py --interval 45
 
 The S25 guard requires Wi-Fi, charger, battery >=70%, battery temperature
-<40C, GOOD battery health and at least 1536MiB available memory.
-Android can terminate Termux at any time; never make it a critical
-always-on CI runner. No root, personal file access or Android security
-bypass is required.
+<40C, GOOD battery health and at least 1536MiB available memory. The worker is
+now enabled under Termux runit as `oci-edge-worker`. Termux:Boot is not installed,
+so recovery after an Android reboot or force-stop remains unverified. Android can
+terminate Termux at any time; never make it a critical always-on CI runner. No root,
+personal file access or Android security bypass is required.
+
+Verified 2026-10-26: `python.syntax` job `3f64c4c8cda272c0133eb648cc6ce265`,
+`json.inspect` job `24d80fe757e521c8129d016f743b874b`, and `hash.benchmark` job
+`f5dcfcffde9e51fb798624f3a6772cfd` each completed through the Hub in one attempt.
+The full repository test suite passed 810 tests.
 
 ### Prove real execution
 
-Submit a harmless json.inspect task with the separate submit token through
-the private /api/v1/jobs endpoint. Observe the actual job ID and result at
-/api/v1/jobs/JOBID, then disconnect the device and verify the readiness
-expires after two minutes. Test revocation, unplugging, and the stranded
-lease policy before authorising unattended device execution.
-The App Runtime dashboard and edge-list CLI show actual last-seen status,
-never imaginary online flags.
+The S25 end-to-end job path has been verified using a separate submit token. Remaining acceptance work is to test readiness expiry after disconnect, revocation, unplugging and the stranded-lease policy before authorising unattended device execution. The App Runtime dashboard and edge-list CLI show actual last-seen status, never imaginary online flags.
 
 ## Invisible desktop and local visual AI
 

@@ -7,7 +7,6 @@ downloads, personal files, contact access, root or Docker.
 from __future__ import annotations
 import argparse
 import ast
-from functools import partial
 import hashlib
 import json
 import math
@@ -101,7 +100,13 @@ def fixed_task(task, payload):
         return {"sha256": digest.hex(), "iterations": count}
     raise ValueError("Unapproved task")
 
-def child_main(task):
+def child_main(task, ram_mb):
+    try:
+        enforce_limits(ram_mb)
+    except (OSError, ValueError, TypeError, OverflowError):
+        print(json.dumps({"success": False, "result": {"error": "resource_limit_unavailable"}},
+                         separators=(",", ":"), allow_nan=False))
+        return 78
     try:
         wire = sys.stdin.buffer.read(2049)
         if len(wire) > 2048:
@@ -114,6 +119,8 @@ def child_main(task):
     return 0
 
 def enforce_limits(ram_mb):
+    if type(ram_mb) is not int or not 64 <= ram_mb <= MAX_RAM_MB:
+        raise ValueError("Unsupported child memory limit")
     maximum = ram_mb * 1024 * 1024
     resource.setrlimit(resource.RLIMIT_AS, (maximum, maximum))
     resource.setrlimit(resource.RLIMIT_CPU, (10, 11))
@@ -134,9 +141,9 @@ def execute(task, payload, ram_mb=MAX_RAM_MB):
         clean_env = {"HOME": str(Path.home()), "LANG": "C.UTF-8",
                      "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
         p = subprocess.run([sys.executable, "-I", str(Path(__file__).resolve()),
-                            "_task", task], input=wire, capture_output=True,
-                           timeout=15, check=False, env=clean_env,
-                           preexec_fn=partial(enforce_limits, ram_mb))
+                            "--ram-mb", str(ram_mb), "_task", task],
+                           input=wire, capture_output=True, timeout=15,
+                           check=False, env=clean_env)
         if p.returncode or len(p.stdout) > 2048:
             return False, {"error": "task_execution_failed"}
         response = json.loads(p.stdout)
@@ -202,11 +209,12 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--interval", type=int, default=45)
+    parser.add_argument("--ram-mb", type=int, default=MAX_RAM_MB)
     parser.add_argument("internal", nargs="?")
     parser.add_argument("task", nargs="?")
     args = parser.parse_args(argv)
     if args.internal == "_task":
-        return child_main(args.task)
+        return child_main(args.task, args.ram_mb)
     if args.internal:
         parser.error("Invalid mode")
     if not 15 <= args.interval <= 600:

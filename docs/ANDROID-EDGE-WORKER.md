@@ -1,8 +1,9 @@
 # Android Galaxy S25 opt-in edge worker
 
-**Status: coded for review, NOT enrolled, installed or verified on a phone.**
-This uses the existing Open CI Hub private application job queue, NOT the
-native GitHub/GitLab runner or a general-purpose remote terminal.
+**Status: verified on a physical Samsung Galaxy S25 on 2026-10-26.**
+The phone is enrolled as `s25-edge`; all three approved tasks have completed
+end-to-end through the existing private Open CI Hub application queue. This is
+NOT the native GitHub/GitLab runner or a general-purpose remote terminal.
 
 The phone runs only fixed, short, deterministic operations:
 - python.syntax: Python AST parsing, without executing the source.
@@ -44,15 +45,13 @@ Only on the trusted owner Hub, after inspecting the existing app inventory:
     python3 app_runtime.py edge-enroll s25-edge --kind android_arm64 --confirm
     python3 app_runtime.py issue s25-edge submit --confirm
 
-Never commit credentials or paste them into chat. Keep separate worker and submit
-tokens; the worker token belongs only in the phone session, never in scripts or
-command arguments. The newly enrolled edge path uses owner-reviewed **128MiB** tasks so the
-remote broker can enforce bounded device reservations without counting
-the phone as Garuda RAM. The phone reports fresh available memory and
-battery/charging state at every job claim. The Hub binds this report to
-its uniquely issued worker token and approved device architecture;
-stale or unverifiable devices cannot claim work. Do not share the token.
-App registration refuses duplicate app IDs.
+Never commit credentials or paste them into chat. Worker and submit tokens are separate; the worker token stays on the phone and the submit token stays on the trusted owner Hub. The active task budget is **128 MiB**, with one job at a time and no GPU reservation. The phone reports fresh available memory and battery/charging state at each claim. The Hub binds this report to the uniquely issued worker token and approved device architecture; stale or unverifiable devices cannot claim work. App registration refuses duplicate app IDs.
+
+For a deliberate worker-token rotation, first ensure there are no queued, leased or stranded jobs. Generate/store the replacement token privately on the phone and calculate its SHA-256 there; pass only that digest to the owner Hub:
+
+    python3 app_runtime.py edge-rebind s25-edge SHA256_OF_NEW_WORKER_TOKEN --confirm
+
+The command validates the unique approved device and task scope, atomically revokes the old worker credential and rebinds the new hash. The device remains unavailable until it reports fresh health. Never put the token itself in command arguments, chat, logs or Git.
 
 Copy the CURRENT edge_worker.py and application_client.py from the reviewed trusted revision
 to a private Termux working directory, then inside Termux:
@@ -77,17 +76,9 @@ Before claiming, and again after claiming, the worker requires:
 - Wi-Fi supplicant connected with a reported non-zero address.
 - A job with <=512MiB reserved RAM, zero GPU and an exact built-in task name.
 
-Each job runs in a child process with a POSIX virtual memory hard limit matching the approved budget (maximum 512MiB),
-10 seconds of CPU time, no core dumps, a 15-second wall time limit, and
-credentials scrubbed from the child process environment. The phone's
-subprocess has the Android sandbox permissions of Termux: that is NOT a
-security boundary suitable for running untrusted code.
+Each task runs in a separate Python child process. The child applies a POSIX virtual-memory hard limit matching the approved budget (maximum 512 MiB), a 10-second CPU limit and no core dumps before reading the task payload; the parent enforces a 15-second wall-clock limit and scrubs credentials from the child environment. On Android, setting limits through `preexec_fn` aborted the child, so the limit is now applied in the child entry point. Both 128 MiB and 512 MiB child tests passed on the S25. Python's interpreter bootstrap happens before the limit is applied, so this is appropriate only for the fixed, tightly bounded tasks listed above—not arbitrary or untrusted code. The subprocess retains Termux's Android permissions; this is not a general-purpose security sandbox.
 
-If the phone goes offline *after* claiming a task, the existing Hub's lease
-mechanism holds it stranded on expiry until the owner confirms the original
-worker is stopped. Unattended retry/cancellation is NOT yet implemented.
-Termux background work can be killed by Android. Do not depend on the phone
-for critical persistent hosting; no boot-time service has been configured.
+If the phone goes offline *after* claiming a task, the Hub's lease mechanism holds it stranded on expiry until the owner confirms the original worker is stopped. Unattended retry/cancellation is NOT yet implemented. The worker is enabled under Termux's runit supervisor as `oci-edge-worker`; check it with `sv status oci-edge-worker`. This is supervised while Termux's service manager is running, but Termux:Boot is not installed/configured, so automatic recovery after an Android reboot or force-stop is not verified. Android can still suspend or kill Termux. Do not depend on the phone for critical persistent hosting; confirm the Hub shows the device online before relying on it.
 
 ## Validation through Open CI Hub
 
@@ -96,10 +87,13 @@ On an authorised Open CI Hub host in an isolated checkout:
     python3 -m unittest -v tests.test_edge_worker
     python3 scripts/validate.py
 
-These local tests cannot prove Android battery behaviour or cross-device
-connectivity. A real end-to-end test must use a separately issued submit token,
-enqueue a harmless sample job, and verify its exact Hub job ID/result and
-phone's device health before considering deployment verified.
+The complete repository suite passed **810 tests** on 2026-10-26. The live S25 then completed all three fixed task types through the Hub, each in one attempt:
+
+- `python.syntax` — job `3f64c4c8cda272c0133eb648cc6ce265`, valid source, 8 AST nodes.
+- `json.inspect` — job `24d80fe757e521c8129d016f743b874b`, valid JSON object and digest returned.
+- `hash.benchmark` — job `f5dcfcffde9e51fb798624f3a6772cfd`, 1,000 iterations and digest returned.
+
+The phone's Termux service log acknowledged all three IDs, and the Hub records show each as completed with one attempt. This verifies the restricted mobile task path; it does not verify arbitrary CI builds, boot-time recovery or unattended stranded-job recovery.
 
 An explicitly owner-enrolled phone has its own server-trusted readiness
 TTL and remote RAM/charging admission, so a small approved task can run
