@@ -98,7 +98,7 @@ def _owned_file(path):
         raise ValueError("Session file too large.")
     return path
 
-def save(host,data,*,key=None,folder=HOME_DIR,now=None,ttl=86400,confirm=False):
+def save(host,data,*,key=None,folder=HOME_DIR,now=None,ttl=86400,confirm=False,replace=False):
     if confirm is not True:
         raise PermissionError("Owner must approve saving this authenticated session.")
     if type(ttl) is not int or not 60<=ttl<=MAX_AGE:
@@ -115,14 +115,24 @@ def save(host,data,*,key=None,folder=HOME_DIR,now=None,ttl=86400,confirm=False):
     record=json.dumps({"v":1,"expires":now+ttl,"n":nonce.hex(),"c":ciphertext.hex()},
                       separators=(",",":")).encode()
     path=_path(host,folder)
-    if path.exists() or path.is_symlink():
-        raise FileExistsError("Session exists; revoke before replacement.")
+    if path.is_symlink():
+        raise PermissionError("Symlinked session file refused.")
+    if replace:
+        # Strict validation before rotating; never discard a prior encrypted
+        # session until the replacement is fully encrypted and written.
+        if path.exists():
+            _owned_file(path)
+    elif path.exists():
+        raise FileExistsError("Session exists; explicitly request replacement.")
     fd,tmp=tempfile.mkstemp(prefix=".sealed-",dir=path.parent)
     try:
         os.fchmod(fd,0o600)
         with os.fdopen(fd,"wb") as f:
             f.write(record);f.flush();os.fsync(f.fileno())
-        os.link(tmp,path)  # refuses existing file, including concurrent writer
+        if replace:
+            os.replace(tmp,path)  # atomic rotation of an already encrypted file
+        else:
+            os.link(tmp,path)  # refuses existing file, including concurrent writer
     finally:
         Path(tmp).unlink(missing_ok=True)
     return {"site":host,"expires":now+ttl,"encrypted":True}
