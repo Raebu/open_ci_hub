@@ -72,9 +72,9 @@ class SharedRamSchedulingTests(unittest.TestCase):
     def take(self,app):
         return self.b.claim(self.people[app]['worker'])
 
-    def test_laptop_defaults_protect_os_and_limit_parallelism(self):
+    def test_laptop_defaults_remove_blanket_ram_floor_and_limit_parallelism(self):
         status=self.b.resource_status()
-        self.assertEqual(status['capacity']['min_free_ram_mb'],4096)
+        self.assertEqual(status['capacity']['min_free_ram_mb'],0)
         self.assertEqual(status['capacity']['max_parallel'],3)
         self.assertEqual(status['gpu'][0]['vendor'],'intel')
         self.assertIsNone(status['gpu'][0]['free_mb'])
@@ -117,6 +117,12 @@ class SharedRamSchedulingTests(unittest.TestCase):
         self.assertEqual(info['reserved_shared_gpu_ram_mb'],4096)
         self.queue('trg-recruitment','cv')
         self.assertIsNotNone(self.take('trg-recruitment')['job'])
+
+    def test_owner_can_remove_global_free_ram_reserve(self):
+        self.b.set_global_resources(3,0,1024,confirm=True)
+        state=self.b.resource_status()
+        self.assertEqual(state['capacity']['min_free_ram_mb'],0)
+        self.assertEqual(state['policy']['max_parallel'],3)
 
     def test_host_owner_can_override_conservative_defaults(self):
         self.b.set_global_resources(2,6144,0,confirm=True)

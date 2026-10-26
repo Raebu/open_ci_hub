@@ -12,7 +12,7 @@ On the phone, the App Runtime tab reports native runner reservations, app RAM/In
 
 ## Target Garuda laptop
 
-The known target is a Razer Book 13, Intel i7-1165G7, 16 GB RAM and Intel Iris Xe integrated graphics. Intel GPU working memory is part of system RAM, not dedicated NVIDIA VRAM. Start with at least 4096 MiB protected for KDE/OS, no more than three app jobs and one integrated GPU task, while native CI memory reservations are also deducted. Hardware readings and cgroup limits must be verified directly on the actual host.
+The known target is a Razer Book 13, Intel i7-1165G7, 16 GB RAM and Intel Iris Xe integrated graphics. Intel GPU working memory is part of system RAM, not dedicated NVIDIA VRAM. The live host's base free-RAM reserve is now 256 MiB; the blanket 4 GiB floor has been removed for CPU-only and mobile-edge work. Each job's approved RAM budget must still fit in available memory after active app/native-runner reservations. Below 5 GiB available RAM, host-side concurrency is throttled to one job. New host work still pauses when free swap drops below 512 MiB, memory PSI reaches critical pressure, or critical thermal/disk/battery conditions occur. Intel shared-memory GPU tasks retain a 4 GiB floor because their working set comes from the same physical RAM. Mobile edge tasks use device-specific RAM, battery, Wi-Fi and one-job-per-device checks rather than reserving their task memory against the laptop.
 
 ## Activation
 

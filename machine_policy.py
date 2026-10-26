@@ -111,8 +111,6 @@ def admission(mode,telemetry,base_limit):
         available=swap.get('mem_available_mb')
         free=swap.get('swap_free_mb')
         total=swap.get('swap_total_mb')
-        if type(available)==int and available<3072:
-            return {'max_parallel':0,'reason':'critical_ram_headroom','swap':swap}
         if type(total)==int and total>0 and type(free)==int and free<512:
             return {'max_parallel':0,'reason':'critical_swap_exhaustion','swap':swap}
         if type(available)==int and available<5120:

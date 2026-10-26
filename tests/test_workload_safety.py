@@ -33,6 +33,12 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(mp.admission('balanced',{'load_per_cpu':1.9},3)['max_parallel'],1)
         self.assertEqual(mp.admission('balanced',{},3)['max_parallel'],3)
 
+    def test_low_ram_throttles_to_one_job_instead_of_blocking_all_work(self):
+        telemetry=healthy(swap={'mem_available_mb':2800,'swap_free_mb':1000,'swap_total_mb':16000})
+        result=mp.admission('balanced',telemetry,3)
+        self.assertEqual(result['max_parallel'],1)
+        self.assertEqual(result['reason'],'ram_headroom_throttle')
+
     def test_sensor_reads_missing_are_not_fabricated(self):
         with patch('machine_policy.Path.glob',return_value=[]):
             self.assertIsNone(mp.package_temperature_c())
@@ -142,7 +148,7 @@ class UnifiedBrokerTests(unittest.TestCase):
         return self.b.submit(self.submit,task,{'hello':True})['job_id']
 
     def test_native_runner_memory_counts_against_app_admission(self):
-        self.b.set_task_budget('myapp','build',7000,confirm=True)
+        self.b.set_task_budget('myapp','build',8000,confirm=True)
         self.enqueue('build')
         denied=self.b.claim(self.worker)
         self.assertIsNone(denied['job'])

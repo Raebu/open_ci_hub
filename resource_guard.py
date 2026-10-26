@@ -17,8 +17,8 @@ from native_runner_observer import runner_reservations
 DEFAULT_MAX_PARALLEL=4
 DEFAULT_MAX_PER_APP=2
 DEFAULT_RAM_MB=512
-DEFAULT_MIN_FREE_RAM_MB=2048
-INTEL_DESKTOP_MIN_FREE_RAM_MB=4096
+DEFAULT_MIN_FREE_RAM_MB=0
+INTEL_SHARED_GPU_MIN_FREE_RAM_MB=4096
 INTEL_DESKTOP_MAX_PARALLEL=3
 MAX_INTEGRATED_GPU_JOBS=1
 DEFAULT_MIN_FREE_VRAM_MB=1024
@@ -159,7 +159,7 @@ class ResourceGate:
     @staticmethod
     def set_config(db,*,max_parallel,min_free_ram_mb,min_free_vram_mb):
         if (type(max_parallel)!=int or not 1<=max_parallel<=32
-            or type(min_free_ram_mb)!=int or not 256<=min_free_ram_mb<=MAX_MEMORY_MB
+            or type(min_free_ram_mb)!=int or not 0<=min_free_ram_mb<=MAX_MEMORY_MB
             or type(min_free_vram_mb)!=int or not 0<=min_free_vram_mb<=MAX_MEMORY_MB):
             raise ValueError('Invalid global parallel/RAM/VRAM reserve policy.')
         for key,value in [('max_parallel',max_parallel),
@@ -238,8 +238,6 @@ class ResourceGate:
         total=physical_ram_total_mb() if intel else None
         if intel and total is not None and total<=24576:
             configured={row['name'] for row in db.execute('SELECT name FROM resource_config')}
-            if 'min_free_ram_mb' not in configured:
-                cfg['min_free_ram_mb']=INTEL_DESKTOP_MIN_FREE_RAM_MB
             if 'max_parallel' not in configured:
                 cfg['max_parallel']=INTEL_DESKTOP_MAX_PARALLEL
         active=self._active(db)
@@ -306,7 +304,14 @@ class ResourceGate:
         if profile['vram_mb'] and mode=='shared':
             # Integrated GPU allocations draw from the SAME physical RAM.
             required_ram+=profile['vram_mb']
-        if available-s['reserved_ram_mb']-native_ram-cfg['min_free_ram_mb']<required_ram:
+        # CPU/mobile jobs no longer inherit a blanket free-RAM reserve. Their
+        # declared task budget must still fit in unreserved available memory.
+        # Intel shared-memory GPU jobs retain a 4 GiB floor because GPU memory
+        # is carved from the same physical RAM as the OS and other processes.
+        minimum_ram=cfg['min_free_ram_mb']
+        if profile['vram_mb'] and mode=='shared':
+            minimum_ram=max(minimum_ram,INTEL_SHARED_GPU_MIN_FREE_RAM_MB)
+        if available-s['reserved_ram_mb']-native_ram-minimum_ram<required_ram:
             return None,'ram_headroom'
         if profile['vram_mb']:
             if not reading:
@@ -322,4 +327,4 @@ class ResourceGate:
                 return None,'gpu_sensor_unavailable'
         return {**profile,'gpu_memory_mode':mode,
                 'effective_ram_mb':required_ram,
-                'min_free_ram_mb':cfg['min_free_ram_mb']},None
+                'min_free_ram_mb':minimum_ram},None

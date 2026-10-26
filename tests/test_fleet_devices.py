@@ -57,12 +57,11 @@ class FleetBrokerTests(unittest.TestCase):
             self.b.rebind_edge("samsung-edge","b"*64,confirm=True)
         self.assertEqual(self.b.edge_devices()[0]["approved"],True)
 
-    def test_unenrolled_broker_uses_old_safe_host_policy(self):
-        # Existing app worker continues to use host safety policy, no silent bypass.
+    def test_unenrolled_broker_uses_host_task_budget_without_edge_bypass(self):
+        # Unenrolled apps still pass through host admission and their declared task budget.
         out=self.b.claim(self.worker)
-        self.assertIsNone(out["job"])
-        self.assertIn(out["reason"],("ram_headroom","memory_pressure","ram_sensor_unavailable",
-                  "native_runner_telemetry_unavailable"))
+        self.assertIsNotNone(out["job"])
+        self.assertEqual(out["job"]["resources"]["ram_mb"],128)
 
     def test_enrolled_edge_capacity_and_exact_task(self):
         self.b.enroll_edge("samsung-edge","windows_arm64",confirm=True)
