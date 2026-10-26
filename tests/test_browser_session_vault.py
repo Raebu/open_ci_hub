@@ -78,9 +78,8 @@ class VaultTests(unittest.TestCase):
         class Result:
             returncode=1
             stdout=b""
-        with patch("browser_session_vault.subprocess.run",return_value=Result()):
-            with self.assertRaises(PermissionError):
-                vault.secret_key()
+        with self.assertRaises(PermissionError):
+            vault.secret_key(run=lambda *a,**kw:Result())
         def down(*args,**kwargs):
             raise OSError("keyring unavailable")
         with self.assertRaises(RuntimeError):

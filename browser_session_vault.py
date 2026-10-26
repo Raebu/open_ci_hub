@@ -182,6 +182,12 @@ def main(argv=None):
     p=sub.add_parser("import");p.add_argument("site");p.add_argument("--state",type=Path,required=True)
     p.add_argument("--ttl-hours",type=int,default=24);p.add_argument("--confirm",action="store_true")
     sub.add_parser("list")
+    p=sub.add_parser("allow-auto");p.add_argument("site")
+    p.add_argument("--days",type=int,default=90)
+    p.add_argument("--confirm",action="store_true")
+    sub.add_parser("auto-list")
+    p=sub.add_parser("deny-auto");p.add_argument("site")
+    p.add_argument("--confirm",action="store_true")
     p=sub.add_parser("revoke");p.add_argument("site");p.add_argument("--confirm",action="store_true")
     args=parser.parse_args(argv)
     try:
@@ -194,8 +200,20 @@ def main(argv=None):
             result=save(args.site,data,ttl=args.ttl_hours*3600,confirm=args.confirm)
         elif args.cmd=="list":
             result=list_sites()
+        elif args.cmd=="allow-auto":
+            from browser_session_grants import authorise
+            result=authorise(args.site,days=args.days,confirm=args.confirm)
+        elif args.cmd=="auto-list":
+            from browser_session_grants import list_grants
+            result=list_grants()
+        elif args.cmd=="deny-auto":
+            from browser_session_grants import revoke as revoke_auto
+            result=revoke_auto(args.site,confirm=args.confirm)
         else:
+            # Explicit local cache revocation also withdraws standing reuse.
+            from browser_session_grants import revoke as revoke_auto
             result=revoke(args.site,confirm=args.confirm)
+            revoke_auto(args.site,confirm=args.confirm)
         print(json.dumps(result,indent=2))
         return 0
     except (OSError,RuntimeError,ValueError,TypeError,PermissionError,FileExistsError,KeyError) as err:

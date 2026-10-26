@@ -38,7 +38,11 @@ site-scoped Playwright login state with the owner desktop Secret Service.
 A separately approved read-only browser mission can reuse it, without
 copying passwords to GitHub, mobile workers or the mission log. It is
 disabled until the desktop owner initialises the keyring and signs in.
-The background daemon never implicitly reuses cached logins.
+The background daemon can automatically reuse a cached login **only after**
+an owner grants standing permission for the exact site with
+`browser_session_vault.py allow-auto SITE --confirm`. That grant enables
+read-only screenshot/extraction missions, not account changes. See the
+vault guide for revocation and separate website-session expiry.
 
 ## Private edge fleet and visual autonomy (reviewed source)
 

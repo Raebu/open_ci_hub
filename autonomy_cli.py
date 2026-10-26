@@ -226,6 +226,17 @@ def run_one(journal, mission, *, sensor=sample_host, browser=browser_job,
     ok, reason = admit_local(sensor(), min_free_mb=6144 if task["kind"] == "vision" else 4096)
     if not ok:
         return {"status": "deferred", "reason": reason}
+    if session_host is None and task["kind"] == "browse":
+        from browser_session_grants import select_host
+        try:
+            # Standing site approval applies automatically to each eligible
+            # owner-approved, read-only browser step, including daemon jobs.
+            session_host = select_host(state["plan"], task)
+        except (PermissionError, ValueError, RuntimeError, OSError):
+            return {"status": "deferred", "reason": "automatic_login_permission_unavailable"}
+        automatic_session = session_host is not None
+    else:
+        automatic_session = False
     if session_host is not None:
         # Validate/decrypt before consuming a durable step lease. Wrong site
         # or locked desktop keyring must not become a failed mission step.
@@ -237,7 +248,12 @@ def run_one(journal, mission, *, sensor=sample_host, browser=browser_job,
             or any(a["type"] not in ("extract","screenshot")
                    for a in task["input"]["actions"])):
             raise PermissionError("Cached login requires a single-site read-only browser step.")
-        load(session_host)
+        try:
+            load(session_host)
+        except (PermissionError, ValueError, RuntimeError, OSError):
+            if automatic_session:
+                return {"status": "deferred", "reason": "saved_login_expired_or_unavailable"}
+            raise
     journal.start_step(mission, task["id"])
     try:
         if task["kind"] == "browse":
