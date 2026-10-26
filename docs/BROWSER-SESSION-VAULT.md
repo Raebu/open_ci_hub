@@ -44,6 +44,43 @@ the plaintext RAM-only copy after successful import:
 Never put plaintext sessions in the project folder. The encrypted vault
 rejects nonprivate input files, unexpected storage, symlinks, or overwrites.
 
+## Optional: standing permission, no repeated login prompt per mission
+
+To let approved read-only browser missions automatically use the saved
+GitHub session, grant access **once** for this exact host:
+
+    python3 browser_session_vault.py allow-auto github.com --days 90 --confirm
+
+No additional `--confirm-session` is needed for eligible queued missions.
+The background daemon checks the standing authorisation itself and may use
+the saved GitHub session automatically when a mission needs to browse
+`https://github.com`. The approval is HMAC-authenticated by your existing
+desktop keyring key, private, per host and revocable. It does not export
+passwords or cookies to agents, and never authorises browser clicks, fills,
+submissions or cross-site navigation. Missions are still required to have
+already been approved through the normal Open CI Hub controls.
+
+Review approved sites:
+
+    python3 browser_session_vault.py auto-list
+
+Turn off this automatic access without deleting the encrypted login:
+
+    python3 browser_session_vault.py deny-auto github.com --confirm
+
+The standing grant can last up to 90 days, **but website sessions have their
+own expiry**. The current GitHub vault record has its own independently
+enforced expiry; granting standing consent does not extend it, silently
+renew GitHub cookies or bypass GitHub MFA. Once the saved session expires,
+background access safely defers and must be refreshed by a normal owner
+sign-in. For a longer local cache on your next import, the vault supports
+`--ttl-hours 168` (seven days), provided the website's own session still
+works.
+
+This grants reusable identity, **not** general permission to edit code,
+merge pull requests, send messages or perform financial operations.
+Those still require their own authorised tool/API scopes and workflow rules.
+
 ## 3. Reuse for one approved read-only browser mission step
 
 A browser mission using login reuse must permit exactly one HTTPS host

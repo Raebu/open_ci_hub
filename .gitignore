@@ -18,3 +18,6 @@ integrations/background-browser/node_modules/
 *.session.enc
 *storage-state*.json
 *playwright-session*.json
+
+# Standing browser-login authorisations are private local state.
+*.autouse.json
