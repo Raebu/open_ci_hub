@@ -654,11 +654,19 @@ async function loadAutonomy(){
     head.append(el('strong','Foreground-first policy: '+(data.admission?.eligible?'Ready':'Throttled')),
       el('span',String(data.admission?.reason||'Unknown')+' · '+String(data.admission?.memory_available_mb??'?')+' MB available','small'));
     root.append(head);
+    const capabilities=el('div',undefined,'result-row');
+    capabilities.append(
+      el('strong','Private graphical desktop: '+(data.private_display?.active?'Running':'Offline')),
+      el('span','Login-session reuse: '+(data.login_session_cache?.enabled?'Enabled':'Not enabled')+
+        ' · Cloud billing: '+String(data.cloud_cost?.policy||'Unknown'),'small'));
+    root.append(capabilities);
     if(!data.configured){root.append(el('p','No background missions enrolled on this PC.','small'));return;}
     if(!data.missions?.length){root.append(el('p','No missions submitted.','small'));return;}
     for(const mission of data.missions){
       const row=el('div',undefined,'result-row');
-      row.append(el('strong',mission.id),el('span',mission.status,'small'));
+      const progress=(mission.steps_completed??0)+'/'+(mission.steps_total??'?')+' steps';
+      row.append(el('strong',mission.id),el('span',mission.status+' · '+progress+
+        ' · '+String(mission.evidence_receipts??0)+' evidence receipts','small'));
       const actions=el('div',undefined,'controls');
       for(const operation of (mission.status==='paused'?['resume','cancel']:
         mission.status==='queued'?['pause','cancel']:[])){

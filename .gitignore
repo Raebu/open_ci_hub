@@ -13,3 +13,8 @@ dist/
 
 # Local opt-in Playwright dependency tree; lockfile is committed.
 integrations/background-browser/node_modules/
+
+# Never commit browser bearer sessions, even when encrypted.
+*.session.enc
+*storage-state*.json
+*playwright-session*.json

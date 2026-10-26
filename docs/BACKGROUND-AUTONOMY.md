@@ -141,3 +141,11 @@ host agent, remote PC, production app, or Cloudflare configuration was changed.
 
 This still does NOT complete the separate virtual GUI, general visual AI,
 cloud billing integration or authenticated remote fleet transport.
+
+
+## Explicit reusable login state (2026-10-26)
+
+See [browser session vault](BROWSER-SESSION-VAULT.md) for the optional
+AES-GCM encrypted, keyring-protected, exact-site browser session cache.
+It never reads personal browser profiles, never exports credentials to
+remote workers and cannot be used for unapproved web interactions.

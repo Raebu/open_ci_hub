@@ -10,7 +10,7 @@ from pathlib import Path
 class SandboxUnavailable(RuntimeError):
     pass
 
-def browser_argv(browser_folder: Path, artifacts: Path, *, plan_file=None, bwrap="/usr/bin/bwrap"):
+def browser_argv(browser_folder: Path, artifacts: Path, *, plan_file=None, session_file=None, bwrap="/usr/bin/bwrap"):
     browser_folder, artifacts = Path(browser_folder), Path(artifacts)
     if not Path(bwrap).is_file():
         raise SandboxUnavailable("bubblewrap is required for autonomous browser jobs.")
@@ -23,6 +23,12 @@ def browser_argv(browser_folder: Path, artifacts: Path, *, plan_file=None, bwrap
         plan_file = Path(plan_file)
         if plan_file.is_symlink() or not plan_file.is_file():
             raise SandboxUnavailable("Mission file must be a real private file.")
+    if session_file is not None:
+        session_file=Path(session_file)
+        if (session_file.is_symlink() or not session_file.is_file() or
+            session_file.stat().st_mode & 0o077 or
+            session_file.stat().st_size>262144):
+            raise SandboxUnavailable("Decrypted browser session must be private and bounded.")
     # No --ro-bind /, /home, /mnt, /run/user or Docker socket.
     # The browser source directory is read-only, and /artifacts is the ONLY
     # writable user filesystem mount. /tmp is an ephemeral private tmpfs.
@@ -61,4 +67,8 @@ def browser_argv(browser_folder: Path, artifacts: Path, *, plan_file=None, bwrap
         argv += ["--dir", "/input",
                  "--ro-bind", str(plan_file.resolve()), "/input/plan.json",
                  "--setenv", "OCI_AUTONOMY_PLAN_PATH", "/input/plan.json"]
+    if session_file is not None:
+        argv += ["--dir","/session",
+                 "--ro-bind",str(session_file.resolve()),"/session/state.json",
+                 "--setenv","OCI_AUTONOMY_SESSION_STATE","/session/state.json"]
     return argv + ["--", "/usr/bin/node", "/app/browser.mjs"]

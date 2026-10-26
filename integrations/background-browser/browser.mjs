@@ -33,9 +33,26 @@ async function execute(plan) {
    args:["--disable-dev-shm-usage","--no-first-run","--no-default-browser-check"]});
  let context;
  try {
+   const stateFile=process.env.OCI_AUTONOMY_SESSION_STATE;
+   let sessionOptions={};
+   if(stateFile){
+     guard(stateFile==="/session/state.json","Invalid session path");
+     guard(allowed.size===1,"Cached login is limited to one approved origin");
+     guard(fs.statSync(stateFile).size<=262144,"Cached session too large");
+     const session=JSON.parse(fs.readFileSync(stateFile,"utf8"));
+     const origin="https://"+[...allowed][0];
+     guard(session && Array.isArray(session.cookies)&&Array.isArray(session.origins),
+       "Invalid cached session");
+     guard(session.cookies.every(c=>c.domain===[...allowed][0] && c.secure===true),
+       "Cached cookie host mismatch");
+     guard(session.origins.every(o=>o.origin===origin),"Cached storage host mismatch");
+     guard(plan.allowInteraction!==true && plan.actions.every(a=>a.type==="extract"||a.type==="screenshot"),
+       "Cached login must be read-only");
+     sessionOptions={storageState:session};
+   }
    context=await browser.newContext({
      acceptDownloads:false,serviceWorkers:"block",permissions:[],
-     viewport:{width:1100,height:720}});
+     viewport:{width:1100,height:720},...sessionOptions});
    await context.route("**/*",async route=>{
      try {checkURL(route.request().url(),allowed);await route.continue()}
      catch{await route.abort("blockedbyclient")}
