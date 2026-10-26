@@ -97,8 +97,10 @@ def validate_plan(plan):
         if not isinstance(data, dict):
             raise PolicyError("Step input must be an object.")
         if kind == "browse":
-            if set(data) != {"url", "actions"} or not hostset:
+            if set(data) not in ({"url", "actions"}, {"url", "actions", "display"}) or not hostset:
                 raise PolicyError("Invalid browser step.")
+            if "display" in data and data["display"] != "private_xvfb":
+                raise PolicyError("Only the private Xvfb graphical desktop is approved.")
             public_url(data["url"], hostset)
             actions = data["actions"]
             if not isinstance(actions, list) or not 1 <= len(actions) <= 12:
