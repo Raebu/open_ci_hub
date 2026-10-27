@@ -7,25 +7,15 @@ $InstallRoot = Join-Path $env:LOCALAPPDATA 'OpenCIHub\Worker'
 if ($env:OS -ne 'Windows_NT') { throw 'This installer requires Windows.' }
 $arch = (Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Architecture)
 if ($arch -ne 12) { throw "This worker profile requires Windows ARM64 (architecture code 12); detected $arch." }
-$pythonExe = $null
-$candidates = @()
-$pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
-$pyCommand = Get-Command py.exe -ErrorAction SilentlyContinue
-if ($pythonCommand) { $candidates += $pythonCommand.Source }
-if ($pyCommand) { $candidates += $pyCommand.Source }
-$candidates += @(Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python*\python.exe') -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
-$candidates += @(Get-ChildItem -Path (Join-Path $env:ProgramFiles 'Python*\python.exe') -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
-foreach ($candidate in $candidates) {
-  $v = & $candidate --version 2>&1 | Out-String
-  if ($LASTEXITCODE -eq 0 -and $v -match 'Python 3\.(1[1-9]|[2-9][0-9])') {
-    $machine = & $candidate -c 'import platform; print(platform.machine())' 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0 -and $machine.Trim().ToUpperInvariant() -in @('ARM64','AARCH64')) {
-      $pythonExe = $candidate
-      break
-    }
-  }
+# Use verified native Python, never the Microsoft Store python.exe alias.
+$pythonExe = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313-arm64\python.exe'
+if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
+  throw 'Native ARM64 Python 3.13 executable is missing.'
 }
-if (-not $pythonExe) { throw 'Install official native ARM64 Python 3.11+ and ensure python.exe or py.exe is available.' }
+$pythonCheck = & $pythonExe -c 'import platform, sys; print(platform.machine()); print(sys.version_info.major, sys.version_info.minor)' 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0 -or $pythonCheck -notmatch '(?m)^ARM64\s*$' -or $pythonCheck -notmatch '(?m)^3 13\s*$') {
+  throw 'Native ARM64 Python 3.13 failed its startup check.'
+}
 $tailscale = Get-Command tailscale.exe -ErrorAction SilentlyContinue
 if (-not $tailscale) {
   $candidate = Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'
