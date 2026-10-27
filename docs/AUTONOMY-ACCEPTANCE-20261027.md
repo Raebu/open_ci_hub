@@ -81,3 +81,10 @@ An external reviewer should verify the actual live environment in addition to th
 - Authentication: provider-specific scoped OAuth refresh is preferred. Generic automatic password/TOTP reauthentication remains unimplemented and must not bypass CAPTCHA, hardware passkey or mandatory human MFA prompts.
 - Autonomous repair and merge: no blanket unattended code-changing authority has been enabled; build isolated generated-patch review, bounded retries, required checks and audited merge receipts before limited production use.
 - Zero incremental cloud: obtain provider-specific account billing/quota and enforceable no-overage guarantees before turning on unattended paid-provider dispatch.
+
+
+## Bounded autonomous repair gate — 27 October 2026
+
+Implemented `repair_controller.py` and `tests/test_repair_controller.py`. The focused eight-test suite passes. The patch validator rejects unallowlisted or protected paths, binary patches, deletions, renames, symlinks, submodules and oversized diffs. The merge eligibility gate requires low-risk scope, a verified isolated worker, branch protection without admin bypass, all required exact-candidate-SHA checks with log digests, and a separate trusted review bound to the repository, PR number and candidate SHA. It returns eligibility only and never merges by itself.
+
+This is a tested policy boundary, **not yet an end-to-end autonomous repair service**. Candidate patch generation, disposable worktree application and network-isolated test execution, provider-authenticated review/check/branch-protection retrieval, actual PR/MR creation, merge execution and merged-commit receipt are still not connected. Auto-merge remains disabled.

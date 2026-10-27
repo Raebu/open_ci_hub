@@ -46,6 +46,8 @@ vault guide for revocation and separate website-session expiry.
 
 ## Approved invisible graphical missions
 
+[Bounded autonomous repair and merge gate](docs/BOUNDED-AUTONOMOUS-REPAIR.md) documents the new patch validation and exact-evidence merge eligibility gate; it deliberately does not execute merges until provider evidence is authenticated.
+
 [Private Xvfb mission acceptance](docs/PRIVATE-GUI-ACCEPTANCE.md) explains how the existing background browser can execute a reviewed graphical step in display :91 without touching KDE. Real Chromium screenshot acceptance passed, while unrestricted visual AI and physical remote devices remain separate gates.
 
 ## Private edge fleet and visual autonomy (reviewed source)
