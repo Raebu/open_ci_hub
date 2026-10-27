@@ -53,3 +53,15 @@ variable pricing, no hard spending cap or unavailable billing telemetry.
 
 No new app, daemon, cloud subscription, or permanent git branch is required
 for the work completed on the current device.
+
+## Contabo existing VPS: restricted compute acceptance, 27 Oct 2026
+
+Existing server: `contabo-talent` (8 vCPUs, approximately 17 GiB available RAM, 128 GiB free storage). The smaller VPS is resource-constrained and excluded.
+
+One root-owned code file at `/usr/local/lib/open-ci-hub/contabo_compute.py` on the larger VPS executes three statically approved pure tasks: `json.inspect`, `python.syntax`, and `hash.benchmark`. The exact same file is version-controlled in this repository. All three real SSH-dispatched jobs returned matching independently computed results. No new subscription, VPS, persistent service, worker credential, or Git branch was created.
+
+Each remote invocation uses an ephemeral systemd unit with DynamicUser, private networking, protected filesystem and home directories, no privileges or capabilities, 256 MiB memory, 50 percent CPU quota, 16 task limit and 30-second deadline. No production Docker socket or root-privileged job execution is exposed to the task.
+
+Run the acceptance directly from Garuda: `python3 contabo_compute.py --smoke`. A bounded custom task can be passed as JSON to `python3 contabo_compute.py --task json.inspect` or one of the other two approved names.
+
+This proves restricted on-demand Contabo compute, NOT an autonomous remote CI build runner. Contabo is an existing paid service; an enforceable hard-zero overage/traffic charge cap is not verified. Therefore general untrusted build scripts, unattended cloud placement and auto-provisioning remain OFF. Production Raeburn Talent containers were left running.
