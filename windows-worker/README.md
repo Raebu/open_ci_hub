@@ -18,7 +18,7 @@ The existing private Tailscale Serve endpoint is:
 
 - `https://theraeburngroup.tail8450a3.ts.net`
 - Razer Tailscale IPv4: `100.72.235.100`
-- `/health` returned HTTP 200 locally during preparation.
+- `/health` returned HTTP 200 locally and returned HTTP 200 with TLS verification when the hostname was pinned to the Razer Tailscale IP. The Razer cannot currently resolve the MagicDNS hostname through its ordinary system DNS configuration. The installer therefore requires the Samsung to resolve the hostname and verify TLS; if it fails, repair Tailscale/system DNS rather than disabling TLS or exposing a public endpoint.
 
 The Serve endpoint already proxies to the existing Open CI Hub dashboard/application API on loopback. No new public port, second scheduler or duplicate Hub service is needed.
 
