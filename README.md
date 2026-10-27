@@ -268,3 +268,14 @@ The private [Workload Control](docs/WORKLOAD-CONTROL.md) layer observes the Dock
 ### Guarded CI provider containers
 
 The existing GitHub/GitLab/CircleCI Compose runner templates no longer automatically restart Docker containers outside central admission checks. A separate opt-in, owner-approved guard verifies preserved existing Docker container identity, RAM/swap/CPU/PID/security caps, Docker restart=no, and laptop pressure policy before starting an idle provider runner. A disabled-by-default user timer can retry approved starts after reboot. No containers or named volumes are created/deleted/migrated automatically. See [provider runner admission](docs/PROVIDER-RUNNER-ADMISSION.md). Native provider jobs remain capped by Docker; this is not complete control over scheduling inside each external CI provider.
+
+
+### S22/S25 bounded edge pool (October 2026)
+
+The Razer can schedule reviewed JSON, Python syntax and bounded hashing jobs to the
+existing S22/S25 Termux workers, with fresh device telemetry, job idempotency,
+auditable receipts, owner-curated project file checks and a user-owned five-minute
+timer. Remote code execution, full CI/CD builds, browser automation and deployments
+are **not** capabilities of these phone workers. Details, security restrictions,
+commands and Linux-phone feasibility are in
+[docs/EDGE-POOL-ANDROID-WORKERS-20261027.md](docs/EDGE-POOL-ANDROID-WORKERS-20261027.md).
