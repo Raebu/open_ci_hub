@@ -20,6 +20,7 @@ import time
 TASKS = frozenset(("python.syntax", "json.inspect", "hash.benchmark"))
 MAX_TEXT_BYTES = 1500
 MAX_RAM_MB = 512
+MIN_BATTERY_PERCENT = 40
 
 def termux_sensor(binary):
     if binary not in ("termux-battery-status", "termux-wifi-connectioninfo"):
@@ -46,7 +47,7 @@ def eligible(battery, wifi):
         return False, "sensor_invalid"
     if battery.get("health") != "GOOD":
         return False, "battery_health"
-    if level < 70:
+    if level < MIN_BATTERY_PERCENT:
         return False, "battery_low"
     if temp >= 40:
         return False, "battery_warm"

@@ -11,12 +11,20 @@ class EdgeTests(unittest.TestCase):
     def test_good_phone(self):
         self.assertEqual(e.eligible(self.battery, self.wifi), (True, "eligible"))
 
+    def test_40_to_80_percent_battery_window(self):
+        self.assertEqual(e.MIN_BATTERY_PERCENT, 40)
+        for level in (40, 41, 65, 79, 80):
+            with self.subTest(level=level):
+                self.assertEqual(e.eligible({**self.battery, "percentage": level}, self.wifi), (True, "eligible"))
+        self.assertEqual(e.eligible({**self.battery, "percentage": 39}, self.wifi), (False, "battery_low"))
+        self.assertEqual(e.eligible({**self.battery, "percentage": 65, "plugged": "UNPLUGGED"}, self.wifi), (False, "not_charging"))
+
     def test_missing_and_invalid_sensors_block(self):
         for b, w in ((None, self.wifi), (self.battery, None), ({}, self.wifi),
                      ({**self.battery, "temperature": "bad"}, self.wifi),
                      ({**self.battery, "temperature": float("nan")}, self.wifi),
                      ({**self.battery, "temperature": 40}, self.wifi),
-                     ({**self.battery, "percentage": 69}, self.wifi),
+                     ({**self.battery, "percentage": 39}, self.wifi),
                      ({**self.battery, "plugged": "UNPLUGGED"}, self.wifi),
                      ({**self.battery, "health": "OVERHEAT"}, self.wifi),
                      (self.battery, {**self.wifi, "ip": "0.0.0.0"}),

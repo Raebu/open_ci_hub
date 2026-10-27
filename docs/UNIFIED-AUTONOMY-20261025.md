@@ -77,7 +77,7 @@ hostname and securely input the worker token, then:
     python edge_worker.py --once
     python edge_worker.py --interval 45
 
-The S25 guard requires Wi-Fi, charger, battery >=70%, battery temperature
+The S25 guard requires Wi-Fi, charger, battery >=40%, battery temperature
 <40C, GOOD battery health and at least 1536MiB available memory. The worker is
 now enabled under Termux runit as `oci-edge-worker`. Termux:Boot is not installed,
 so recovery after an Android reboot or force-stop remains unverified. Android can

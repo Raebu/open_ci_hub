@@ -71,7 +71,7 @@ library client validates TLS certificates and rejects arbitrary Internet hosts.
 
 Before claiming, and again after claiming, the worker requires:
 - Termux:API battery and Wi-Fi sensors available in under five seconds.
-- Battery health GOOD, charge >=70%, plugged into power.
+- Battery health GOOD, charge >=40%, plugged into power.
 - Battery temperature <40C. This is battery temperature, NOT a CPU sensor.
 - Wi-Fi supplicant connected with a reported non-zero address.
 - A job with <=512MiB reserved RAM, zero GPU and an exact built-in task name.
