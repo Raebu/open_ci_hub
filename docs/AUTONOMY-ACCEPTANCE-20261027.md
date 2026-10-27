@@ -64,4 +64,20 @@ Each remote invocation uses an ephemeral systemd unit with DynamicUser, private 
 
 Run the acceptance directly from Garuda: `python3 contabo_compute.py --smoke`. A bounded custom task can be passed as JSON to `python3 contabo_compute.py --task json.inspect` or one of the other two approved names.
 
-This proves restricted on-demand Contabo compute, NOT an autonomous remote CI build runner. Contabo is an existing paid service; an enforceable hard-zero overage/traffic charge cap is not verified. Therefore general untrusted build scripts, unattended cloud placement and auto-provisioning remain OFF. Production Raeburn Talent containers were left running.
+The existing Contabo host is also now verified as a **restricted main-branch Python CI executor**, not a general-purpose cloud build runner: on 27 October the trusted `main` commit `21e6f8ac7ada5aa77a98fb6a135d18807393910f` passed **835 Python tests** in a temporary, network-isolated systemd DynamicUser unit. The tested source archive's SHA-256 and exact Git SHA were verified and the server returned a structured receipt. This test does not prove all GitHub/GitLab repositories, PR code, container builds, deployment or auto-repair.
+
+The owner can rerun both local checks and remote pinned-main acceptance using `python3 scripts/validate.py --contabo` once the current source is committed, pushed, and clean.
+
+The Contabo VPS is **already paid for**; using it does not introduce a new subscription, but is not economically the same thing as free computing. Contabo states that unusually high traffic can result in throttling under its fair-use policy. No independently verified account-specific zero-overage contract or metered-spend proof is connected. General untrusted CI scripts, unbounded third-party workloads, auto-provisioning and speculative paid cloud placement therefore remain disabled. <https://help.contabo.com/en/support/solutions/articles/103000271195-are-there-any-bandwith-limits-at-contabo->
+
+## Independent security assessment handoff
+
+An external reviewer should verify the actual live environment in addition to the unit tests: host and Contabo SSH access policies and key rotation; dynamic-user sandbox restrictions and escape paths; Chrome/Xvfb session confidentiality; broker authentication and authority boundaries; prompt injection and untrusted source execution; signed receipts and replay; local/remote test provenance; idempotent mobile recovery; access to Docker and production volumes; provider spend caps; backups and rollbacks. The assessor must document severity, reproduction, ownership, remediation and a **dated independently signed pass/fail decision**. Internal reviews do not substitute for that decision.
+
+## Hardware and account gates still open
+
+- S25: Termux:Boot application installation/open-once and an owner-safe real reboot test; test a genuine interrupted leased task and recovery.
+- S22 Ultra: connect the distinct device to Tailscale, then enrol and verify its own worker token, tasks and independent mobile workflow. It is not visible yet.
+- Authentication: provider-specific scoped OAuth refresh is preferred. Generic automatic password/TOTP reauthentication remains unimplemented and must not bypass CAPTCHA, hardware passkey or mandatory human MFA prompts.
+- Autonomous repair and merge: no blanket unattended code-changing authority has been enabled; build isolated generated-patch review, bounded retries, required checks and audited merge receipts before limited production use.
+- Zero incremental cloud: obtain provider-specific account billing/quota and enforceable no-overage guarantees before turning on unattended paid-provider dispatch.

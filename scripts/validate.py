@@ -21,6 +21,7 @@ def run(label, argv):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--containers', action='store_true', help='Build runner images and smoke-test GitHub bootstrap using a temporary private volume; requires image downloads')
+    parser.add_argument('--contabo', action='store_true', help='After local validation, require a trusted-main isolated Contabo CI receipt; source must be committed and pushed')
     args = parser.parse_args()
     try:
         sources = list(ROOT.glob('*.py')) + list((ROOT / 'providers').glob('*.py')) + list((ROOT / 'scripts').glob('*.py')) + list((ROOT / 'tests').glob('*.py'))
@@ -49,7 +50,9 @@ def main():
                 run('Restart retains state', options + ['test "$(cat .bootstrap-validation)" = validation && test -x config.sh && test -x run.sh'])
             finally:
                 run('Remove only temporary validation volume', ['docker', 'volume', 'rm', volume])
-        print('\nPASS: local checks completed. Native push builds, provider artifacts and hardware/mobile recovery remain UNVERIFIED.', flush=True)
+        if args.contabo:
+            run('Contabo pinned main isolated CI acceptance', [sys.executable, 'contabo_ci.py', '--trusted-main'])
+        print('\nPASS: local checks completed.' + (' Isolated Contabo main checks passed.' if args.contabo else ' Remote CI, provider artifacts and mobile recovery were not checked by this command.'), flush=True)
         return 0
     except (RuntimeError, OSError) as exc:
         print(f'\nFAIL: {exc}', file=sys.stderr)
