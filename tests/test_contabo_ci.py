@@ -40,6 +40,16 @@ class TrustedContaboCITests(unittest.TestCase):
             self.assertEqual(count,2)
             self.assertTrue((Path(folder)/"tests/test_a.py").exists())
 
+    def test_github_metadata_allowed_git_database_denied(self):
+        with tempfile.TemporaryDirectory() as folder:
+            blob=archive([("snapshot/.github/workflows/test.yml",b"name: ci\n"),
+                          ("snapshot/app_runtime.py",b"# ok\n"),
+                          ("snapshot/tests/test_a.py",b"pass\n")])
+            self.assertEqual(ci._unpack(blob,Path(folder)),3)
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaises(ValueError):
+                ci._unpack(archive([("snapshot/.git/config",b"bad")]),Path(folder))
+
     def test_archive_traversal_and_symlinks_rejected(self):
         for name in ("snapshot/../etc/passwd","/snapshot/app_runtime.py",
                      "badrepo/app_runtime.py","snapshot/.git/config"):

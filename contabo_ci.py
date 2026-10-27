@@ -33,7 +33,7 @@ def _reject_file(name,member):
     p=PurePosixPath(name)
     if (p.is_absolute() or not p.parts or p.parts[0]!="snapshot"
         or len(p.parts)>14 or any(s in (".","..","") for s in p.parts)
-        or any(s.startswith(".git") for s in p.parts)
+        or ".git" in p.parts
         or member.issym() or member.islnk() or member.isdev()
         or not (member.isfile() or member.isdir())):
         raise ValueError("Untrusted archive entry.")
