@@ -125,3 +125,46 @@ replaces only that DTB, reads it back, and remounts RO. It does not change the
 root filesystem or internal storage. **It may stop keyboard logging but will
 not necessarily resolve systemd emergency mode**; inspect logs before planning
 a separate root mount / service fix. No image reflashing required.
+
+## Root cause discovered: experimental kernel lacks ext4 (27 October 2026)
+
+Razer successfully read a journal diagnosis from the original USB boot. The
+first blocking failure was `boot.mount` (exit status 32), cascading into
+`boot-efi.mount` and `local-fs.target`, causing systemd emergency mode.
+The boot image was then independently extracted and inspected without USB
+privileges. Its kernel config `config-6.18.34-stb-qc7+` says:
+
+    # CONFIG_EXT4_FS is not set
+    CONFIG_BTRFS_FS=y
+    CONFIG_VFAT_FS=y
+
+But its separate `bootpart` filesystem is ext4, and `/etc/fstab` expects
+it to auto-mount as ext4. This is a structural incompatibility in the
+experimental upstream image. The kernel cannot mount this filesystem; the
+mount failure does NOT prove the ext4 filesystem is corrupt.
+
+A temporary, reversible **USB-boot TEST ONLY** patch is now prepared:
+
+    sudo bash linux-worker/repair-boot-mounts.sh
+
+Run only from the Razer, after reconnecting the exact 8GB SanDisk and
+mounting partitions 2 and 3 READ-ONLY through UDisks. The script checks
+device serial, mounted partition identities, `fstab` original SHA256 and
+the EXT4-disabled kernel config; makes a preserved backup; and changes ONLY
+these `fstab` mount entries:
+
+- EFI /boot/efi vfat -> noauto,nofail,umask=0077 (fsck pass 0)
+- bootpart /boot ext4 -> noauto,nofail,noatime,nodiratime,errors=remount-ro
+  (fsck pass 0)
+
+The Btrfs root and swap entries remain unchanged. The script remounts
+the Btrfs root RW only for the backup and edits, then returns it to RO.
+It never formats or repairs the filesystem. This lets Debian reach normal
+startup **without trying to mount unsupported ext4**; it does not add ext4
+support or make kernel updates safe.
+
+**DO NOT perform apt kernel upgrades or GRUB updates** on the trial USB
+until a subsequent build enables ext4 in the Linux kernel (or safely
+converts /boot to a supported filesystem with bootloader verification).
+This repair does not address the separate display-bridge IRQ warning,
+and successful Linux boot and SSH networking still require physical tests.
