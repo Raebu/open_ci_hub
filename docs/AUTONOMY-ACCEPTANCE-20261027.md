@@ -64,7 +64,7 @@ Each remote invocation uses an ephemeral systemd unit with DynamicUser, private 
 
 Run the acceptance directly from Garuda: `python3 contabo_compute.py --smoke`. A bounded custom task can be passed as JSON to `python3 contabo_compute.py --task json.inspect` or one of the other two approved names.
 
-The existing Contabo host is also now verified as a **restricted main-branch Python CI executor**, not a general-purpose cloud build runner: on 27 October the trusted `main` commit `21e6f8ac7ada5aa77a98fb6a135d18807393910f` passed **835 Python tests** in a temporary, network-isolated systemd DynamicUser unit. The tested source archive's SHA-256 and exact Git SHA were verified and the server returned a structured receipt. This test does not prove all GitHub/GitLab repositories, PR code, container builds, deployment or auto-repair.
+The existing Contabo host is verified as a **restricted main-branch Python CI executor**, not a general-purpose cloud build runner. A live acceptance on 27 October tested main commit `27a14fdae2061661a40c615bb125921230e23faf`: **835 Python tests passed in 24.22 seconds** inside a temporary, network-isolated systemd DynamicUser unit. Receipt: archive SHA-256 `6cf6aaf7e5a493c7422ca1c64b92b08962e800d9fd2ecd03e213887a3e4a6df3`; 320 source entries; the server verified the exact Git SHA and returned structured proof. In a separate live run, all three fixed Contabo tasks also returned locally recomputed matching results: `json.inspect`, `python.syntax`, and `hash.benchmark`. This does not prove arbitrary repositories, PR code, container builds, deployment or auto-repair.
 
 The owner can rerun both local checks and remote pinned-main acceptance using `python3 scripts/validate.py --contabo` once the current source is committed, pushed, and clean.
 
@@ -76,7 +76,7 @@ An external reviewer should verify the actual live environment in addition to th
 
 ## Hardware and account gates still open
 
-- S25: Termux:Boot application installation/open-once and an owner-safe real reboot test; test a genuine interrupted leased task and recovery.
+- S25: Termux:Boot application installation/open-once and an owner-safe real reboot test; test a genuine interrupted leased task and recovery. The latest recheck during this session could not reach the phone over Tailscale/SSH, so earlier S25 worker evidence is historical until the device reconnects.
 - S22 Ultra: connect the distinct device to Tailscale, then enrol and verify its own worker token, tasks and independent mobile workflow. It is not visible yet.
 - Authentication: provider-specific scoped OAuth refresh is preferred. Generic automatic password/TOTP reauthentication remains unimplemented and must not bypass CAPTCHA, hardware passkey or mandatory human MFA prompts.
 - Autonomous repair and merge: no blanket unattended code-changing authority has been enabled; build isolated generated-patch review, bounded retries, required checks and audited merge receipts before limited production use.
