@@ -8,9 +8,11 @@ try {
     $env:OCI_EDGE_URL = $Hub
     $env:OCI_EDGE_WORKER_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Bstr)
     Set-Location $Root
-    $Python = Get-Command py.exe -ErrorAction SilentlyContinue
-    if (-not $Python) { $Python = Get-Command python.exe -ErrorAction Stop }
-    & $Python.Source (Join-Path $Root 'portable_edge_worker.py') --interval 60
+    $PythonExe = (Get-Content -LiteralPath (Join-Path $Root 'python-path.txt') -Raw).Trim()
+    if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) { throw 'Pinned native ARM64 Python executable is unavailable.' }
+    $Arch = & $PythonExe -c 'import platform; print(platform.machine())'
+    if ($LASTEXITCODE -ne 0 -or $Arch.Trim().ToUpperInvariant() -notin @('ARM64', 'AARCH64')) { throw 'Pinned Python is not native ARM64.' }
+    & $PythonExe (Join-Path $Root 'portable_edge_worker.py') --interval 60
     exit $LASTEXITCODE
 } finally {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Bstr)

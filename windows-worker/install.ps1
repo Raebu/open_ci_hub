@@ -13,6 +13,8 @@ $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
 $pyCommand = Get-Command py.exe -ErrorAction SilentlyContinue
 if ($pythonCommand) { $candidates += $pythonCommand.Source }
 if ($pyCommand) { $candidates += $pyCommand.Source }
+$candidates += @(Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python*\python.exe') -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+$candidates += @(Get-ChildItem -Path (Join-Path $env:ProgramFiles 'Python*\python.exe') -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
 foreach ($candidate in $candidates) {
   $v = & $candidate --version 2>&1 | Out-String
   if ($LASTEXITCODE -eq 0 -and $v -match 'Python 3\.(1[1-9]|[2-9][0-9])') {
@@ -40,6 +42,7 @@ New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'portable_edge_worker.py') -Destination $InstallRoot -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'application_client.py') -Destination $InstallRoot -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'run-worker.ps1') -Destination $InstallRoot -Force
+$pythonExe | Set-Content -LiteralPath (Join-Path $InstallRoot 'python-path.txt') -Encoding UTF8
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 & icacls.exe $InstallRoot /inheritance:r /grant:r "$($identity):(OI)(CI)F" 'SYSTEM:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not restrict worker directory permissions.' }
