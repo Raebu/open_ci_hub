@@ -48,6 +48,9 @@ def main(argv=None):
     if not 30 <= args.interval <= 600:
         parser.error("Interval must be 30–600 seconds.")
     journal = Journal(args.state)
+    # Shared application broker: existing Android workers only, no extra daemon.
+    from app_runtime import Broker
+    app_broker=Broker()
     lock = journal.folder / "autonomy-daemon.lock"
     # A separate process on the same host must not run the same mission queue.
     with lock.open("a+") as fd:
@@ -61,6 +64,14 @@ def main(argv=None):
         while not stop:
             try:
                 result = tick(journal)
+                # Pure, idempotency-keyed Android jobs only. Other stranded
+                # leases remain blocked pending original-worker evidence.
+                edge=app_broker.reconcile_pure_edge_stranded()
+                if edge["requeued_pure_edge_jobs"] or edge["finalised_pure_edge_jobs"]:
+                    print(json.dumps({"status":"pure_edge_recovery",
+                                      "requeued":len(edge["requeued_pure_edge_jobs"]),
+                                      "finalised":len(edge["finalised_pure_edge_jobs"])}),
+                          flush=True)
                 # No URLs, job data, result text or secrets in daemon logs.
                 print(json.dumps(result, separators=(",", ":")), flush=True)
             except Exception:

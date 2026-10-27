@@ -382,6 +382,58 @@ class Broker:
         return {'verified_failed':cleared,'still_stranded':unverified,
                 'automatic_retry':False,'reason':'At-least-once effects require app-level idempotency.'}
 
+    def reconcile_pure_edge_stranded(self, *, now=None):
+        """Retry only stale idempotency-keyed, side-effect-free Android tasks.
+
+        The previous worker might still finish late, so these specific jobs
+        must never perform arbitrary shell, file writes or external effects.
+        A late receipt is rejected by the existing lease-token binding.
+        """
+        now=time.time() if now is None else now
+        if type(now) not in (int,float) or not 0 < now < 1e12:
+            raise ValueError('Invalid recovery clock.')
+        pure=frozenset(('python.syntax','json.inspect','hash.benchmark'))
+        grace=900  # Time after lease expiry, not after job submission.
+        recovered=[];finalised=[]
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                rows=db.execute(
+                    'SELECT j.id,j.app,j.task,j.attempts,j.lease_until,j.idempotency_key,'
+                    'f.kind,f.allowed_tasks,f.approved FROM jobs j '
+                    'JOIN fleet_devices f ON f.app=j.app '
+                    'WHERE j.status=? AND j.lease_until<? '
+                    'ORDER BY j.updated,j.id LIMIT 20',('stranded',now-grace)).fetchall()
+                for row in rows:
+                    if (row['kind']!='android_arm64' or row['approved']!=1 or
+                        row['task'] not in pure or not row['idempotency_key'] or
+                        not 1<=row['attempts']<=MAX_ATTEMPTS):
+                        continue
+                    try:
+                        allowed=json.loads(row['allowed_tasks'])
+                    except (ValueError,TypeError):
+                        continue
+                    if not isinstance(allowed,list) or row['task'] not in allowed:
+                        continue
+                    retry=row['attempts']<MAX_ATTEMPTS
+                    target='queued' if retry else 'failed'
+                    message=('Bounded pure Android task retry after expired lease; '
+                             'prior worker might still be running; no side effects allowed.'
+                             if retry else 'Pure Android task reached the maximum retry count.')
+                    changed=db.execute(
+                        'UPDATE jobs SET status=?,lease_hash=NULL,lease_until=NULL,'
+                        'updated=?,result=? WHERE id=? AND app=? AND status=?',
+                        (target,now,json.dumps({'message':message}),
+                         row['id'],row['app'],'stranded')).rowcount
+                    if changed:
+                        (recovered if retry else finalised).append(row['id'])
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+        return {'requeued_pure_edge_jobs':recovered,'finalised_pure_edge_jobs':finalised,
+                'arbitrary_code_replayed':False}
+
     def watchdog_once(self):
         """No new work under critical laptop pressure, without touch to CI jobs."""
         snapshot=self.resource_status()

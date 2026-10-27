@@ -61,12 +61,12 @@ class ParallelSchedulerTests(unittest.TestCase):
 
     def test_ram_capacity_headroom_prevents_oversubscription(self):
         self.b.resource_gate=ResourceGate(memory_reader=lambda:8192,gpu_reader=lambda:{})
-        self.b.set_task_budget('trg-recruitment','cv',3500,confirm=True)
-        self.b.set_task_budget('raeburnemailer','compose',3500,confirm=True)
+        self.b.set_task_budget('trg-recruitment','cv',4500,confirm=True)
+        self.b.set_task_budget('raeburnemailer','compose',4500,confirm=True)
         self.put('trg-recruitment','cv');self.put('raeburnemailer','compose')
         self.assertIsNotNone(self.take('trg-recruitment')['job'])
         self.assertEqual(self.take('raeburnemailer')['reason'],'ram_headroom')
-        self.assertEqual(self.b.resource_status()['reserved_ram_mb'],3500)
+        self.assertEqual(self.b.resource_status()['reserved_ram_mb'],4500)
 
     def test_gpu_allocation_respects_reserved_vram_and_headroom(self):
         self.b.set_task_budget('clientmotive','video',1024,4096,0,confirm=True)
