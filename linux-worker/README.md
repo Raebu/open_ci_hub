@@ -29,9 +29,16 @@ This downloads a roughly 1.9 GB experimental Debian 13 ARM64 image to git-ignore
 
 ## 2. Write to a verified, disposable USB ONLY (not yet done)
 
-Use a DIFFERENT >=16 GB USB stick. Identify its exact path, model, capacity and removable status on Razer:
+The connected **8 GB SanDisk Cruzer Blade** is verified to hold the 4,081,057,792-byte image. Its existing Garuda boot medium will be erased; the Kingston XS1000 is excluded. Identify its exact path, model, capacity and removable status on Razer:
 
     lsblk -o NAME,PATH,MODEL,SIZE,TRAN,RM,MOUNTPOINTS
+
+For the VERIFIED SanDisk (serial 2006087663032D727A93), use the guarded writer instead of generic dd. This requires your local Razer terminal and your administrator password; the Open CI Hub command gateway cannot elevate to write raw disks:
+
+    cd /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
+    sudo bash linux-worker/flash-sandisk-galaxy.sh
+
+The writer refuses a changed device ID, nonremovable disks, unexpected capacity, mounted partitions and an image checksum mismatch. It asks you to type FLASH-SANDISK, writes only that USB, performs a complete byte-for-byte readback, then relocates and verifies the GPT backup header to the actual 8 GB device end.
 
 Then, once the correct external stick has been verified and its partitions unmounted, write the image. THIS IS A TEMPLATE; do not run unless output disk identity is independently verified:
 
