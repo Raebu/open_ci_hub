@@ -6,7 +6,6 @@
 set -Eeuo pipefail
 EXPECTED_SERIAL='2006087663032D727A93'
 USB='/dev/disk/by-id/usb-SanDisk_Cruzer_Blade_2006087663032D727A93-0:0'
-ROOT='/run/media/theraeburngroup/rootpart'
 BOOT='/run/media/theraeburngroup/bootpart'
 ORIGINAL_SHA='f84df08b422980836b4e33bc7edede7eca63e91a1b4844f6b47df93a117d1108'
 ORIGINAL_BOOT='LABEL=bootpart /boot ext4 defaults,noatime,nodiratime,errors=remount-ro 0 2'
@@ -28,8 +27,12 @@ DEVICE="$(readlink -f -- "$USB")"
 }
 USB_ROOT="$(readlink -f -- "$USB-part3")"
 USB_BOOT="$(readlink -f -- "$USB-part2")"
+ROOT="$(findmnt -nro TARGET -S "$USB_ROOT")"
+[[ "$ROOT" == '/run/media/theraeburngroup/rootpart' || "$ROOT" == '/run/media/theraeburngroup/rootpart1' ]] || {
+  echo >&2 'Verified SanDisk root must be mounted at the expected USB inspection path.'; exit 1;
+}
 [[ "$(findmnt -nro SOURCE -T "$ROOT")" == "$USB_ROOT" ]] || {
-  echo >&2 'Expected SanDisk ROOT partition is not mounted at the read-only inspection path.'; exit 1;
+  echo >&2 'SanDisk root filesystem mount identity mismatch.'; exit 1;
 }
 [[ "$(findmnt -nro SOURCE -T "$BOOT")" == "$USB_BOOT" ]] || {
   echo >&2 'Expected SanDisk BOOT partition is not mounted at inspection path.'; exit 1;
