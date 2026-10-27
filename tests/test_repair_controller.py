@@ -65,7 +65,7 @@ class PatchValidationTests(unittest.TestCase):
             PATCH + "\nnew file mode 120000\n",
             PATCH + "\nrename from src/example.py\nrename to src/other.py\n",
             PATCH.replace("@@ -1 +1 @@", "@@ -1 +0 @@") +
-                "\n--- /dev/null\n",
+                "\n+++ /dev/null\n",
             "GIT binary patch\n",
         ]
         for patch in cases:

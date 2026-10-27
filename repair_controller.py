@@ -89,7 +89,7 @@ def validate_patch(patch: str, *, allow_patterns: list[str]) -> dict:
             raise GateError("Symlinks and submodules are forbidden.")
         if line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
             raise GateError("Renames and copies are forbidden.")
-        if line.startswith("--- /dev/null") or line.startswith("+++ /dev/null"):
+        if line.startswith("+++ /dev/null"):
             raise GateError("File deletion is forbidden.")
     _require(0 < len(headers) <= MAX_FILES, "Patch must change 1–40 files.")
     _require(len(headers) == len(set(headers)), "Duplicate file paths in patch.")
