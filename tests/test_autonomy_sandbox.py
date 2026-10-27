@@ -60,6 +60,13 @@ class SandboxTests(unittest.TestCase):
             "Path('/input/plan.json').read_text())"
         ]
         p = subprocess.run(argv, capture_output=True, text=True, timeout=8, check=False)
+        if os.environ.get("OCI_CONTABO_RESTRICTED_UNIT")=="1":
+            # The hardened Contabo DynamicUser unit intentionally forbids
+            # nested user-namespace mapping; its build runner may NEVER
+            # execute browser jobs. Verify this fail-closed boundary.
+            self.assertNotEqual(p.returncode,0)
+            self.assertIn("setting up uid map: Permission denied",p.stderr)
+            return
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(p.stdout.strip(), 'True False True {"bounded":true}')
 

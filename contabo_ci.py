@@ -100,7 +100,9 @@ def worker():
             if count<50:
                 raise ValueError("Unexpectedly small source tree.")
             start=time.monotonic()
-            env={"HOME":tmp,"LANG":"C.UTF-8","PYTHONNOUSERSITE":"1",
+            env={"HOME":tmp,"XDG_RUNTIME_DIR":tmp,
+                 "OCI_CONTABO_RESTRICTED_UNIT":"1",
+                 "LANG":"C.UTF-8","PYTHONNOUSERSITE":"1",
                  "PYTHONDONTWRITEBYTECODE":"1","PATH":"/usr/bin:/bin"}
             # -I blocks PYTHONPATH, but unittest needs this temporary
             # checkout explicitly on sys.path to import project modules.
