@@ -88,3 +88,40 @@ The non-login worker service is limited to python.syntax, json.inspect and hash.
 Acceptance: fresh online Hub heartbeat; exact job receipt; reboots and remote SSH; working networking; safe CPU/memory policy. Revoke the old Windows token once migration succeeds.
 
 **Not yet done:** physical USB flashing, BIOS changes, confirmed Linux boot, actual device pairing, Linux job execution. Do not claim production-ready status until verified.
+
+## Emergency-mode + repeating I2C keyboard reports (27 October 2026)
+
+The first physical USB boot reached systemd but dropped into emergency mode
+with a locked root account, while the original Galaxy Book Go device tree
+produced thousands of `i2c_hid_get_input: incomplete report (11/33026)`
+messages. These are **two separate symptoms** until journal evidence proves a
+common root cause. Do not erase Windows or format the USB.
+
+The original device-tree SHA-256, checked directly on the 8GB SanDisk, is
+`8a89b6efa5d584411fbc21585bdbea4062017fab8d797e65ab20a103a8c6d56a`.
+The reviewed, keyboard-only patch follows the upstream ACPI-derived correction
+GPIO 48 -> 104, IRQ 0x30 -> 0x68, bias-disable -> bias-pull-up; it changes
+**exactly three properties** and does not modify other peripherals.
+
+On Razer, compile and verify against the USB DTB (already prepared):
+
+    python3 linux-worker/prepare-keyboard-dtb.py
+
+Both SanDisk boot and root partitions are mounted **read-only** by UDisks at
+`/run/media/theraeburngroup/{bootpart,rootpart}`. Journal files are protected
+by root/adm permissions; a regular Open CI Hub command cannot read them.
+Use **Razer Konsole** and approve sudo only there (never send passwords to
+ChatGPT). Read the last boot failures:
+
+    sudo bash linux-worker/diagnose-samsung-usb.sh
+
+Then apply the reversible keyboard fix to the SanDisk boot partition:
+
+    sudo bash linux-worker/apply-keyboard-dtb.sh
+
+The fixer checks the exact SanDisk serial/partition, original and patched
+hashes, makes a backup alongside the DTB, temporarily remounts bootpart RW,
+replaces only that DTB, reads it back, and remounts RO. It does not change the
+root filesystem or internal storage. **It may stop keyboard logging but will
+not necessarily resolve systemd emergency mode**; inspect logs before planning
+a separate root mount / service fix. No image reflashing required.
