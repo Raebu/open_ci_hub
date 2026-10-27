@@ -105,10 +105,15 @@ def worker():
             # -I blocks PYTHONPATH, but unittest needs this temporary
             # checkout explicitly on sys.path to import project modules.
             fixed_driver=(
-                "import os,sys,unittest;"
+                "import os,sys,unittest,json,re;"
                 "sys.path.insert(0,os.getcwd());"
                 "suite=unittest.defaultTestLoader.discover('tests');"
                 "result=unittest.TextTestRunner(verbosity=0).run(suite);"
+                "safe=lambda group:[t.id() for t,_ in group "
+                "if re.fullmatch(r'[A-Za-z0-9_ .()/-]{1,130}',t.id())][:8];"
+                "proof={'tests':result.testsRun,'failures':safe(result.failures),"
+                "'errors':safe(result.errors)};"
+                "print('OCI_UNITTEST_PROOF='+json.dumps(proof,sort_keys=True),flush=True);"
                 "sys.exit(not result.wasSuccessful())"
             )
             run=subprocess.run(
@@ -116,11 +121,26 @@ def worker():
                 cwd=root,env=env,stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                 timeout=115,check=False)
-            combined=(run.stdout+run.stderr)[-4000:]
-            match=re.search(rb"Ran ([0-9]+) tests? in ",combined)
-            tests=int(match.group(1)) if match else 0
-            # Do not treat zero, missing-dependency or truncated suites as success.
-            success=run.returncode==0 and tests>=800
+            # Only the fixed unittest driver's structured proof is accepted;
+            # printed fake counts and truncated stderr cannot authorize a build.
+            receipts=[line[len(b"OCI_UNITTEST_PROOF="):]
+                      for line in run.stdout.splitlines()
+                      if line.startswith(b"OCI_UNITTEST_PROOF=")]
+            try:
+                proof=json.loads(receipts[0]) if len(receipts)==1 and len(receipts[0])<=4096 else {}
+            except (ValueError,TypeError):
+                proof={}
+            tests=proof.get("tests") if isinstance(proof,dict) else None
+            errors=proof.get("errors") if isinstance(proof,dict) else None
+            failures=proof.get("failures") if isinstance(proof,dict) else None
+            if type(tests) is not int or not 0<=tests<100000:
+                tests=0
+            safe_names=lambda values: (isinstance(values,list) and len(values)<=8
+                and all(isinstance(x,str) and re.fullmatch(r"[A-Za-z0-9_ .()/-]{1,130}",x)
+                        for x in values))
+            if not safe_names(errors) or not safe_names(failures):
+                errors=failures=None
+            success=(run.returncode==0 and tests>=800 and errors==[] and failures==[])
             report={"success":success,"sha":header["sha"],"tests":tests,
                     "archive_sha256":header["archive_sha256"],
                     "duration_seconds":round(time.monotonic()-start,2),
@@ -132,6 +152,10 @@ def worker():
                 diagnostic=(run.stdout+run.stderr).decode(errors="replace")
                 labels=re.findall(r"(?m)^(?:ERROR|FAIL): ([A-Za-z0-9_ .()/-]{1,100})$",
                                   diagnostic)
+                if isinstance(errors,list):
+                    labels.extend(errors)
+                if isinstance(failures,list):
+                    labels.extend(failures)
                 dependencies=re.findall(
                     r"ModuleNotFoundError: No module named '([A-Za-z0-9_.]{1,60})'",
                     diagnostic)
