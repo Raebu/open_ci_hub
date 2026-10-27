@@ -88,3 +88,10 @@ An external reviewer should verify the actual live environment in addition to th
 Implemented `repair_controller.py` and `tests/test_repair_controller.py`. The focused eight-test suite passes. The patch validator rejects unallowlisted or protected paths, binary patches, deletions, renames, symlinks, submodules and oversized diffs. The merge eligibility gate requires low-risk scope, a verified isolated worker, branch protection without admin bypass, all required exact-candidate-SHA checks with log digests, and a separate trusted review bound to the repository, PR number and candidate SHA. It returns eligibility only and never merges by itself.
 
 This is a tested policy boundary, **not yet an end-to-end autonomous repair service**. Candidate patch generation, disposable worktree application and network-isolated test execution, provider-authenticated review/check/branch-protection retrieval, actual PR/MR creation, merge execution and merged-commit receipt are still not connected. Auto-merge remains disabled.
+
+
+## Windows Samsung worker preparation — 27 October 2026
+
+The existing private Tailscale Serve endpoint `https://theraeburngroup.tail8450a3.ts.net` returned HTTP 200 on `/health`; the Razer is reachable at Tailscale IPv4 `100.72.235.100`. The local `samsung-edge` app is registered with only `python.syntax`, `json.inspect` and `hash.benchmark`, 128 MiB task budgets and max concurrency 1. No worker credential has been issued and no job can be claimed until the physical Windows ARM64 device joins the authorised tailnet.
+
+Added `windows-worker/install.ps1`, `windows-worker/run-worker.ps1` and their setup/rollback documentation. They install only the restricted edge worker, protect the token with Windows DPAPI and a per-user ACL, and register a per-user scheduled task. The physical Windows PC is not connected yet, so installation and acceptance remain unverified. Full Windows builds and browser missions are **not** supported by this fixed-operation worker and remain a separate engineering gate.

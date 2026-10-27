@@ -50,6 +50,10 @@ vault guide for revocation and separate website-session expiry.
 
 [Private Xvfb mission acceptance](docs/PRIVATE-GUI-ACCEPTANCE.md) explains how the existing background browser can execute a reviewed graphical step in display :91 without touching KDE. Real Chromium screenshot acceptance passed, while unrestricted visual AI and physical remote devices remain separate gates.
 
+## Windows Samsung worker bootstrap
+
+The [Windows worker setup](windows-worker/README.md) prepares the Galaxy Book Go for private Tailscale access and a restricted, resource-gated edge worker. It is not a general-purpose build or browser agent; full Windows build isolation remains a separate acceptance gate.
+
 ## Private edge fleet and visual autonomy (reviewed source)
 
 The [unified autonomy release guide](docs/UNIFIED-AUTONOMY-20261025.md) adds
