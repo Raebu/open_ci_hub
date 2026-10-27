@@ -117,7 +117,7 @@ def worker():
                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                 timeout=115,check=False)
             combined=(run.stdout+run.stderr)[-4000:]
-            match=re.search(rb"Ran ([0-9]+) tests in ",combined)
+            match=re.search(rb"Ran ([0-9]+) tests? in ",combined)
             tests=int(match.group(1)) if match else 0
             # Do not treat zero, missing-dependency or truncated suites as success.
             success=run.returncode==0 and tests>=800
@@ -126,6 +126,18 @@ def worker():
                     "duration_seconds":round(time.monotonic()-start,2),
                     "runner":"contabo_ephemeral_offline_dynamic_user",
                     "source_entries":count}
+            if not success:
+                # Only bounded test identifiers/dependency names: never raw
+                # output, environment, request data or arbitrary traceback.
+                diagnostic=(run.stdout+run.stderr).decode(errors="replace")
+                labels=re.findall(r"(?m)^(?:ERROR|FAIL): ([A-Za-z0-9_ .()/-]{1,100})$",
+                                  diagnostic)
+                dependencies=re.findall(
+                    r"ModuleNotFoundError: No module named '([A-Za-z0-9_.]{1,60})'",
+                    diagnostic)
+                report["failed_test_labels"]=labels[:8]
+                report["missing_dependencies"]=sorted(set(dependencies))[:8]
+                report["exit_code"]=run.returncode
             print(json.dumps(report,sort_keys=True,separators=(",",":")))
             return 0 if success else 2
     except (ValueError,KeyError,TypeError,OSError,tarfile.TarError,subprocess.TimeoutExpired):
@@ -147,7 +159,7 @@ def remote_argv():
             "--property=PrivateTmp=yes","--property=ProtectSystem=strict",
             "--property=ProtectHome=yes","--property=NoNewPrivileges=yes",
             "--property=CapabilityBoundingSet=",
-            "--property=RestrictAddressFamilies=AF_UNIX",
+            "\"--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\"",
             "--property=RestrictSUIDSGID=yes",
             "--property=ProtectKernelTunables=yes",
             "--property=ProtectControlGroups=yes",
