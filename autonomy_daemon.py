@@ -83,6 +83,18 @@ def main(argv=None):
                         # Events are optional; CI execution must never depend
                         # on whether a ChatGPT subscription is available.
                         pass
+                # Drain pending signed ChatGPT event deliveries even when the
+                # mission queue is idle; reuse this daemon, no second poller.
+                try:
+                    from hub_dialogue_events import deliver_pending
+                    delivery = deliver_pending(limit=2)
+                    if delivery["delivered"] or delivery["failed"] or delivery["deferred"]:
+                        print(json.dumps({"status": "chatgpt_events",
+                                          "delivered": len(delivery["delivered"]),
+                                          "failed": len(delivery["failed"]),
+                                          "deferred": len(delivery["deferred"])}), flush=True)
+                except (PermissionError, ValueError, OSError):
+                    pass
                 # Pure, idempotency-keyed Android jobs only. Other stranded
                 # leases remain blocked pending original-worker evidence.
                 edge=app_broker.reconcile_pure_edge_stranded()
