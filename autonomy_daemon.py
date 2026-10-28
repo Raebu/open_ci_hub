@@ -64,6 +64,25 @@ def main(argv=None):
         while not stop:
             try:
                 result = tick(journal)
+                # On a real blocked/failed approved mission, report one
+                # canonical incident through the existing MCP Events bridge.
+                # No new daemon, no browser automation, no duplicate storms.
+                if result.get("status") in ("blocked", "failed") and result.get("mission"):
+                    try:
+                        from hub_dialogue_events import queue_message, deliver_pending
+                        message = ("Approved Hub mission needs assistance. "
+                                   "Mission ID: " + str(result["mission"])[:90] +
+                                   "; state: " + str(result["status"])[:30] +
+                                   "; step: " + str(result.get("step") or "")[:90] +
+                                   ". Inspect the live Hub evidence before acting.")
+                        event_key = (str(result["mission"]) + ":" +
+                                     str(result.get("step")) + ":" + str(result["status"]))
+                        queue_message("operations", message, source="hub", idempotency_key=event_key)
+                        deliver_pending(channel="operations", limit=2)
+                    except (PermissionError, ValueError, OSError):
+                        # Events are optional; CI execution must never depend
+                        # on whether a ChatGPT subscription is available.
+                        pass
                 # Pure, idempotency-keyed Android jobs only. Other stranded
                 # leases remain blocked pending original-worker evidence.
                 edge=app_broker.reconcile_pure_edge_stranded()

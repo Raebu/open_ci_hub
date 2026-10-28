@@ -27,6 +27,7 @@ from urllib.parse import urlparse, quote
 from urllib.request import urlopen
 
 from hub import secure_write
+import hub_dialogue_events as dialogue
 
 ROOT = Path(__file__).resolve().parent
 STATE_ROOT = ROOT / ".local"
@@ -299,6 +300,7 @@ TOOLS = [
         },
     },
 ]
+TOOLS.extend((dialogue.REPLY_TOOL, dialogue.READ_TOOL))
 
 
 def require_nonroot() -> None:
@@ -1262,6 +1264,15 @@ def prepare_personal_whatsapp_message(recipient: str, message: str,
 def invoke_tool(name: str, arguments: dict) -> dict:
     if not isinstance(arguments, dict):
         raise ValueError("Tool arguments must be a JSON object.")
+    if name == "hub_dialogue_reply":
+        if set(arguments) != {"message_id", "reply", "status", "evidence"}:
+            raise ValueError("Expected message_id, reply, status and evidence.")
+        return dialogue.reply_message(arguments["message_id"], arguments["reply"],
+                                      arguments["status"], arguments["evidence"])
+    if name == "hub_dialogue_read":
+        if set(arguments) != {"message_id"}:
+            raise ValueError("Expected message_id only.")
+        return dialogue.read_message(arguments["message_id"])
     if name == "prepare_personal_whatsapp_message":
         if set(arguments) - {"recipient", "message", "open_on_desktop", "confirm_open"} or not {"recipient", "message"}.issubset(arguments):
             raise ValueError("Expected recipient/message and optional opening confirmation only.")
@@ -1354,6 +1365,23 @@ def mcp_response(message: dict) -> dict | None:
         return None
     if rid is None or type(rid) not in (str, int):
         raise ValueError("Invalid MCP request ID.")
+    if method == "server/discover":
+        return {"jsonrpc": "2.0", "id": rid, "result": {
+            "resultType": "complete", "supportedVersions": [dialogue.PROTOCOL],
+            "capabilities": {"tools": {}, "events": {}}}}
+    if method in ("events/list", "events/subscribe", "events/unsubscribe"):
+        try:
+            if method == "events/list":
+                result = dialogue.list_events()
+            elif method == "events/subscribe":
+                result = dialogue.subscribe(message.get("params", {}))
+            else:
+                result = dialogue.unsubscribe(message.get("params", {}))
+            return {"jsonrpc": "2.0", "id": rid, "result": result}
+        except (ValueError, PermissionError, OSError, TypeError, KeyError) as exc:
+            return {"jsonrpc": "2.0", "id": rid, "error": {
+                "code": -32015 if isinstance(exc, dialogue.CallbackError) else -32602,
+                "message": str(exc)[:200]}}
     if method == "initialize":
         return {"jsonrpc": "2.0", "id": rid, "result": {
             "protocolVersion": VERSION,
