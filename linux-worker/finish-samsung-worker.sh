@@ -6,7 +6,7 @@
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-HOST='100.80.206.122'
+HOST='100.77.117.120'
 APP='samsung-linux-edge'
 CREDS='.local/worker-credentials/samsung-linux-edge-worker.issue.json'
 [[ -f "$CREDS" && ! -L "$CREDS" ]] || {
@@ -21,12 +21,12 @@ command -v python3 >/dev/null
 tailscale status --json | python3 -c '
 import json,sys
 peers=json.load(sys.stdin).get("Peer",{}).values()
-matching=[p for p in peers if p.get("HostName")=="samsung-edge"
-          and "100.80.206.122" in p.get("TailscaleIPs",[])
+matching=[p for p in peers if p.get("HostName")=="samsung-book-go"
+          and "100.77.117.120" in p.get("TailscaleIPs",[])
           and p.get("OS")=="linux" and p.get("Online") is True]
 if len(matching)!=1: raise SystemExit("Verified Samsung Linux Tailnet peer is not online.")
 '
-echo 'Verified Tailscale peer samsung-edge is online. Sending one scoped worker secret.'
+echo 'Verified Tailscale peer samsung-book-go is online. Sending one scoped worker secret.'
 # Python stdout is piped straight to encrypted SSH; never display or save it.
 python3 -c '
 import json,sys

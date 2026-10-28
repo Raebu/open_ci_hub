@@ -14,7 +14,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#whatsapp-compose">✉ <span>Personal WhatsApp</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#local-ci">◷ <span>Local CI</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#autonomy">◉ <span>Background Work</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#ai-models">◈ <span>AI models</span></a><a href="#whatsapp-compose">✉ <span>Personal WhatsApp</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#local-ci">◷ <span>Local CI</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#autonomy">◉ <span>Background Work</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -124,6 +124,28 @@
           <h3>Queued projects</h3>
           <div id="apps-queue" class="results" aria-live="polite"></div>
           <p class="small">Register app IDs and issue separate submitter/worker API tokens locally on the host. Jobs are executed by independently deployed application workers, never by the host terminal or CI runner.</p>
+        </section>
+        <section id="ai-models" aria-labelledby="ai-models-heading">
+          <div class="section-head"><div><h2 id="ai-models-heading">AI models · Local &amp; cloud</h2>
+            <p>Choose the right capability: small private inference runs on your Samsung; larger hosted models open in your browser.</p></div></div>
+          <div class="cards">
+            <article class="provider-card">
+              <h3>Samsung · Local Qwen3 0.6B</h3>
+              <p>Locally hosted on <code>samsung-book-go</code>, CPU inference via <code>127.0.0.1:8878</code> on the Samsung itself. No cloud account needed. Private loopback only, not exposed on the internet.</p>
+              <p class="small">Independent service: <code>oci-samsung-qwen</code>. Connect from a trusted host using an authenticated SSH tunnel; browser chat and Hub job automation are not enabled by this link.</p>
+            </article>
+            <article class="provider-card">
+              <h3>Hugging Face Chat · Hosted models</h3>
+              <p>Explore hosted open-source models in a normal browser session. Sign in on the provider's site. Free availability and usage may vary.</p>
+              <p><a href="https://huggingface.co/chat/" target="_blank" rel="noopener noreferrer">Open Hugging Face Chat</a></p>
+            </article>
+            <article class="provider-card">
+              <h3>Google Gemini · Hosted models</h3>
+              <p>Use Google's hosted models through the Gemini web application. Free access is subject to provider limits.</p>
+              <p><a href="https://gemini.google.com/" target="_blank" rel="noopener noreferrer">Open Gemini</a></p>
+            </article>
+          </div>
+          <p class="small">Hosted inference uses cloud computing, but the browser still uses local RAM and network bandwidth. These are user-operated links, not automated or unlimited API credentials. Do not paste private customer data without the appropriate authorisation and data-handling review.</p>
         </section>
         <section id="whatsapp-compose">
           <div class="section-head"><div>

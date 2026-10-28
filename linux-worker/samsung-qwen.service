@@ -1,0 +1,28 @@
+[Unit]
+Description=Open CI Hub Samsung Book Go local Qwen3 AI inference
+Documentation=https://github.com/ggml-org/llama.cpp
+After=local-fs.target
+ConditionPathExists=/opt/open-ci-hub/ai/Qwen3-0.6B-Q4_K_M.gguf
+
+[Service]
+Type=simple
+User=ociworker
+Group=ociworker
+WorkingDirectory=/opt/open-ci-hub/ai/llama-b11969
+ExecStart=/opt/open-ci-hub/ai/llama-b11969/llama-server --model /opt/open-ci-hub/ai/Qwen3-0.6B-Q4_K_M.gguf --host 127.0.0.1 --port 8878 --ctx-size 1024 --threads 6 --threads-batch 6 --parallel 1 --gpu-layers 0
+Restart=on-failure
+RestartSec=10
+MemoryMax=2100M
+CPUQuota=650%
+TasksMax=192
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
