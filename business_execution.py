@@ -515,6 +515,50 @@ class Bridge:
                          {"reason_type":type(exc).__name__})
             return {"status":"invalid","rows":0}
 
+    def channel_snapshots(self):
+        """Existing commercial integration, read-only and independently scoped.
+
+        ChatGPT's connected Gmail/Resend accounts do not grant the Razer their
+        OAuth credentials. Missing local credential is an honest degraded
+        source, never proof that mailboxes were checked.
+        """
+        from business_channels import (
+            ChannelError, ChannelLedger, read_config as read_channel_config,
+            sync as sync_channels,
+        )
+        from business_connector_bridge import load as connected_app_probe
+        probe=connected_app_probe(self.state/"connector-capabilities.json")
+        path=self.state/"channels.json"
+        if path.is_symlink() or not path.is_file():
+            status={"state":"not_configured","accounts":[],"coverage":False,
+                    "chat_connector_probe":probe["state"]}
+            self.observe("sales","source_health","business_channels","not_configured",
+                         {"source":"business_channels","read_only":True})
+            return status
+        try:
+            cfg=read_channel_config(path)
+            channel=ChannelLedger(self.state/"channel-readback.sqlite")
+            data=sync_channels(cfg,ledger=channel)
+            source_state=("authenticated_read_only" if data["source_coverage_complete"]
+                          else "local_provider_authorisation_incomplete")
+            accounts=[{"alias":x["alias"],"provider":x["provider"],
+                       "state":x["state"]} for x in data["accounts"]]
+            self.observe("sales","source_health","business_channels",source_state,
+                         {"source":"business_channels","read_only":True,
+                          "accounts":accounts,
+                          "source_coverage_complete":data["source_coverage_complete"]})
+            return {"state":source_state,"accounts":accounts,
+                    "coverage":data["source_coverage_complete"],
+                    "chat_connector_probe":probe["state"],
+                    "new_receipts":sum(x.get("new_messages",0) for x in data["accounts"]),
+                    "suppression_holds":data["summary"]["distinct_holds"]}
+        except (ChannelError,PermissionError,ValueError,sqlite3.Error,OSError) as e:
+            self.observe("sales","source_health","business_channels",
+                         "provider_metadata_unavailable",
+                         {"source":"business_channels","reason_type":type(e).__name__})
+            return {"state":"provider_metadata_unavailable","accounts":[],
+                    "coverage":False,"chat_connector_probe":probe["state"]}
+
     def canonical_pointers(self):
         observations=[]
         for group in ("funding","partners"):
@@ -599,20 +643,24 @@ class Bridge:
                 leads=self.lead_snapshots()
                 matters=self.canonical_pointers()
                 sheet=self.sheet_snapshots()
+                channels=self.channel_snapshots()
                 missing_ci=sum(x.get("ci")=="unavailable" for x in ci)
                 coverage={"github_ci_unavailable":missing_ci,
                           "lead_source_available":leads["status"]=="read_only",
-                          "my_tasks_snapshot_fresh":sheet["status"]=="fresh"}
+                          "my_tasks_snapshot_fresh":sheet["status"]=="fresh",
+                          "business_channel_access":channels["coverage"]}
                 outcome={"repos":len(repos),"github_issues":len(issues),
                          "ci_repos_scanned":len(ci),
                          "source_coverage":coverage,
                          "lead_db":leads["status"],"leads":leads["counts"],
                          "canonical_pointers":len(matters),
                          "my_tasks_source":sheet,
+                         "business_channels":channels,
                          "mode":"parallel_shadow","outbound_messages_sent":0,
                          "bids_submitted":0,"repo_writes":0,"money_moved":0}
                 status=("degraded" if missing_ci or not coverage["lead_source_available"]
-                        or not coverage["my_tasks_snapshot_fresh"] else "observed")
+                        or not coverage["my_tasks_snapshot_fresh"] or
+                        not coverage["business_channel_access"] else "observed")
             except Exception as exc:
                 # No sensitive exception messages or raw provider output in journals.
                 outcome={"error_type":type(exc).__name__,

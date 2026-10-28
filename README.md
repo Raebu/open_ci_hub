@@ -291,3 +291,17 @@ It generates source-backed operational briefs without creating duplicate
 business trackers or sending mail, bids, code changes or payments. The
 five ChatGPT tasks **remain active** pending proven external-action parity.
 See [business execution migration](docs/BUSINESS-EXECUTION-MIGRATION-20261028.md).
+
+
+### Business email and LinkedIn channel governance
+
+Open CI Hub has a read-only commercial provider gateway for Gmail, Microsoft
+Graph and Resend, plus connected-LinkedIn professional-profile lookup evidence.
+It scopes the two corporate Gmail mailboxes and selected Resend business
+inboxes, and explicitly excludes personal Outlook and unrelated editorial mail.
+Message and thread receipts use private keyed hashes, and inbound replies,
+bounces and suppressions trigger durable no-send holds. LinkedIn messaging and
+automated cold email remain disabled until independently authorised account
+access, canonical suppression checks, legal review and provider receipts are
+proven. ChatGPT connector access is not assumed to be Razer OAuth access.
+See [business channel controls](docs/BUSINESS-CHANNELS-20261028.md).
