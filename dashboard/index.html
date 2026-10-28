@@ -146,6 +146,35 @@
             </article>
           </div>
           <p class="small">Hosted inference uses cloud computing, but the browser still uses local RAM and network bandwidth. These are user-operated links, not automated or unlimited API credentials. Do not paste private customer data without the appropriate authorisation and data-handling review.</p>
+          <h3>Developer AI APIs · Optional keys</h3>
+          <p class="small">These integrations are prepared but make no external calls until the owner installs a provider key and explicitly approves a free-tier test. API keys stay in a private, local <code>0600</code> store outside the repository. Free limits and model availability change; never assume paid access is free.</p>
+          <div class="cards">
+            <article class="provider-card">
+              <h3>Google AI Studio · Gemini API</h3>
+              <p>Free-tier models depend on the project and region. Model eligibility and RPM/TPM quotas must be confirmed in AI Studio. Free-tier inputs may be used to improve Google's products.</p>
+              <p><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Create Gemini API key</a></p>
+              <p class="small">Provider ID: <code>gemini</code> · Default model: <code>gemini-3.1-flash-lite</code></p>
+            </article>
+            <article class="provider-card">
+              <h3>NVIDIA NIM · API Catalog</h3>
+              <p>Developer/trial hosted inference with variable model access and available credits. Neither indefinite free usage nor unrestricted commercial production rights are guaranteed.</p>
+              <p><a href="https://build.nvidia.com/" target="_blank" rel="noopener noreferrer">Browse NVIDIA NIM</a></p>
+              <p class="small">Provider ID: <code>nvidia</code> · API calls blocked pending a verified free model and credits.</p>
+            </article>
+            <article class="provider-card">
+              <h3>OpenRouter · Free models</h3>
+              <p>Use <code>openrouter/free</code> to select an eligible no-cost model. Standard free usage is capped at 50 requests/day and 20 requests/minute, subject to changes.</p>
+              <p><a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">Create OpenRouter API key</a> · <a href="https://openrouter.ai/collections/free-models" target="_blank" rel="noopener noreferrer">See free models</a></p>
+              <p class="small">Provider ID: <code>openrouter</code> · No paid-model fallback.</p>
+            </article>
+            <article class="provider-card">
+              <h3>Groq Cloud · Fast API</h3>
+              <p>OpenAI-compatible cloud inference. Free-account availability and per-model/per-organisation rate limits must be checked in your Groq account.</p>
+              <p><a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">Create Groq API key</a> · <a href="https://console.groq.com/docs/rate-limits" target="_blank" rel="noopener noreferrer">View rate limits</a></p>
+              <p class="small">Provider ID: <code>groq</code> · Manual free-account verification required.</p>
+            </article>
+          </div>
+          <p class="small">On the Razer, run <code>python3 cloud_ai_providers.py status</code> to inspect setup; then <code>python3 cloud_ai_providers.py add-key PROVIDER</code> from a private local terminal. No API keys are accepted through this page or exposed to the browser.</p>
         </section>
         <section id="whatsapp-compose">
           <div class="section-head"><div>
