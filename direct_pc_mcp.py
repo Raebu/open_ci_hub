@@ -264,7 +264,7 @@ TOOLS = [
     },
     {
         "name": "desktop_type_text",
-        "description": "Type supplied text into the currently focused KDE window using wtype. It does not decide which field has focus; verify the screenshot first for sensitive actions.",
+        "description": "Type supplied ASCII text into the currently focused KDE window using wtype or KDE-compatible ydotool fallback. It does not decide which field has focus; verify the screenshot first for sensitive actions.",
         "inputSchema": {
             "type": "object",
             "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 4000}},
@@ -1182,6 +1182,14 @@ def desktop_type_text(text: str) -> dict:
     except subprocess.TimeoutExpired:
         raise RuntimeError("wtype timed out.") from None
     output, _ = _redact((proc.stdout or "") + (proc.stderr or ""))
+    if proc.returncode != 0 and "does not support the virtual keyboard protocol" in output:
+        ydotool = shutil.which("ydotool", path=env["PATH"])
+        if not ydotool or not text.isascii():
+            raise RuntimeError("KDE requires ydotool for input; this fallback accepts ASCII text only.")
+        proc = subprocess.run([ydotool, "type", "--key-delay", "1", "--key-hold", "1", "--file", "-"],
+                              input=text, capture_output=True, text=True, env=env,
+                              timeout=30, check=False)
+        output, _ = _redact((proc.stdout or "") + (proc.stderr or ""))
     if proc.returncode != 0:
         _audit("desktop_type_text", "focused window", "failed", {"text_sha256": digest, "exit_code": proc.returncode})
         raise RuntimeError("wtype failed: " + output[:250])
@@ -1207,8 +1215,25 @@ def desktop_press_key(key: str, modifiers: list[str] | None = None) -> dict:
     for modifier in reversed(modifiers):
         argv.extend(["-m", modifier])
     result = _run_bounded(argv, env=env, timeout=10)
+    if result["exit_code"] != 0 and "does not support the virtual keyboard protocol" in result["output"]:
+        codes = {"Escape": 1, "Tab": 15, "Return": 28, "Enter": 28, "BackSpace": 14,
+                 "Delete": 111, "space": 57, "Home": 102, "End": 107,
+                 "Page_Up": 104, "Page_Down": 109, "Left": 105, "Right": 106,
+                 "Up": 103, "Down": 108}
+        codes.update(dict(zip("qwertyuiop", range(16, 26))))
+        codes.update(dict(zip("asdfghjkl", range(30, 39))))
+        codes.update(dict(zip("zxcvbnm", range(44, 51))))
+        codes.update(dict(zip("1234567890", range(2, 12))))
+        code = codes.get(key, codes.get(key.lower()))
+        ydotool = shutil.which("ydotool", path=env["PATH"])
+        if code is None or not ydotool:
+            raise RuntimeError("Key unsupported by the KDE ydotool fallback.")
+        modifier_codes = {"ctrl": 29, "alt": 56, "shift": 42, "super": 125}
+        held = [modifier_codes[m] for m in modifiers]
+        events = [f"{c}:1" for c in held] + [f"{code}:1", f"{code}:0"] + [f"{c}:0" for c in reversed(held)]
+        result = _run_bounded([ydotool, "key", *events], env=env, timeout=10)
     if result["exit_code"] != 0:
-        raise RuntimeError("wtype keypress failed: " + result["output"][:250])
+        raise RuntimeError("Keyboard input failed: " + result["output"][:250])
     _audit("desktop_press_key", "focused window", "success", {"key": key, "modifiers": modifiers})
     return {"pressed": True, "key": key, "modifiers": modifiers}
 
@@ -1222,7 +1247,13 @@ def desktop_click(x: int, y: int, button: str = "left") -> dict:
     ydotool = shutil.which("ydotool", path=env["PATH"])
     if not ydotool:
         raise RuntimeError("ydotool is not installed.")
-    moved = _run_bounded([ydotool, "mousemove", "--absolute", str(x), str(y)], env=env, timeout=5)
+    # ydotool's absolute reset and target motion can be coalesced by KWin.
+    # Separate relative events so the compositor sees the corner before the target.
+    moved = _run_bounded([ydotool, "mousemove", "-x", "-32767", "-y", "-32767"], env=env, timeout=5)
+    if moved["exit_code"] == 0:
+        time.sleep(0.15)
+        moved = _run_bounded([ydotool, "mousemove", "-x", str(x), "-y", str(y)], env=env, timeout=5)
+        time.sleep(0.15)
     if moved["exit_code"] != 0:
         raise RuntimeError("ydotool could not move the pointer; check ydotoold and /dev/uinput permissions.")
     button_code = {"left": "0xC0", "right": "0xC1", "middle": "0xC2"}[button]

@@ -289,6 +289,41 @@ class DirectMcpTests(unittest.TestCase):
             self.assertTrue(result["pressed"])
             self.assertIn("-M", mcp._run_bounded.call_args.args[0])
 
+    def test_kde_key_fallback_releases_modifiers(self):
+        unsupported = {"exit_code": 1, "output": "Compositor does not support the virtual keyboard protocol"}
+        ok = {"exit_code": 0, "output": ""}
+        with patch("direct_pc_mcp._require_desktop", return_value={"PATH": "/usr/bin"}), \
+             patch("direct_pc_mcp.shutil.which", side_effect=lambda name, **kw: "/usr/bin/" + name), \
+             patch("direct_pc_mcp._run_bounded", side_effect=[unsupported, ok]) as run, \
+             patch("direct_pc_mcp._audit"):
+            self.assertTrue(mcp.desktop_press_key("s", ["ctrl"])["pressed"])
+            self.assertEqual(run.call_args.args[0], ["/usr/bin/ydotool", "key", "29:1", "31:1", "31:0", "29:0"])
+
+    def test_kde_text_fallback_uses_stdin_and_literal_ascii(self):
+        import subprocess
+        unsupported = subprocess.CompletedProcess([], 1, "", "Compositor does not support the virtual keyboard protocol")
+        ok = subprocess.CompletedProcess([], 0, "", "")
+        with patch("direct_pc_mcp._require_desktop", return_value={"PATH": "/usr/bin"}), \
+             patch("direct_pc_mcp.shutil.which", side_effect=lambda name, **kw: "/usr/bin/" + name), \
+             patch("direct_pc_mcp.subprocess.run", side_effect=[unsupported, ok]) as run, \
+             patch("direct_pc_mcp._audit"):
+            text = "Literal $value and backslash \\n"
+            self.assertTrue(mcp.desktop_type_text(text)["typed"])
+            self.assertEqual(run.call_args.kwargs["input"], text)
+            self.assertIn("--file", run.call_args.args[0])
+            self.assertEqual(run.call_args.args[0][-1], "-")
+
+    def test_pointer_corner_target_are_separate_frames_before_click(self):
+        with patch("direct_pc_mcp._require_desktop", return_value={"PATH": "/usr/bin"}), \
+             patch("direct_pc_mcp.shutil.which", return_value="/usr/bin/ydotool"), \
+             patch("direct_pc_mcp._run_bounded", return_value={"exit_code": 0, "output": ""}) as run, \
+             patch("direct_pc_mcp.time.sleep") as pause, patch("direct_pc_mcp._audit"):
+            mcp.desktop_click(534, 912)
+            self.assertEqual([c.args[0][1:] for c in run.call_args_list], [
+                ["mousemove", "-x", "-32767", "-y", "-32767"],
+                ["mousemove", "-x", "534", "-y", "912"], ["click", "0xC0"]])
+            self.assertEqual(pause.call_count, 2)
+
     def test_stdio_discards_invalid_input_and_keeps_notifications_silent(self):
         inputs = "\n".join([
             "not valid json",
