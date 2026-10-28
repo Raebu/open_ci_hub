@@ -33,6 +33,7 @@ ROOT = Path(__file__).resolve().parent
 STATE_ROOT = ROOT / ".local"
 STATE_DIR = STATE_ROOT / "direct-mcp"
 PERMISSIONS = STATE_DIR / "permissions.json"
+BACKGROUND_ONLY = STATE_DIR / "background-only.lock"
 AUDIT = STATE_DIR / "audit.jsonl"
 SCHEMA = "open-ci-hub.direct-pc-consent.v3"
 PREVIOUS_SCHEMA = "open-ci-hub.direct-pc-consent.v2"
@@ -324,7 +325,9 @@ def _assert_private_state(path: Path) -> None:
             raise PermissionError("Direct-MCP policy and audit files must be private and owned by the host user.")
 
 
-def permissions_data(path: Path = PERMISSIONS) -> dict:
+def permissions_data(path: Path | None = None) -> dict:
+    if path is None:
+        path = PERMISSIONS
     if path == PERMISSIONS:
         _assert_private_state(path)
     elif path.is_symlink() or path.parent.is_symlink():
@@ -358,9 +361,39 @@ def permissions_data(path: Path = PERMISSIONS) -> dict:
     return data
 
 
-def capability_status(path: Path = PERMISSIONS) -> dict:
+def is_background_only() -> bool:
+    """Owner-local lock: the virtual display is NOT the personal KDE UI."""
+    _assert_private_state(BACKGROUND_ONLY)
+    return BACKGROUND_ONLY.is_file()
+
+
+def set_background_only(enabled: bool, *, confirm: bool = False) -> dict:
+    require_nonroot()
+    if confirm is not True:
+        raise PermissionError("Local owner confirmation required for foreground policy.")
+    if enabled:
+        if STATE_ROOT.is_symlink() or STATE_DIR.is_symlink():
+            raise PermissionError("Unsafe direct-MCP state directory.")
+        STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(STATE_DIR, 0o700)
+        _assert_private_state(BACKGROUND_ONLY)
+        secure_write(BACKGROUND_ONLY, "Open CI Hub background-only mode enabled\n")
+        set_capabilities({"desktop_control": False}, confirm=True)
+    else:
+        _assert_private_state(BACKGROUND_ONLY)
+        BACKGROUND_ONLY.unlink(missing_ok=True)
+    return {"background_only": is_background_only(),
+            "desktop_control": capability_status()["desktop_control"]}
+
+
+def capability_status(path: Path | None = None) -> dict:
+    if path is None:
+        path = PERMISSIONS
     data = permissions_data(path)
-    return {name: bool(data.get(name, False)) for name in CAPABILITIES}
+    caps = {name: bool(data.get(name, False)) for name in CAPABILITIES}
+    if path == PERMISSIONS and is_background_only():
+        caps["desktop_control"] = False
+    return caps
 
 
 def consent_status(path: Path = PERMISSIONS) -> bool:
@@ -390,6 +423,8 @@ def set_capabilities(changes: dict[str, bool], *, confirm: bool = False, all_ena
         updated["schema"] = SCHEMA
         for name, value in changes.items():
             updated[name] = value
+    if updated.get("desktop_control") and is_background_only():
+        raise PermissionError("Foreground desktop control locked by background-only mode.")
     STATE_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
     os.chmod(STATE_DIR, 0o700)
     if STATE_ROOT.is_symlink() or STATE_DIR.is_symlink() or PERMISSIONS.is_symlink():
@@ -1469,6 +1504,9 @@ def main(argv=None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("serve")
     sub.add_parser("status")
+    for command in ("background-only", "foreground-unlock"):
+        item = sub.add_parser(command)
+        item.add_argument("--confirm", action="store_true")
     command_to_changes = {
         "enable-documents": {"document_creation": True},
         "disable-documents": {"document_creation": False},
@@ -1489,6 +1527,12 @@ def main(argv=None) -> int:
         require_nonroot()
         if args.command == "serve":
             serve()
+            return 0
+        if args.command == "background-only":
+            print(json.dumps(set_background_only(True, confirm=args.confirm), indent=2))
+            return 0
+        if args.command == "foreground-unlock":
+            print(json.dumps(set_background_only(False, confirm=args.confirm), indent=2))
             return 0
         if args.command == "status":
             print(json.dumps(pc_status(), indent=2))

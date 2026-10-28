@@ -75,3 +75,22 @@ python3 -m py_compile direct_pc_mcp.py hub_dialogue_events.py autonomy_daemon.py
 python3 -m unittest tests.test_hub_dialogue_events tests.test_direct_pc_mcp tests.test_autonomy_core tests.test_autonomy_runtime -q
 
 These test local protocol handling and mocked callbacks, not a hosted subscription.
+
+## Background-only desktop protection
+
+The owner's KDE browser and keyboard are never used for routine automation.
+Enable the persistent local policy lock with this Fish-compatible command:
+
+    python3 direct_pc_mcp.py background-only --confirm
+
+This independently overrides and blocks re-enabling desktop_control via the
+ordinary capability update commands. It does not disable the separate Xvfb :91
+display, isolated Chromium jobs or engineering commands. Only after an explicit
+owner request for personal desktop assistance, run:
+
+    python3 direct_pc_mcp.py foreground-unlock --confirm
+
+Then separately authorise foreground control for that session. Arbitrary shell
+commands still carry the local user's OS permissions; this tool policy is not a
+kernel-level security sandbox. Background tasks must use Hub's isolated workers,
+not emulate GUI typing from an unsandboxed terminal.

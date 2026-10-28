@@ -84,6 +84,26 @@ class DirectMcpTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 mcp.consent_status(policy)
 
+    def test_background_only_lock_overrides_desktop_reenrolment(self):
+        with tempfile.TemporaryDirectory() as root:
+            from pathlib import Path
+            private = Path(root)
+            private.chmod(0o700)
+            with (patch("direct_pc_mcp.STATE_DIR", private),
+                  patch("direct_pc_mcp.BACKGROUND_ONLY", private / "background-only.lock"),
+                  patch("direct_pc_mcp.PERMISSIONS", private / "permissions.json")):
+                self.assertFalse(mcp.is_background_only())
+                mcp.set_background_only(True, confirm=True)
+                self.assertTrue(mcp.is_background_only())
+                self.assertFalse(mcp.capability_status()["desktop_control"])
+                with self.assertRaises(PermissionError):
+                    mcp.set_capabilities({"desktop_control": True}, confirm=True)
+                with self.assertRaises(PermissionError):
+                    mcp.require_capability("desktop_control")
+                mcp.set_background_only(False, confirm=True)
+                self.assertFalse(mcp.is_background_only())
+                self.assertFalse(mcp.capability_status()["desktop_control"])
+
     def test_local_capability_enrolment_requires_explicit_confirmation(self):
         with patch("direct_pc_mcp.require_nonroot"):
             with self.assertRaises(PermissionError):
