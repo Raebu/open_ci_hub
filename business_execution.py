@@ -580,7 +580,7 @@ class Bridge:
                 sent=Outbox(path=self.state/"outbound.sqlite").dispatch()
                 outcome["email"]={k:sent.get(k) for k in (
                     "status","attempted","accepted_pending_delivery","blocked")}
-                outcome["email_attempted"]=sent.get("attempted",0)
+                outcome["email_attempted"]=sent.get("attempted",0) or 0
             except (OutboundRefused,ChannelError,PermissionError,OSError) as e:
                 outcome["email"]={"status":"blocked",
                                    "reason_type":type(e).__name__}
@@ -591,7 +591,7 @@ class Bridge:
                 social=SocialLedger(path=self.state/"outbound.sqlite").dispatch()
                 outcome["linkedin"]={k:social.get(k) for k in (
                     "state","attempted","accepted","errors")}
-                outcome["linkedin_attempted"]=social.get("attempted",0)
+                outcome["linkedin_attempted"]=social.get("attempted",0) or 0
             except (OutboundRefused,ChannelError,PermissionError,OSError) as e:
                 outcome["linkedin"]={"state":"blocked",
                                       "reason_type":type(e).__name__}
@@ -701,9 +701,9 @@ class Bridge:
                          "mode":"parallel_shadow_with_authorised_actions",
                          "bids_submitted":0,"repo_writes":0,"money_moved":0,
                          "outbound_messages_sent":actions.get("email",{}).get(
-                             "accepted_pending_delivery",0),
+                             "accepted_pending_delivery",0) or 0,
                          "linkedin_actions_accepted":actions.get("linkedin",{}).get(
-                             "accepted",0)}
+                             "accepted",0) or 0}
                 status=("degraded" if missing_ci or not coverage["lead_source_available"]
                         or not coverage["my_tasks_snapshot_fresh"] or
                         not coverage["business_channel_access"] else "observed")
