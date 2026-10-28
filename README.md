@@ -305,3 +305,14 @@ automated cold email remain disabled until independently authorised account
 access, canonical suppression checks, legal review and provider receipts are
 proven. ChatGPT connector access is not assumed to be Razer OAuth access.
 See [business channel controls](docs/BUSINESS-CHANNELS-20261028.md).
+
+
+### Business outbound and official LinkedIn engagement
+
+The existing Open CI Hub business timer now has an owner-authorised,
+encrypted, idempotent one-recipient Gmail/Resend send queue and official
+LinkedIn likes/comment responses. Sending is policy-enabled but still gated
+by independent provider OAuth, authoritative suppression and shared canonical
+case ownership. LinkedIn posting remains with the ALREADY existing Raeburn
+LinkedIn Dual AutoPoster; no duplicate publisher or prohibited browser bot
+has been added. [Outreach and LinkedIn integration status](docs/BUSINESS-OUTBOUND-LINKEDIN-20261028.md).

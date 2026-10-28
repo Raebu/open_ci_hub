@@ -3,7 +3,8 @@
 
 Executes read-only source reconciliation and durable evidence planning. Source
 systems (My Tasks, BD Pipeline, Lead Finder DB, GitHub) remain canonical.
-This program cannot send emails, change customer financial data, submit bids,
+Source scans cannot send emails; separately approved, guarded outbound can.
+This program cannot change customer financial data, submit bids,
 modify websites, execute project source, merge PRs or disable ChatGPT tasks.
 """
 from __future__ import annotations
@@ -559,6 +560,45 @@ class Bridge:
             return {"state":"provider_metadata_unavailable","accounts":[],
                     "coverage":False,"chat_connector_probe":probe["state"]}
 
+    def approved_action_cycle(self):
+        """One existing timer, separate user-authorised reversible channels.
+
+        The scanner does not acquire write permission from read-only connectors.
+        Only an exact local owner-approved policy, protected keyring and fresh
+        source receipts can activate a real one-recipient send / API social action.
+        This method is intentionally skipped in unit-test/isolated state.
+        """
+        if self.state.resolve()!=STATE.resolve():
+            return {"status":"isolated_shadow","email_attempted":0,
+                    "linkedin_attempted":0}
+        from business_outbound import Outbox, OutboundRefused, POLICY as SEND_POLICY
+        from business_channels import ChannelError
+        from business_social import SocialLedger, POLICY as SOCIAL_POLICY
+        outcome={"status":"scanned","email_attempted":0,"linkedin_attempted":0}
+        if SEND_POLICY.is_file() and not SEND_POLICY.is_symlink():
+            try:
+                sent=Outbox(path=self.state/"outbound.sqlite").dispatch()
+                outcome["email"]={k:sent.get(k) for k in (
+                    "status","attempted","accepted_pending_delivery","blocked")}
+                outcome["email_attempted"]=sent.get("attempted",0)
+            except (OutboundRefused,ChannelError,PermissionError,OSError) as e:
+                outcome["email"]={"status":"blocked",
+                                   "reason_type":type(e).__name__}
+        else:
+            outcome["email"]={"status":"owner_policy_not_installed"}
+        if SOCIAL_POLICY.is_file() and not SOCIAL_POLICY.is_symlink():
+            try:
+                social=SocialLedger(path=self.state/"outbound.sqlite").dispatch()
+                outcome["linkedin"]={k:social.get(k) for k in (
+                    "state","attempted","accepted","errors")}
+                outcome["linkedin_attempted"]=social.get("attempted",0)
+            except (OutboundRefused,ChannelError,PermissionError,OSError) as e:
+                outcome["linkedin"]={"state":"blocked",
+                                      "reason_type":type(e).__name__}
+        else:
+            outcome["linkedin"]={"state":"official_api_policy_not_installed"}
+        return outcome
+
     def canonical_pointers(self):
         observations=[]
         for group in ("funding","partners"):
@@ -644,6 +684,7 @@ class Bridge:
                 matters=self.canonical_pointers()
                 sheet=self.sheet_snapshots()
                 channels=self.channel_snapshots()
+                actions=self.approved_action_cycle()
                 missing_ci=sum(x.get("ci")=="unavailable" for x in ci)
                 coverage={"github_ci_unavailable":missing_ci,
                           "lead_source_available":leads["status"]=="read_only",
@@ -656,8 +697,13 @@ class Bridge:
                          "canonical_pointers":len(matters),
                          "my_tasks_source":sheet,
                          "business_channels":channels,
-                         "mode":"parallel_shadow","outbound_messages_sent":0,
-                         "bids_submitted":0,"repo_writes":0,"money_moved":0}
+                         "approved_actions":actions,
+                         "mode":"parallel_shadow_with_authorised_actions",
+                         "bids_submitted":0,"repo_writes":0,"money_moved":0,
+                         "outbound_messages_sent":actions.get("email",{}).get(
+                             "accepted_pending_delivery",0),
+                         "linkedin_actions_accepted":actions.get("linkedin",{}).get(
+                             "accepted",0)}
                 status=("degraded" if missing_ci or not coverage["lead_source_available"]
                         or not coverage["my_tasks_snapshot_fresh"] or
                         not coverage["business_channel_access"] else "observed")
