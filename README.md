@@ -279,3 +279,15 @@ timer. Remote code execution, full CI/CD builds, browser automation and deployme
 are **not** capabilities of these phone workers. Details, security restrictions,
 commands and Linux-phone feasibility are in
 [docs/EDGE-POOL-ANDROID-WORKERS-20261027.md](docs/EDGE-POOL-ANDROID-WORKERS-20261027.md).
+
+
+### Raeburn commercial execution bridge (October 2026)
+
+The existing Sales, Funding, Product, Portfolio and COO ChatGPT engines now have
+an opt-in, non-root Razer shadow execution layer. It safely reconciles eight
+GitHub repositories and their PR/issue/CI metadata, the existing recruitment
+lead-finder database and short-lived private canonical My Tasks readbacks.
+It generates source-backed operational briefs without creating duplicate
+business trackers or sending mail, bids, code changes or payments. The
+five ChatGPT tasks **remain active** pending proven external-action parity.
+See [business execution migration](docs/BUSINESS-EXECUTION-MIGRATION-20261028.md).
