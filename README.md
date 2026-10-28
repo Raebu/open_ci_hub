@@ -316,3 +316,18 @@ by independent provider OAuth, authoritative suppression and shared canonical
 case ownership. LinkedIn posting remains with the ALREADY existing Raeburn
 LinkedIn Dual AutoPoster; no duplicate publisher or prohibited browser bot
 has been added. [Outreach and LinkedIn integration status](docs/BUSINESS-OUTBOUND-LINKEDIN-20261028.md).
+
+
+### Native Direct Client Acquisition on the Razer
+
+The **existing** `open-ci-hub-business-execution.timer` now runs
+`raeburn_sales_native.py` as a native sales workstage at :12 and :42.
+It reads the existing Lead Finder, inbox/suppression receipts, private send
+queue and My Tasks source, producing an expiring, source-backed, privacy-safe
+`raeburn_sales_native.py handoff` report. The **existing** ChatGPT Direct
+Client Acquisition task at :05 is configured to pull it using the connected
+Open CI Hub tool, check real Gmail/Resend threads and perform only authorised
+commercial actions. No new ChatGPT task, scheduler, CRM or mass-mail campaign
+is created. The Razer still requires independent email OAuth and canonical
+outreach ownership before it can replace ChatGPT sending.
+See [native sales and ChatGPT handoff](docs/RAEBURN-NATIVE-SALES-CHATGPT-HANDOFF-20261028.md).

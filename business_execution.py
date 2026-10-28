@@ -685,6 +685,24 @@ class Bridge:
                 sheet=self.sheet_snapshots()
                 channels=self.channel_snapshots()
                 actions=self.approved_action_cycle()
+                # Native Razer sales lane: produce a privacy-safe, expiring
+                # handoff to the EXISTING ChatGPT Sales task every timer run.
+                # No new scheduler, CRM, campaign or native send queue.
+                try:
+                    from raeburn_sales_native import SalesFeed
+                    handoff=SalesFeed(self.state,clock=self.clock).build(config=self.config)
+                    native_sales={
+                        "state":handoff["source_status"],
+                        "event_cursor":handoff["event_cursor"],
+                        "material_change":handoff["material_change"],
+                        "source_coverage":handoff["source_coverage"],
+                        "native_mail_accepted_not_delivered":
+                            handoff["native_accepted_not_confirmed_delivered"],
+                    }
+                except (PermissionError,OSError,ValueError,sqlite3.Error,
+                        TypeError,KeyError) as error:
+                    native_sales={"state":"handoff_unavailable",
+                                  "reason_type":type(error).__name__}
                 missing_ci=sum(x.get("ci")=="unavailable" for x in ci)
                 coverage={"github_ci_unavailable":missing_ci,
                           "lead_source_available":leads["status"]=="read_only",
@@ -697,6 +715,7 @@ class Bridge:
                          "canonical_pointers":len(matters),
                          "my_tasks_source":sheet,
                          "business_channels":channels,
+                         "native_sales_handoff":native_sales,
                          "approved_actions":actions,
                          "mode":"parallel_shadow_with_authorised_actions",
                          "bids_submitted":0,"repo_writes":0,"money_moved":0,
