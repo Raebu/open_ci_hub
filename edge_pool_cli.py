@@ -49,6 +49,7 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="action",required=True)
     sub.add_parser("devices", help="Show fresh eligible S22/S25 capacity.")
     sub.add_parser("report", help="Show pool receipts and tamper-evident log check.")
+    sub.add_parser("health", help="Read last five-minute monitor status and outages.")
     sub.add_parser("audit",help="Verify local append-only hash chain.")
     rec=sub.add_parser("reconcile",help="Reassign only never-claimed offline work.")
     rec.add_argument("--limit",type=int,default=40)
@@ -74,6 +75,23 @@ def main(argv=None):
         _json_dump(pool.devices_status())
     elif args.action=="report":
         _json_dump(pool.report())
+    elif args.action=="health":
+        snapshot=Path(__file__).resolve().parent / ".local" / "edge-pool-status.json"
+        if snapshot.is_symlink() or not snapshot.is_file() or snapshot.stat().st_size>32768:
+            raise RuntimeError("No verified local pool monitoring snapshot exists.")
+        age_seconds=round(max(0,time.time()-snapshot.stat().st_mtime))
+        data=json.loads(snapshot.read_text(encoding="utf8"))
+        if not isinstance(data,dict) or data.get("state") not in (
+                "healthy","degraded","pending","failed"):
+            raise RuntimeError("Invalid monitoring status document.")
+        output={k:data.get(k) for k in (
+            "last_run_utc","state","local_checks","remote_checks",
+            "worker_status","issues","audit_valid")}
+        output["snapshot_age_seconds"]=age_seconds
+        if age_seconds>900:
+            output["state"]="stale"
+            output["issues"]=(output.get("issues") or [])+[{"kind":"monitor_not_running_recently"}]
+        _json_dump(output)
     elif args.action=="audit":
         _json_dump(pool.audit())
     elif args.action=="reconcile":
@@ -117,6 +135,8 @@ def main(argv=None):
                 _json_dump(record)
                 if record["verified"] is not True:
                     raise RuntimeError("Execution failed or result did not verify.")
+                if record["check_passed"] is not True:
+                    raise RuntimeError("Check completed with a verified FAIL result.")
                 break
             if time.monotonic()>=deadline:
                 _json_dump({"receipt":"pending","pool_job":outcome["pool_job"]})

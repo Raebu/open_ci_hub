@@ -213,6 +213,9 @@ class EdgePool:
         all_devices = self.broker.edge_devices()
         return [{"app": d["app"], "kind": d["kind"], "online": d["online"],
                  "approved": d["approved"], "ram_mb": d["free_ram_mb"],
+                 "last_seen_age_seconds": (
+                     round(max(0, now-d["last_seen"])) if d["last_seen"] is not None
+                     else None),
                  "eligible_for_json": d["app"] in active,
                  "queued": active.get(d["app"],{}).get("queued"),
                  "active": active.get(d["app"],{}).get("active")}
@@ -297,6 +300,13 @@ class EdgePool:
                 receipt["verified"] = False
         elif job["status"] in ("failed","stranded"):
             receipt["verified"] = False
+        # Integrity and actual correctness are different. A matching receipt
+        # that reports invalid JSON/Python is trustworthy but is NOT a pass.
+        receipt["check_passed"] = (
+            receipt["verified"] is True
+            and (job["task"] == "hash.benchmark"
+                 or (isinstance(result, dict) and result.get("valid") is True))
+        ) if job["status"] == "completed" else None
         return row,job,receipt
 
     @retry_if_locked
@@ -406,6 +416,14 @@ class EdgePool:
         jobs = [self.status(job) for job in ids]
         totals = {status:sum(j["status"]==status for j in jobs)
                   for status in ("queued","leased","completed","failed","stranded")}
+        totals.update({
+            "checks_passed":sum(j["check_passed"] is True for j in jobs),
+            "checks_failed":sum(j["status"]=="completed" and
+                                j["check_passed"] is False for j in jobs),
+            "verified_receipts":sum(j["verified"] is True for j in jobs),
+            "integrity_failures":sum(j["status"]=="completed" and
+                                     j["verified"] is False for j in jobs),
+        })
         return {"devices":self.devices_status(),"jobs":jobs,"totals":totals,
                 "audit":self.audit(),
                 "scope":"Existing reviewed Python syntax, JSON inspection, bounded PBKDF2 only"}

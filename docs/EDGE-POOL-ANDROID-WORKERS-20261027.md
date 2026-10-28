@@ -72,3 +72,39 @@ No phone operating system or bootloader was changed.
 ## Production limitations
 
 The phone pool reduces host contention for tiny, pure tasks; it does not guarantee continuous availability or materially accelerate large production builds. Next extensions should only add specifically reviewed fixed workloads, with matching changes to both phone agents and the broker, followed by real device acceptance.
+
+## Reliability repairs — 28 October 2026
+
+The Razer's five-minute user systemd timer remains the authoritative runner.
+It now performs all four explicitly curated JSON/Python checks locally
+on every tick, even if both Android agents lose their worker heartbeats.
+Local checks only parse inputs; they never import or execute project code.
+
+A verified device receipt and a passing application check are now separate.
+Invalid JSON/Python can produce a correctly verified worker receipt, but
+the project check must be reported as FAILED, not passed. New tests cover
+this distinction, both workers being offline, single-device outages,
+private status storage and refusal to follow symlinks.
+
+Each timer run atomically stores a private status snapshot at
+.local/edge-pool-status.json (0600), without project source or tokens.
+Read it on the Razer with:
+
+    python3 edge_pool_cli.py health
+
+Status distinguishes healthy/pending/degraded/failed, with stale detection
+after 15 minutes without a fresh snapshot. Offline workers show heartbeat
+age. The timer returns failure for genuine parsing, integrity or audit
+failures rather than treating a successful timer invocation as evidence
+that an application check passed.
+
+Importantly, the monitor records outages but cannot restart a Termux
+process that Android has suspended, force-stopped or killed. A connected
+Tailscale app does not prove a Termux worker is online. Verify matched
+Termux and Termux:Boot builds, start Termux:Boot once, check the existing
+runit service and battery optimisation exclusions, then test a real
+reboot when physical access permits. Do not reset phone credentials.
+
+The Galaxy S22 Ultra is not included in the official Ubuntu Touch
+supported list for this review. Keep Android/Termux rather than
+attempting an unsupported native Linux firmware flash.
