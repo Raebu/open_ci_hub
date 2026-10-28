@@ -371,6 +371,8 @@ def set_background_only(enabled: bool, *, confirm: bool = False) -> dict:
     require_nonroot()
     if confirm is not True:
         raise PermissionError("Local owner confirmation required for foreground policy.")
+    if not enabled and not (sys.stdin.isatty() and sys.stdout.isatty()):
+        raise PermissionError("Foreground unlock requires the owner at an interactive local terminal.")
     if enabled:
         if STATE_ROOT.is_symlink() or STATE_DIR.is_symlink():
             raise PermissionError("Unsafe direct-MCP state directory.")

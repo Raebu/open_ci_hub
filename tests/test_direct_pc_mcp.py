@@ -100,7 +100,10 @@ class DirectMcpTests(unittest.TestCase):
                     mcp.set_capabilities({"desktop_control": True}, confirm=True)
                 with self.assertRaises(PermissionError):
                     mcp.require_capability("desktop_control")
-                mcp.set_background_only(False, confirm=True)
+                with self.assertRaises(PermissionError):
+                    mcp.set_background_only(False, confirm=True)
+                with patch("direct_pc_mcp.sys.stdin.isatty", return_value=True), patch("direct_pc_mcp.sys.stdout.isatty", return_value=True):
+                    mcp.set_background_only(False, confirm=True)
                 self.assertFalse(mcp.is_background_only())
                 self.assertFalse(mcp.capability_status()["desktop_control"])
 
