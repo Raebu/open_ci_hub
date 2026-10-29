@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep Samsung Galaxy Book Go native Qualcomm Wi-Fi available
+
+[Timer]
+OnBootSec=35s
+OnUnitInactiveSec=5min
+AccuracySec=30s
+Unit=oci-samsung-wifi.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

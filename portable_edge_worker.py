@@ -83,12 +83,30 @@ def windows_ac_connected():
         return False
     return state.ACLineStatus==1
 
+def samsung_book_go_memory_profile():
+    """Explicit opt-in, exact hardware, never lower general Linux/Windows limits."""
+    if os.environ.get("OCI_EDGE_MEMORY_PROFILE")!="samsung-linux-edge":
+        return False
+    if (platform.system()!="Linux" or platform.machine().lower() not in
+            ("aarch64","arm64") or platform.node()!="samsung-book-go"):
+        return False
+    try:
+        model=Path("/proc/device-tree/model").read_bytes().rstrip(b"\x00").decode("utf8")
+        return model=="Samsung Galaxy Book Go"
+    except (OSError,UnicodeError):
+        return False
+
+
+def minimum_available_ram_mb(system):
+    return 896 if system=="Linux" and samsung_book_go_memory_profile() else 1536
+
+
 def ready(*, ram=available_ram_mb, powered=windows_ac_connected, system=None):
     system=platform.system() if system is None else system
     if system not in ("Windows","Linux"):
         return False,"unsupported_operating_system"
     remaining=ram()
-    if type(remaining) is not int or remaining<1536:
+    if type(remaining) is not int or remaining<minimum_available_ram_mb(system):
         return False,"foreground_memory_reserved"
     if system=="Windows" and not powered():
         return False,"not_connected_to_power"

@@ -353,3 +353,7 @@ and Samsung PC remain on their original charging policies. See
 [Android edge worker / S25 battery mode](docs/ANDROID-EDGE-WORKER.md).
 The existing phone must still apply the reviewed Termux worker update and
 demonstrate a fresh Hub heartbeat before the change is considered active.
+
+### Samsung Galaxy Book Go native Wi-Fi and edge worker
+
+The Galaxy Book Go now runs native **Raeburn** Wi-Fi through its Samsung-signed Qualcomm modem/WLAN firmware, with systemd boot recovery and NetworkManager autoconnect. The private Razer-to-Samsung service retains RaeburnAI while reserving RAM for an approved bounded Linux ARM64 edge worker; a real device job has completed with independent verification. The Samsung Wi-Fi uses its own router connection rather than the S22 tether. Only the Samsung has the reviewed 896 MB free-RAM threshold; the S22/S25 and all other workers keep their independent guards. See [Wi-Fi and worker acceptance](docs/SAMSUNG-NATIVE-WIFI-WORKER-ACCEPTANCE-20261029.md). Full post-reboot and closed-lid acceptance must be evidenced separately.

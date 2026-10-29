@@ -14,6 +14,17 @@ KINDS={"windows_arm64":("Windows","arm64"),"android_arm64":("Android","arm64"),
 SHA=re.compile(r"^[0-9a-f]{64}$")
 MAX_AGE=120
 S25_ON_BATTERY_RESERVE_PERCENT = 20  # stop accepting work at <= 20%
+SAMSUNG_LINUX_EDGE = "samsung-linux-edge"
+SAMSUNG_MIN_FREE_RAM_MB = 896
+
+
+def min_free_ram_mb(app):
+    return SAMSUNG_MIN_FREE_RAM_MB if app==SAMSUNG_LINUX_EDGE else 1536
+
+
+def reserved_foreground_mb(app):
+    return 768 if app==SAMSUNG_LINUX_EDGE else 1024
+
 
 
 def power_eligible(app, charging, battery_percent):
@@ -84,7 +95,8 @@ def report(db,who,data,*,now=None):
     now=time.time() if now is None else now
     db.execute("UPDATE fleet_devices SET free_ram_mb=?,charging=?,battery_percent=?,last_seen=? WHERE app=?",
                (remaining,int(data["charging"]),percent,now,who["app"]))
-    ready=power_eligible(who["app"],data["charging"],percent) and remaining>=1536
+    ready=(power_eligible(who["app"],data["charging"],percent)
+           and remaining>=min_free_ram_mb(who["app"]))
     return {"enrolled":True,"online":ready,"reason":"ready" if ready else "device_busy_or_not_powered"}
 
 def admit(db,who,task,ram_mb,*,now=None):
@@ -99,7 +111,8 @@ def admit(db,who,task,ram_mb,*,now=None):
     if task not in json.loads(row["allowed_tasks"]):
         return "device_task_not_approved"
     if (not power_eligible(who["app"],row["charging"],row["battery_percent"]) or
-        row["free_ram_mb"] is None or row["free_ram_mb"]<ram_mb+1024):
+        row["free_ram_mb"] is None or row["free_ram_mb"]<max(min_free_ram_mb(who["app"]),
+                                  ram_mb+reserved_foreground_mb(who["app"]))):
         return "remote_device_foreground_priority"
     if type(ram_mb) is not int or not 64<=ram_mb<=256:
         return "remote_device_ram_budget_over_limit"
@@ -116,7 +129,7 @@ def listing(db,*,now=None):
         results.append({"app":row["app"],"kind":row["kind"],"architecture":KINDS[row["kind"]][1],
                         "tasks":json.loads(row["allowed_tasks"]),"approved":bool(row["approved"]),
                         "online":bool(fresh and power_eligible(row["app"],row["charging"],row["battery_percent"])
-                                      and row["free_ram_mb"] is not None and row["free_ram_mb"]>=1536),
+                                      and row["free_ram_mb"] is not None and row["free_ram_mb"]>=min_free_ram_mb(row["app"])),
                         "free_ram_mb":row["free_ram_mb"] if fresh else None,
                         "battery_percent":row["battery_percent"] if fresh else None,
                         "billing":"owned_device_only","last_seen":row["last_seen"] or None})
