@@ -128,7 +128,14 @@
         <section id="ai-models" aria-labelledby="ai-models-heading">
           <div class="section-head"><div><h2 id="ai-models-heading">AI models · Local &amp; cloud</h2>
             <p>Choose the right capability: small private inference runs on your Samsung; larger hosted models open in your browser.</p></div></div>
+          <p class="small">RaeburnAI is an opt-in, private operational-learning assistant. It stores only sanctioned transaction metadata, keeps unverified events separate from approved knowledge, and never automatically retrains its weights.</p>
           <div class="cards">
+            <article class="provider-card">
+              <h3>RaeburnAI · Local learning model</h3>
+              <p>Qwen3.5 2B · Q4_K_M GGUF · Samsung ARM64. Restricted, CPU-only, and private on <code>127.0.0.1:8879</code> on the Samsung.</p>
+              <p>Group operational evidence is imported every two minutes into a tenant-scoped, searchable memory store on the Razer. Unverified source events are observations, not training examples.</p>
+              <p class="small">On the Razer, run <code>python3 raeburn_ai.py status</code>. For a private question, pipe text into <code>python3 raeburn_ai.py ask</code>; add <code>--include-observations</code> only when explicitly reviewing unverified operational events. See <code>docs/RAEBURN-AI.md</code>.</p>
+            </article>
             <article class="provider-card">
               <h3>Samsung · Local Qwen3 0.6B</h3>
               <p>Locally hosted on <code>samsung-book-go</code>, CPU inference via <code>127.0.0.1:8878</code> on the Samsung itself. No cloud account needed. Private loopback only, not exposed on the internet.</p>
