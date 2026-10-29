@@ -111,6 +111,9 @@ def db():
         conn.close()
 
 def _event(conn,mission,event,detail,at):
+    # SQLite REAL normalises integer timestamps to float on readback.
+    # Hash the exact persisted type, including during mocked clock tests.
+    at=float(at)
     # Avoid leaking prompt, accounts or evidence content to audit trail.
     previous=conn.execute("SELECT event_hash FROM audit ORDER BY seq DESC LIMIT 1").fetchone()
     last=previous["event_hash"] if previous else "0"*64
@@ -119,9 +122,8 @@ def _event(conn,mission,event,detail,at):
     conn.execute("INSERT INTO audit(mission,event,detail,at,previous_hash,event_hash) VALUES(?,?,?,?,?,?)",
                  (mission,event,detail,at,last,digest))
 
-def audit_valid():
-    with db() as conn:
-        records=conn.execute("SELECT mission,event,detail,at,previous_hash,event_hash FROM audit ORDER BY seq").fetchall()
+def _audit_ok(conn):
+    records=conn.execute("SELECT mission,event,detail,at,previous_hash,event_hash FROM audit ORDER BY seq").fetchall()
     last="0"*64
     for row in records:
         body=json.dumps([row["mission"],row["event"],row["detail"],row["at"],last],
@@ -129,6 +131,21 @@ def audit_valid():
         if row["previous_hash"]!=last or hashlib.sha256(body.encode()).hexdigest()!=row["event_hash"]:
             return False
         last=row["event_hash"]
+    return True
+
+def audit_valid():
+    with db() as conn:
+        return _audit_ok(conn)
+
+def _receipts_ok(conn):
+    """Fail closed on corrupted or truncated completed-step evidence."""
+    rows=conn.execute("SELECT summary,receipt FROM steps WHERE status='completed'").fetchall()
+    for item in rows:
+        try:
+            if _receipt(json.loads(item["summary"])) != item["receipt"]:
+                return False
+        except (ValueError,TypeError,KeyError):
+            return False
     return True
 
 def submit(objective,*,mode="assist",actor="local-owner",tenant="raeburn-group",key=None):
@@ -141,11 +158,14 @@ def submit(objective,*,mode="assist",actor="local-owner",tenant="raeburn-group",
     at=now()
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        if not _audit_ok(conn) or not _receipts_ok(conn):
+            raise PermissionError("Mission evidence integrity failed; no new work permitted")
         if key:
-            row=conn.execute("SELECT id,objective,mode FROM missions WHERE idempotency_key=?",(key,)).fetchone()
+            row=conn.execute("SELECT id,objective,mode,tenant,actor FROM missions WHERE idempotency_key=?",(key,)).fetchone()
             if row:
-                if row["objective"]!=spec["objective"] or row["mode"]!=mode:
-                    raise ValueError("Idempotency key already used for another mission")
+                if (row["objective"]!=spec["objective"] or row["mode"]!=mode
+                        or row["tenant"]!=tenant or row["actor"]!=actor):
+                    raise ValueError("Idempotency key belongs to another mission or identity")
                 return {"id":row["id"],"duplicate":True,"plan":spec}
         pending=conn.execute("SELECT count(*) FROM missions WHERE status IN ('queued','running','paused','awaiting_approval','needs_reconciliation')").fetchone()[0]
         if pending>=60:raise RuntimeError("Mission queue full; resolve existing work first")
@@ -180,11 +200,22 @@ def inspect(mission):
     if not isinstance(mission,str) or not ID.fullmatch(mission):
         raise ValueError("Invalid mission identifier")
     with db() as conn:
-        row=conn.execute("SELECT * FROM missions WHERE id=?",(mission,)).fetchone()
-        if not row:raise ValueError("Mission not found")
+        mission_row=conn.execute("SELECT * FROM missions WHERE id=?",(mission,)).fetchone()
+        if not mission_row:raise ValueError("Mission not found")
         steps=conn.execute("SELECT ord,kind,status,receipt,summary,updated FROM steps WHERE mission=? ORDER BY ord",
                            (mission,)).fetchall()
-    return {"mission":dict(row),"steps":[dict(x) for x in steps]}
+    results=[]
+    for row in steps:
+        step=dict(row)
+        step["receipt_valid"]=False
+        if step["status"]=="completed" and step["receipt"] and step["summary"]:
+            try:
+                decoded=json.loads(step["summary"])
+                step["receipt_valid"]=(_receipt(decoded)==step["receipt"])
+            except (TypeError,ValueError):
+                pass
+        results.append(step)
+    return {"mission":dict(mission_row),"steps":results}
 
 def control(mission,action,*,confirm=False,actor="local-owner"):
     if not confirm:raise PermissionError("Explicit approval required")
@@ -194,6 +225,8 @@ def control(mission,action,*,confirm=False,actor="local-owner"):
         raise ValueError("Invalid mission")
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        if not _audit_ok(conn) or not _receipts_ok(conn):
+            raise PermissionError("Mission evidence integrity failed; controls suspended")
         row=conn.execute("SELECT status FROM missions WHERE id=?",(mission,)).fetchone()
         if not row:raise ValueError("Mission not found")
         status=row["status"]
@@ -275,10 +308,25 @@ def _execute(kind,lane,objective):
         question=("Review "+lane+" operations for the objective: "+objective+
                   ". Provide a brief evidence-based summary, missing evidence and next steps. "
                   "Do not assert that any external action has been performed.")
-        result=ask("raeburn-group",question,include_observations=True,max_tokens=140)
-        if not result.get("ok"):raise RuntimeError("local_ai_unavailable")
-        return {"answer":str(result["answer"])[:900],"model":result["model"],
-                "memory_items":result["memory_items"],"cloud":False}
+        try:
+            result=ask("raeburn-group",question,include_observations=True,max_tokens=96)
+        except (OSError,RuntimeError,TimeoutError,ValueError):
+            result=None
+        if result and result.get("ok"):
+            return {"answer":str(result["answer"])[:900],"model":result["model"],
+                    "memory_items":result["memory_items"],"cloud":False,
+                    "degraded":False,"evidence_status":"unverified_operational_observations"}
+        # No cloud or fabricated AI response. Return genuinely observed,
+        # bounded stage-count metadata as a clear degraded-mode briefing.
+        signals=[x for x in attention_signals(4) if x["lane"]==lane]
+        if not signals:
+            signals=attention_signals(3)
+        report=("Local AI inference unavailable. Evidence-only report; "
+                "these stage counts do not prove completion. "+
+                "; ".join(f'{x["lane"]}: {x["count"]} {x["reason"]}' for x in signals))
+        return {"answer":report[:900],"model":"evidence-only-local-fallback",
+                "memory_items":0,"cloud":False,"degraded":True,
+                "evidence_status":"unverified_operational_observations"}
     raise PermissionError("Not an approved task")
 
 def _receipt(value):
@@ -290,6 +338,8 @@ def run_once(*,executor=_execute,clock=now):
     at=clock()
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        if not _audit_ok(conn) or not _receipts_ok(conn):
+            raise PermissionError("Mission evidence integrity failed; execution suspended")
         # Any prior running step older than its timeout is NOT retried.
         interrupted=conn.execute("""SELECT s.mission,s.ord FROM steps s JOIN missions m ON m.id=s.mission
              WHERE s.status='running' AND s.started<?""",(at-150,)).fetchall()
@@ -328,16 +378,23 @@ def run_once(*,executor=_execute,clock=now):
         conn.commit()
     try:
         value=executor(kind,row["lane"],row["objective"])
-        if not isinstance(value,dict):raise ValueError("Invalid executor result")
-        digest=_receipt(value)
-        # Limit stored data; don't save stack traces, secrets or payloads.
-        summary=json.dumps(value,ensure_ascii=True,separators=(",",":"))[:1800]
+        if not isinstance(value,dict) or value.get("ok") is False:
+            raise ValueError("Executor failed or returned invalid result")
+        # Store a complete canonical result so each SHA-256 receipt can be
+        # recalculated from the persisted evidence, including after restart.
+        summary=json.dumps(value,sort_keys=True,separators=(",",":"),
+                           ensure_ascii=True,allow_nan=False)
+        if len(summary.encode("utf-8"))>4096:
+            raise ValueError("result_exceeds_evidence_limit")
+        digest=hashlib.sha256(summary.encode("utf-8")).hexdigest()
         success=True
     except Exception:
         digest=None;summary="Task execution unavailable; inspect owner-local service evidence."
         success=False
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        if not _audit_ok(conn) or not _receipts_ok(conn):
+            raise PermissionError("Mission evidence integrity changed during execution; result quarantined")
         state=conn.execute("SELECT status FROM missions WHERE id=?",(mission,)).fetchone()
         if state is None or state["status"]=="needs_reconciliation":
             conn.commit();return {"state":"needs_reconciliation","id":mission}
@@ -367,7 +424,9 @@ def overview():
     status={}
     for item in missions: status[item["status"]]=status.get(item["status"],0)+1
     from raeburn_ai import status as ai_status
+    from raeburn_command_health import health
     return {"name":"RaeburnAI Command Centre","missions":missions,
+            "readiness":health(),
             "counts":status,"attention":attention_signals(),"memory":ai_status(),
             "audit_ok":audit_valid(),
             "execution":"fixed-approved-local-actions-only",

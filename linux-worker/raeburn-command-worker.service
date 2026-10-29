@@ -7,6 +7,7 @@ ConditionPathExists=/mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
 [Service]
 Type=oneshot
 WorkingDirectory=/mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
+Environment=PATH=/mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub/linux-worker/raeburn-ssh-bin:/usr/bin:/bin
 ExecStart=/usr/bin/python3 /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub/raeburn_command_centre.py work
 TimeoutStartSec=115
 MemoryMax=192M

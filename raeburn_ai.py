@@ -238,12 +238,12 @@ def _raeburnai_inference(prompt,max_tokens,runner=subprocess.run):
     try:
         result=runner(["tailscale","ssh","linux@samsung-book-go",
             "python3 /opt/open-ci-hub/ai/raeburnai-request.py"],
-            input=payload,capture_output=True,timeout=80,check=False)
+            input=payload,capture_output=True,timeout=52,check=False)
         if result.returncode!=0: return None
         reply=json.loads(result.stdout[:350000])
         if not reply.get("ok"): return None
         return str(reply.get("text") or "").strip() or None
-    except (OSError,TimeoutError,ValueError,KeyError,TypeError):
+    except (OSError,TimeoutError,subprocess.TimeoutExpired,ValueError,KeyError,TypeError):
         return None
 
 

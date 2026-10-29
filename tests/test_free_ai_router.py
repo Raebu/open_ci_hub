@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import subprocess
 from unittest.mock import patch
 
 import free_ai_router as router
@@ -18,6 +19,11 @@ class FreeRouterTests(unittest.TestCase):
         p=patch.object(router,"STATE_DIR",self.state)
         p.start()
         self.addCleanup(p.stop)
+
+    def test_local_fallback_timeout_fails_without_crashing_router(self):
+        def timeout(*args,**kwargs):
+            raise subprocess.TimeoutExpired(args[0],kwargs.get("timeout",48))
+        self.assertIsNone(router._local_request("Harmless test",64,runner=timeout))
 
     def test_metadata_zero_dollars_required(self):
         class Resp:

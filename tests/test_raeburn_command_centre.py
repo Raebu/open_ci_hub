@@ -49,6 +49,17 @@ class CommandCentreTests(unittest.TestCase):
         self.assertEqual(cc.list_missions()[0]["steps_total"],4)
         self.assertEqual(cc.DB.stat().st_mode & 0o777,0o600)
 
+    def test_ai_brief_uses_clearly_marked_evidence_only_degradation(self):
+        with patch("raeburn_ai.ask",return_value={"ok":False}), \
+             patch.object(cc,"attention_signals",return_value=[
+                 {"lane":"coo","count":4,"reason":"requires external readback"}]):
+            result=cc._execute("ai.brief","coo","Review outstanding delivery checks")
+        self.assertTrue(result["degraded"])
+        self.assertEqual(result["model"],"evidence-only-local-fallback")
+        self.assertFalse(result["cloud"])
+        self.assertIn("4 requires external readback",result["answer"])
+        self.assertIn("unverified",result["evidence_status"])
+
     def test_safe_steps_are_receipted_and_auditable(self):
         item=cc.submit("Review my latest operational priorities",mode="observe")
         calls=[]

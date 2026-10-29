@@ -285,7 +285,7 @@ def _local_request(prompt,max_tokens,runner=subprocess.run):
         if not data.get("ok"): return None
         reply=str(data.get("text") or "").strip()
         return reply or None
-    except (OSError,TimeoutError,ValueError,KeyError,TypeError,json.JSONDecodeError):
+    except (OSError,TimeoutError,subprocess.TimeoutExpired,ValueError,KeyError,TypeError,json.JSONDecodeError):
         return None
 
 def classify(prompt):

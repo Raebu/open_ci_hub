@@ -85,3 +85,41 @@ This backup is LOCAL only. The internal SSD remains in the same physical locatio
 6. No hosted cloud provider may be used for confidential data, and uncertain free-tier billing blocks unattended use.
 
 The production claim for this release is specifically: a running, authenticated, recoverable, governed *local mission/control service*. It is not a claim that every Raeburn business system has unrestricted autonomous execution.
+
+
+## 29 October production hardening and SSH transport repair
+
+The sandboxed worker initially rejected Tailscale's OpenSSH subprocess with
+"Bad owner or permissions on /etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf".
+This is a user-systemd mount-namespace interaction affecting SSH's ownership
+check for the packaged systemd SSH-config symlink. Do not modify, chmod or
+replace system-wide /etc/ssh settings to work around it.
+
+The worker now prepends the narrowly scoped
+linux-worker/raeburn-ssh-bin directory to PATH. Its executable symlink invokes
+linux-worker/raeburn-ssh-shim.sh, which passes all Tailscale SSH arguments
+unchanged to /usr/bin/ssh with -F /dev/null. Tailscale remains responsible for
+node resolution and its trusted SSH host-key verification. A real Tailscale SSH
+connection was independently verified inside a user systemd service preserving
+MemoryMax, CPUQuota, NoNewPrivileges, PrivateTmp, ProtectSystem,
+ProtectKernelTunables, ProtectControlGroups and LockPersonality.
+
+Additional runtime integrity rules:
+- Submission, controls, and both phases of execution refuse to continue
+  when the audit hash chain or a previously completed step receipt is damaged.
+- Completed results store complete canonical JSON (up to 4 KiB), allowing
+  independently recalculated SHA-256 receipts; oversized evidence fails closed.
+- Idempotency keys are bound to their actor and tenant as well as objective/mode.
+- Production readiness is assessed from live timers, audited receipts, a
+  verified separate-filesystem backup and the last health checks.
+- A model bridge timeout is handled as a transient error. Private Qwen 0.6B
+  is tried after Qwen3.5 2B, and if neither responds the worker emits a
+  visibly degraded evidence-only operational summary; no cloud prompt is sent.
+- All model responses remain advisory and require external readback before
+  claiming an operational outcome.
+
+Encrypted, independently recoverable offsite backups remain a **release gap**:
+the two existing Contabo SSH endpoints rejected the current unattended
+credentials, and no configured offsite backup client was verified. Never mark
+disaster recovery complete without confirmed remote storage, separated
+recovery keys and an isolated restoration drill.

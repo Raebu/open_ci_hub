@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+import subprocess
 from unittest.mock import patch
 
 import raeburn_ai as ai
@@ -136,6 +137,11 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(reply["memory_items"],1)
         self.assertIn("[event:1]",seen[0])
         self.assertTrue(reply["answer"].startswith("The deployment"))
+
+    def test_primary_inference_timeout_returns_none_for_safe_local_fallback(self):
+        def timeout(*args,**kwargs):
+            raise subprocess.TimeoutExpired(args[0],kwargs.get("timeout",52))
+        self.assertIsNone(ai._raeburnai_inference("Harmless test",64,runner=timeout))
 
     def test_storage_permissions(self):
         ai.status()

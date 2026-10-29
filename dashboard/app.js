@@ -659,10 +659,24 @@ async function loadRaeburn(){
   try{
     const data=await api('/api/raeburn/command');
     const counts=data.counts||{}, memory=data.memory||{};
-    health.replaceChildren(el('div',
-      'Command Centre active · '+String(memory.memory_events??0)+' operational events in memory · '+
-      String(counts.queued||0)+' queued · '+String(counts.awaiting_approval||0)+' awaiting review'+
-      ' · Audit '+(data.audit_ok?'verified':'CHECK REQUIRED'),'result-row'));
+    const readiness=data.readiness||{}, backup=readiness.backup||{};
+    health.replaceChildren();
+    const stateRow=el('div',undefined,'result-row');
+    stateRow.append(el('strong',readiness.local_release_ready?'Local service healthy':'Local checks need attention'));
+    stateRow.append(el('p',
+      String(memory.memory_events??0)+' events · '+String(counts.queued||0)+' queued · '+
+      String(counts.awaiting_approval||0)+' handoffs awaiting review','small'));
+    health.append(stateRow);
+    const proof=el('div',undefined,'result-row');
+    proof.append(el('strong',
+      'Receipts '+(readiness.receipts?.invalid===0?'verified':'CHECK REQUIRED')+
+      ' · Backup '+(backup.integrity_verified?'verified':'CHECK REQUIRED')));
+    proof.append(el('p','Separate drive: '+(backup.separate_filesystem?'yes':'no')+
+      ' · Off-site recovery: '+(readiness.disaster_recovery_complete?'verified':'not verified'),'small'));
+    health.append(proof);
+    if((readiness.attention_required||[]).length){
+      health.append(el('p','Release attention: '+readiness.attention_required.join(', ').replaceAll('_',' '),'small'));
+    }
     root.replaceChildren();
     for(const signal of (data.attention||[]).slice(0,4)){
       const noticeRow=el('div',undefined,'result-row');
@@ -691,7 +705,9 @@ async function loadRaeburn(){
         for(const step of item.steps||[]){
           const line=el('div',undefined,'result-row');
           line.append(el('strong',step.kind+' · '+step.status));
-          line.append(el('p',step.receipt?'SHA-256: '+step.receipt:'No completed receipt','small'));
+          line.append(el('p',step.receipt?
+              'SHA-256: '+step.receipt+' · '+(step.receipt_valid?'Recalculated':'NOT VERIFIED'):
+              'No completed receipt','small'));
           if(step.summary)line.append(el('pre',step.summary,'job-log'));
           details.append(line);
         }
