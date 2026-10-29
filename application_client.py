@@ -60,10 +60,17 @@ class ApplicationClient:
             raise ValueError('Invalid job ID.')
         return self._request('GET','/api/v1/jobs/'+job_id)
 
-    def availability(self,platform_name,architecture,free_ram_mb,charging):
-        return self._request('POST','/api/v1/workers/availability',{
-            'platform':platform_name,'architecture':architecture,
-            'free_ram_mb':free_ram_mb,'charging':charging})
+    def availability(self,platform_name,architecture,free_ram_mb,charging,battery_percent=None):
+        # Preserve legacy four-field reports for other workers.
+        if type(charging) is not bool:
+            raise ValueError('Physical charging flag must be boolean.')
+        data={'platform':platform_name,'architecture':architecture,
+              'free_ram_mb':free_ram_mb,'charging':charging}
+        if battery_percent is not None:
+            if type(battery_percent) is not int or not 0<=battery_percent<=100:
+                raise ValueError('Battery percentage must be an integer 0..100.')
+            data['battery_percent']=battery_percent
+        return self._request('POST','/api/v1/workers/availability',data)
 
     def claim(self):
         return self._request('POST','/api/v1/workers/claim',{})

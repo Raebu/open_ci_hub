@@ -108,3 +108,19 @@ reboot when physical access permits. Do not reset phone credentials.
 The Galaxy S22 Ultra is not included in the official Ubuntu Touch
 supported list for this review. Keep Android/Termux rather than
 attempting an unsupported native Linux firmware flash.
+
+
+### S25 owner's updated battery policy (29 October 2026)
+
+The 27 October charging-only rule described above remains the default for
+the S22 and for workers without an approved S25 power profile. The S25
+is now eligible for an unplugged, signed availability report with an actual
+`battery_percent` greater than 20 (21–100), subject to all the original
+temperature, health, Wi-Fi and RAM checks. The Hub and the pool both
+independently reject an unplugged `s25-edge` report of 20 or less.
+
+This per-device change does NOT turn off power checks for `s22-edge`,
+Samsung Linux or unrelated cloud workers. Phone-side activation of the
+reviewed `edge_worker.py` and `application_client.py` with its opt-in
+Termux runit profile is required before a real physical S25 can report
+the new structured telemetry. See `docs/ANDROID-EDGE-WORKER.md`.

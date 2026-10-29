@@ -341,3 +341,15 @@ and S25. Run `python3 fleet_connectivity.py status` on the Razer to see whether
 a device is disconnected, reachable but its worker has stopped, or ready.
 It does **not** bypass Tailscale SSH reauthentication or Android's Termux:Boot
 requirements. See [always-on fleet recovery and acceptance](docs/FLEET-ALWAYS-ON-20261029.md).
+
+
+### Galaxy S25 battery-powered worker
+
+The existing `s25-edge` Termux worker can be configured to accept its
+original bounded jobs while unplugged above **20%** battery, with the same
+Wi-Fi, thermal, battery-health and RAM protections. The Razer's signed
+worker admission and Android client both enforce this reserve; the S22
+and Samsung PC remain on their original charging policies. See
+[Android edge worker / S25 battery mode](docs/ANDROID-EDGE-WORKER.md).
+The existing phone must still apply the reviewed Termux worker update and
+demonstrate a fresh Hub heartbeat before the change is considered active.

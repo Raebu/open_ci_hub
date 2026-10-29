@@ -21,6 +21,9 @@ TASKS = frozenset(("python.syntax", "json.inspect", "hash.benchmark"))
 MAX_TEXT_BYTES = 1500
 MAX_RAM_MB = 512
 MIN_BATTERY_PERCENT = 40
+S25_BATTERY_RESERVE_PERCENT = 20
+S25_POWER_PROFILE = 's25-edge'
+PLUGGED_STATES = frozenset(('PLUGGED_AC','PLUGGED_USB','PLUGGED_WIRELESS','PLUGGED_DOCK'))
 
 def termux_sensor(binary):
     if binary not in ("termux-battery-status", "termux-wifi-connectioninfo"):
@@ -34,7 +37,9 @@ def termux_sensor(binary):
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
 
-def eligible(battery, wifi):
+def eligible(battery, wifi, *, power_profile=""):
+    if power_profile not in ("",S25_POWER_PROFILE):
+        return False, "unapproved_power_profile"
     if not isinstance(battery, dict) or not isinstance(wifi, dict):
         return False, "sensor_unavailable"
     level = battery.get("percentage")
@@ -47,21 +52,25 @@ def eligible(battery, wifi):
         return False, "sensor_invalid"
     if battery.get("health") != "GOOD":
         return False, "battery_health"
-    if level < MIN_BATTERY_PERCENT:
+    if (level <= S25_BATTERY_RESERVE_PERCENT if power_profile == S25_POWER_PROFILE
+            else level < MIN_BATTERY_PERCENT):
         return False, "battery_low"
     if temp >= 40:
         return False, "battery_warm"
-    if battery.get("plugged") not in (
-            "PLUGGED_AC", "PLUGGED_USB", "PLUGGED_WIRELESS", "PLUGGED_DOCK"):
+    if power_profile != S25_POWER_PROFILE and battery.get("plugged") not in PLUGGED_STATES:
         return False, "not_charging"
+    if power_profile == S25_POWER_PROFILE and battery.get("plugged") not in (
+            *PLUGGED_STATES, "UNPLUGGED"):
+        return False, "power_sensor_invalid"
     if wifi.get("supplicant_state") != "COMPLETED" or wifi.get("ip") in (
             None, "", "0.0.0.0"):
         return False, "wifi_unavailable"
     return True, "eligible"
 
 def phone_ready():
+    profile=os.environ.get("OCI_EDGE_POWER_PROFILE","")
     return eligible(termux_sensor("termux-battery-status"),
-                    termux_sensor("termux-wifi-connectioninfo"))
+                    termux_sensor("termux-wifi-connectioninfo"),power_profile=profile)
 
 def get_text(payload, key):
     if not isinstance(payload, dict):
@@ -190,7 +199,20 @@ def once(client):
             pass
         if type(left) is not int:
             return {"status":"skipped","reason":"memory_telemetry_unavailable"}
-        presence=client.availability("Android","arm64",left,True)
+        profile=os.environ.get("OCI_EDGE_POWER_PROFILE","")
+        if profile==S25_POWER_PROFILE:
+            # Report actual plugged state, never pretend the phone is charging.
+            # Revalidate immediately before the network availability request.
+            battery=termux_sensor("termux-battery-status")
+            wifi=termux_sensor("termux-wifi-connectioninfo")
+            safe,reason=eligible(battery,wifi,power_profile=profile)
+            if not safe:
+                return {"status":"skipped","reason":reason}
+            presence=client.availability(
+                "Android","arm64",left,battery["plugged"] in PLUGGED_STATES,
+                battery["percentage"])
+        else:
+            presence=client.availability("Android","arm64",left,True)
         if not isinstance(presence,dict) or presence.get("enrolled") is not True:
             return {"status":"skipped","reason":"owner_enrolment_required"}
         if presence.get("online") is not True:

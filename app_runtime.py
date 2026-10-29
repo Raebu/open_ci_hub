@@ -203,7 +203,7 @@ class Broker:
                 old_hash=workers[0]["token_hash"]
                 db.execute("UPDATE credentials SET revoked=1 WHERE token_hash=? AND app=? AND role=? AND revoked=0",(old_hash,app,"worker"))
                 db.execute("INSERT INTO credentials(token_hash,app,role,created,revoked) VALUES(?,?,?,?,0)",(token_hash,app,"worker",time.time()))
-                changed=db.execute("UPDATE fleet_devices SET credential_hash=?,free_ram_mb=NULL,charging=NULL,last_seen=0 WHERE app=? AND credential_hash=? AND approved=1",(token_hash,app,old_hash)).rowcount
+                changed=db.execute("UPDATE fleet_devices SET credential_hash=?,free_ram_mb=NULL,charging=NULL,battery_percent=NULL,last_seen=0 WHERE app=? AND credential_hash=? AND approved=1",(token_hash,app,old_hash)).rowcount
                 if changed!=1:
                     raise RuntimeError("Device credential binding changed unexpectedly.")
                 db.commit()

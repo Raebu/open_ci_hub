@@ -104,3 +104,58 @@ Garuda host gate. This is not arbitrary multi-device CI script execution.
 Future general cloud/Windows/Linux worker scheduling needs authenticated
 capability negotiation, per-device admission and separate sandboxing.
 The current docs/MULTI-PC.md feature only navigates independent dashboards.
+
+
+## S25 unplugged operation down to a 20% reserve (29 October 2026)
+
+The current owner-approved power policy for **s25-edge** allows the phone to
+perform its existing bounded tasks while unplugged **when battery is above
+20%**, and stops accepting new work as soon as it reaches 20%. This does not
+mean that running jobs can magically finish if the phone powers down; prefer
+short, idempotent jobs and keep the usual one-job concurrency limit.
+
+The update is deliberately **S25-only**, with three independently enforced
+layers:
+
+1. The S25 worker's explicit `OCI_EDGE_POWER_PROFILE=s25-edge` mode uses
+   current Termux:API battery and Wi-Fi readings. It continues to require
+   health GOOD, battery temperature below 40°C, supported power telemetry,
+   connected Wi-Fi and available memory. At 20% or less the phone refuses
+   new job claims, even while plugged in.
+2. Its authenticated availability report includes physical `charging`
+   state (never falsely reporting plugged=true) and a bounded integer
+   `battery_percent`. The existing app-worker API remains backward
+   compatible with older four-field reports.
+3. The Razer's broker and pooled scheduler authorise unplugged operations
+   ONLY for the signed, separately enrolled `s25-edge` worker when the
+   report shows 21–100% remaining; all other devices, including `s22-edge`,
+   keep the original charging requirement and all resource guards.
+
+The model-verified, opt-in phone installer is:
+`scripts/install-s25-battery-profile.py`. It only runs from Termux on an
+SM-S93xx Galaxy S25, checks reviewed source SHA-256 for
+`edge_worker.py` and `application_client.py` before installing, saves
+private backups, adds exactly one `OCI_EDGE_POWER_PROFILE=s25-edge`
+environment export to the EXISTING `oci-edge-worker` runit launcher and
+requests a controlled restart. It does not read or publish the existing
+device token, install another service, change Android battery settings or
+reconfigure Tailscale.
+
+After the reviewed changes are pushed to the real repository, on the **S25
+Termux** only (not Razer or S22):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Raebu/open_ci_hub/main/scripts/install-s25-battery-profile.py -o "$HOME/install-s25-battery-profile.py"
+python3 "$HOME/install-s25-battery-profile.py" --install
+sv status oci-edge-worker
+```
+
+The installer fails closed if the Samsung model, unique worker directory,
+trusted source SHA, service launcher or existing battery override cannot be
+verified. On a successful restart, verify the Razer sees a **fresh**
+`s25-edge` heartbeat and run a real bounded `json.inspect` job. The worker
+remaining supervised locally does not establish a live Hub connection.
+
+Physical confirmation of the new policy from an unplugged S25 and the
+closed-screen/reboot continuation test are still necessary before claiming
+unattended uptime. The other devices must remain independently protected.

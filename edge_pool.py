@@ -154,7 +154,7 @@ class EdgePool:
         if controls["paused"]:
             return []
         rows = db.execute(
-            "SELECT f.app,f.kind,f.allowed_tasks,f.approved,f.charging,"
+            "SELECT f.app,f.kind,f.allowed_tasks,f.approved,f.charging,f.battery_percent,"
             "f.free_ram_mb,f.last_seen,a.enabled,a.tasks "
             "FROM fleet_devices f JOIN apps a ON a.app=f.app "
             "WHERE f.app IN (" + ",".join("?" for _ in self.devices) + ")",
@@ -165,7 +165,8 @@ class EdgePool:
             app = r["app"]
             if app in exclude or r["kind"] not in ("android_arm64", "linux_arm64"):
                 continue
-            if r["approved"] != 1 or r["enabled"] != 1 or r["charging"] != 1:
+            if (r["approved"] != 1 or r["enabled"] != 1 or
+                    not fleet_devices.power_eligible(app,r["charging"],r["battery_percent"])):
                 continue
             if (not r["last_seen"] or not 0 <= now-r["last_seen"] <= fleet_devices.MAX_AGE
                     or not isinstance(r["free_ram_mb"], int)

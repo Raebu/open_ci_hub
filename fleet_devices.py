@@ -13,6 +13,14 @@ KINDS={"windows_arm64":("Windows","arm64"),"android_arm64":("Android","arm64"),
        "linux_arm64":("Linux","arm64"),"linux_x86_64":("Linux","x86_64")}
 SHA=re.compile(r"^[0-9a-f]{64}$")
 MAX_AGE=120
+S25_ON_BATTERY_RESERVE_PERCENT = 20  # stop accepting work at <= 20%
+
+
+def power_eligible(app, charging, battery_percent):
+    """Only the owner-approved S25 may accept unplugged work, above reserve."""
+    return (charging == 1 or charging is True or
+            (app=="s25-edge" and type(battery_percent) is int and
+             S25_ON_BATTERY_RESERVE_PERCENT < battery_percent <= 100))
 
 def setup(db):
     db.execute("""
@@ -28,6 +36,9 @@ def setup(db):
         created REAL NOT NULL
       )
     """)
+    cols={row[1] for row in db.execute("PRAGMA table_info(fleet_devices)")}
+    if "battery_percent" not in cols:
+        db.execute("ALTER TABLE fleet_devices ADD COLUMN battery_percent INTEGER")
 
 def enroll(db,app,kind,*,confirm=False):
     if confirm is not True:
@@ -57,18 +68,23 @@ def report(db,who,data,*,now=None):
         return {"enrolled":False,"online":False,"reason":"owner_enrolment_required"}
     if (row["approved"]!=1 or who.get("credential_hash")!=row["credential_hash"]):
         raise PermissionError("Worker token is not bound to this approved device.")
-    if not isinstance(data,dict) or set(data)!={"platform","architecture","free_ram_mb","charging"}:
+    fields=set(data) if isinstance(data,dict) else set()
+    required={"platform","architecture","free_ram_mb","charging"}
+    if fields not in (required,required|{"battery_percent"}):
         raise ValueError("Unexpected device-health format.")
     kind=KINDS[row["kind"]]
     if data["platform"]!=kind[0] or data["architecture"]!=kind[1]:
         raise ValueError("Device architecture/platform did not match the owner-approved record.")
     remaining=data["free_ram_mb"]
-    if type(remaining) is not int or not 0<=remaining<=262144 or type(data["charging"]) is not bool:
+    percent=data.get("battery_percent")
+    if (type(remaining) is not int or not 0<=remaining<=262144 or
+        type(data["charging"]) is not bool or
+        ("battery_percent" in data and (type(percent) is not int or not 0<=percent<=100))):
         raise ValueError("Invalid resource telemetry.")
     now=time.time() if now is None else now
-    db.execute("UPDATE fleet_devices SET free_ram_mb=?,charging=?,last_seen=? WHERE app=?",
-               (remaining,int(data["charging"]),now,who["app"]))
-    ready=data["charging"] and remaining>=1536
+    db.execute("UPDATE fleet_devices SET free_ram_mb=?,charging=?,battery_percent=?,last_seen=? WHERE app=?",
+               (remaining,int(data["charging"]),percent,now,who["app"]))
+    ready=power_eligible(who["app"],data["charging"],percent) and remaining>=1536
     return {"enrolled":True,"online":ready,"reason":"ready" if ready else "device_busy_or_not_powered"}
 
 def admit(db,who,task,ram_mb,*,now=None):
@@ -82,7 +98,8 @@ def admit(db,who,task,ram_mb,*,now=None):
         return "device_telemetry_stale"
     if task not in json.loads(row["allowed_tasks"]):
         return "device_task_not_approved"
-    if row["charging"]!=1 or row["free_ram_mb"] is None or row["free_ram_mb"]<ram_mb+1024:
+    if (not power_eligible(who["app"],row["charging"],row["battery_percent"]) or
+        row["free_ram_mb"] is None or row["free_ram_mb"]<ram_mb+1024):
         return "remote_device_foreground_priority"
     if type(ram_mb) is not int or not 64<=ram_mb<=256:
         return "remote_device_ram_budget_over_limit"
@@ -90,7 +107,7 @@ def admit(db,who,task,ram_mb,*,now=None):
 
 def listing(db,*,now=None):
     now=time.time() if now is None else now
-    rows=db.execute("SELECT app,kind,allowed_tasks,approved,free_ram_mb,charging,last_seen "
+    rows=db.execute("SELECT app,kind,allowed_tasks,approved,free_ram_mb,charging,battery_percent,last_seen "
                     "FROM fleet_devices ORDER BY app").fetchall()
     results=[]
     for row in rows:
@@ -98,8 +115,9 @@ def listing(db,*,now=None):
                0<=now-row["last_seen"]<=MAX_AGE)
         results.append({"app":row["app"],"kind":row["kind"],"architecture":KINDS[row["kind"]][1],
                         "tasks":json.loads(row["allowed_tasks"]),"approved":bool(row["approved"]),
-                        "online":bool(fresh and row["charging"] and row["free_ram_mb"] is not None
-                                      and row["free_ram_mb"]>=1536),
+                        "online":bool(fresh and power_eligible(row["app"],row["charging"],row["battery_percent"])
+                                      and row["free_ram_mb"] is not None and row["free_ram_mb"]>=1536),
                         "free_ram_mb":row["free_ram_mb"] if fresh else None,
+                        "battery_percent":row["battery_percent"] if fresh else None,
                         "billing":"owned_device_only","last_seen":row["last_seen"] or None})
     return results
