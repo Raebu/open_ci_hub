@@ -36,3 +36,9 @@
 #whatsapp-status{border-left:3px solid #8de0c7;padding:10px 12px;background:#10273a;border-radius:5px;margin:0}
 #whatsapp-status.error{border-color:#ff9eaa;background:#3c232d;color:#ffe1e7}
 @media(max-width:520px){#whatsapp-compose textarea{font-size:16px}}
+
+#raeburn-command textarea{background:#0a1528;border:1px solid #3a4a63;color:#f4f6fb;border-radius:10px;padding:12px;width:100%;font:inherit;resize:vertical;line-height:1.55;min-height:88px;outline-offset:2px}
+#raeburn-command textarea:focus{outline:2px solid #8de0c7}
+#raeburn-command .result-row{flex-wrap:wrap}
+#raeburn-detail pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow-y:auto;width:100%}
+@media(max-width:520px){#raeburn-command textarea{font-size:16px}#raeburn-command .controls .btn{flex:1 1 130px}}

@@ -14,7 +14,7 @@
   <div class="layout">
     <aside class="rail" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">◇</span> <span>Open CI <b>Hub</b></span></div>
-      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#ai-models">◈ <span>AI models</span></a><a href="#whatsapp-compose">✉ <span>Personal WhatsApp</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#local-ci">◷ <span>Local CI</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#autonomy">◉ <span>Background Work</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
+      <div class="nav"><a class="active" href="#providers">◫ <span>Integrations</span></a><a href="#repositories">▤ <span>Repositories</span></a><a href="#onboarding">↗ <span>Onboarding</span></a><a href="#pipelines">◷ <span>Pipelines</span></a><a href="#terminal">▣ <span>Terminal</span></a><a href="#host">⌘ <span>My PC</span></a><a href="#health">✦ <span>Health</span></a><a href="#apps">▧ <span>App Runtime</span></a><a href="#raeburn-command">◈ <span>RaeburnAI</span></a><a href="#ai-models">◈ <span>AI models</span></a><a href="#whatsapp-compose">✉ <span>Personal WhatsApp</span></a><a href="#internet">◎ <span>CI Internet</span></a><a href="#local-ci">◷ <span>Local CI</span></a><a href="#deployments">⇪ <span>Deployments</span></a><a href="#autonomy">◉ <span>Background Work</span></a><a href="#machines">▦ <span>PC Fleet</span></a><a href="#devices">◎ <span>Devices</span></a></div>
       <div class="rail-foot"><span class="dot"></span> Local-first. Open-source.</div>
     </aside>
     <main>
@@ -124,6 +124,35 @@
           <h3>Queued projects</h3>
           <div id="apps-queue" class="results" aria-live="polite"></div>
           <p class="small">Register app IDs and issue separate submitter/worker API tokens locally on the host. Jobs are executed by independently deployed application workers, never by the host terminal or CI runner.</p>
+        </section>
+        <section id="raeburn-command" aria-labelledby="raeburn-command-heading">
+          <div class="section-head">
+            <div><h2 id="raeburn-command-heading">RaeburnAI · Command Centre</h2>
+              <p>One objective, a verified plan, visible progress. Read-only tasks can run locally; external actions require review.</p></div>
+            <button id="raeburn-refresh" type="button" class="btn secondary">↻ Refresh</button>
+          </div>
+          <div id="raeburn-health" class="results" role="status" aria-live="polite"></div>
+          <form id="raeburn-form" class="form-grid">
+            <label class="wide">What would you like RaeburnAI to accomplish?
+              <textarea id="raeburn-objective" rows="2" maxlength="280" placeholder="Review today's priorities, identify blockers and show evidence" required></textarea>
+            </label>
+            <label>Operating mode
+              <select id="raeburn-mode">
+                <option value="assist" selected>Assist · research and summarise</option>
+                <option value="observe">Observe · evidence only</option>
+                <option value="autonomous">Autonomous · pre-approved safe tasks</option>
+              </select>
+            </label>
+            <div class="wide controls">
+              <button id="raeburn-preview" class="btn secondary" type="submit">Preview the plan</button>
+              <button id="raeburn-create" class="btn primary" type="button" disabled>Confirm &amp; queue</button>
+            </div>
+          </form>
+          <div id="raeburn-plan" class="results" aria-live="polite"></div>
+          <h3>Live objectives</h3>
+          <div id="raeburn-missions" class="results" aria-live="polite"></div>
+          <div id="raeburn-detail" class="results" aria-live="polite"></div>
+          <p class="small">Your objective and evidence remain private on the Razer and Samsung. Money transfers, external messages, changes to production, and destructive actions cannot run through this Command Centre. Reviewing a handoff is not proof of external completion. You can pause, cancel or inspect receipts at any time.</p>
         </section>
         <section id="ai-models" aria-labelledby="ai-models-heading">
           <div class="section-head"><div><h2 id="ai-models-heading">AI models · Local &amp; cloud</h2>

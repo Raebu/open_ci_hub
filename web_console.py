@@ -336,7 +336,7 @@ class WebConsole:
                 if path in static:
                     filename, kind = static[path]
                     return self.output(200, (console.static / filename).read_bytes(), kind)
-                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue', '/api/deployments', '/api/ci/network', '/api/ci/local', '/api/ci/local/job', '/api/autonomy'):
+                if path in ('/api/repos', '/api/pipelines', '/api/health', '/api/activity', '/api/jobs', '/api/job-log', '/api/artifacts', '/api/ci/workflow', '/api/ci/failure', '/api/host', '/api/execution-evidence', '/api/machines', '/api/machines/probe', '/api/apps/inventory', '/api/apps/queue', '/api/deployments', '/api/ci/network', '/api/ci/local', '/api/ci/local/job', '/api/autonomy', '/api/raeburn/command', '/api/raeburn/mission'):
                     if not console.authenticated(self):
                         return self.output(401, {'error': 'Authentication required.'})
                     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -425,6 +425,17 @@ class WebConsole:
                                 return self.output(403, {'error':'Management permission required for missions.'})
                             from autonomy_dashboard import summary, STATE
                             return self.output(200, summary(STATE))
+                        if path in ('/api/raeburn/command','/api/raeburn/mission'):
+                            if console.role(self) not in ('owner','editor'):
+                                return self.output(403, {'error':'RaeburnAI requires management access.'})
+                            import raeburn_command_centre as rcc
+                            if path.endswith('/mission'):
+                                if set(params) != {'id'}:
+                                    return self.output(400, {'error':'Mission identifier required.'})
+                                return self.output(200, rcc.inspect(param('id')))
+                            if params:
+                                return self.output(400, {'error':'Unexpected query parameters.'})
+                            return self.output(200, rcc.overview())
                         if path == '/api/activity':
                             if console.role(self) != 'owner':
                                 return self.output(403, {'error':'Only the local owner can inspect the audit trail.'})
@@ -498,6 +509,27 @@ class WebConsole:
                         actor=console.remote_identity(self) or 'local-owner'
                         result=cancel(console.apps,data.get('job_id'),actor)
                         console.audit.add(actor,'ci.cancel',data['job_id'],'requested')
+                        return self.output(200,result)
+                    if path in ('/api/raeburn/preview','/api/raeburn/create','/api/raeburn/control'):
+                        if console.role(self) not in ('owner','editor'):
+                            return self.output(403, {'error':'RaeburnAI mission changes require management access.'})
+                        import raeburn_command_centre as rcc
+                        actor=console.remote_identity(self) or 'local-owner'
+                        if path.endswith('preview'):
+                            if set(data) != {'objective','mode'}:
+                                return self.output(400, {'error':'Invalid preview fields.'})
+                            return self.output(200, rcc.plan(data['objective'],data['mode']))
+                        if path.endswith('create'):
+                            if set(data) != {'objective','mode','key','confirm'} or data['confirm'] is not True:
+                                return self.output(400, {'error':'Confirm a bounded mission plan first.'})
+                            result=rcc.submit(data['objective'],mode=data['mode'],key=data['key'],actor=actor)
+                            console.audit.add(actor,'raeburn.mission_created',result['id'],
+                                              'reused' if result['duplicate'] else 'queued')
+                            return self.output(200,result)
+                        if set(data) != {'id','action','confirm'} or data['confirm'] is not True:
+                            return self.output(400, {'error':'Explicit mission control confirmation required.'})
+                        result=rcc.control(data['id'],data['action'],confirm=True,actor=actor)
+                        console.audit.add(actor,'raeburn.'+data['action'],result['id'],'confirmed')
                         return self.output(200,result)
                     if path == '/api/autonomy/control':
                         if console.role(self) not in ('owner', 'editor'):

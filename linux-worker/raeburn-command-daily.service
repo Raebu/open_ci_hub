@@ -1,0 +1,17 @@
+[Unit]
+Description=RaeburnAI daily owner-private briefing request
+ConditionPathExists=/mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub/raeburn_command_centre.py
+
+[Service]
+Type=oneshot
+WorkingDirectory=/mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
+ExecStart=/usr/bin/python3 /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub/raeburn_command_centre.py daily-brief
+TimeoutStartSec=25
+MemoryMax=128M
+CPUQuota=25%
+TasksMax=24
+Nice=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+UMask=0077

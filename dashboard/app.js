@@ -645,6 +645,105 @@ async function previewOnboarding(){
   }catch(err){root.replaceChildren();notice(err.message,true)}
 }
 
+let raeburnDraft=null;
+let raeburnSubmissionKey=null;
+async function loadRaeburn(){
+  const root=$('raeburn-missions'), health=$('raeburn-health');
+  if(!root||!health)return;
+  if(!['owner','editor'].includes(state.role)){
+    root.replaceChildren(el('p','Mission controls require an approved editor or owner session.','small'));
+    $('raeburn-form').classList.add('hidden');
+    return;
+  }
+  $('raeburn-form').classList.remove('hidden');
+  try{
+    const data=await api('/api/raeburn/command');
+    const counts=data.counts||{}, memory=data.memory||{};
+    health.replaceChildren(el('div',
+      'Command Centre active · '+String(memory.memory_events??0)+' operational events in memory · '+
+      String(counts.queued||0)+' queued · '+String(counts.awaiting_approval||0)+' awaiting review'+
+      ' · Audit '+(data.audit_ok?'verified':'CHECK REQUIRED'),'result-row'));
+    root.replaceChildren();
+    for(const signal of (data.attention||[]).slice(0,4)){
+      const noticeRow=el('div',undefined,'result-row');
+      noticeRow.append(el('strong',signal.lane+' · '+signal.reason),
+                       el('p',String(signal.count)+' records require further evidence (not independently verified)','small'));
+      noticeRow.append(btn('Review',async()=>{
+        $('raeburn-objective').value='Review '+signal.lane+' items requiring evidence: '+signal.reason;
+        $('raeburn-mode').value='assist';
+        await previewRaeburn();
+      }));
+      root.append(noticeRow);
+    }
+    if(!data.missions?.length)root.append(el('p','No objectives yet. Preview your first objective above.','small'));
+    for(const mission of (data.missions||[])){
+      const row=el('article',undefined,'result-row');
+      row.append(el('strong',mission.objective));
+      row.append(el('p',String(mission.lane)+' · '+String(mission.mode)+' · '+String(mission.status)+
+        ' · '+String(mission.steps_completed)+'/'+String(mission.steps_total)+' steps','small'));
+      if(mission.status==='awaiting_approval')row.append(el('p',
+        'External action is not executed automatically. Review the handoff before proceeding.','small'));
+      const controls=el('div',undefined,'controls');
+      controls.append(btn('View evidence',async()=>{
+        const item=await api('/api/raeburn/mission?id='+encodeURIComponent(mission.id));
+        const details=$('raeburn-detail');
+        details.replaceChildren(el('strong','Evidence for '+mission.objective));
+        for(const step of item.steps||[]){
+          const line=el('div',undefined,'result-row');
+          line.append(el('strong',step.kind+' · '+step.status));
+          line.append(el('p',step.receipt?'SHA-256: '+step.receipt:'No completed receipt','small'));
+          if(step.summary)line.append(el('pre',step.summary,'job-log'));
+          details.append(line);
+        }
+      }));
+      const actions=(mission.status==='queued'?['pause','cancel']:
+        mission.status==='paused'?['resume','cancel']:
+        mission.status==='awaiting_approval'?['approve_handoff','cancel']:
+        mission.status==='failed'?['retry_safe']:
+        mission.status==='needs_reconciliation'?['reconcile','cancel']:[]);
+      for(const action of actions){
+        const label=({pause:'Pause',resume:'Resume',cancel:'Cancel',
+          approve_handoff:'Acknowledge handoff',retry_safe:'Retry safe step',
+          reconcile:'Mark for manual investigation'})[action];
+        controls.append(btn(label,async()=>{
+          if(!confirm(label+' for '+mission.objective+'? This does not execute external business actions.'))return;
+          await api('/api/raeburn/control',{id:mission.id,action,confirm:true});
+          await loadRaeburn();
+        }));
+      }
+      row.append(controls);
+      root.append(row);
+    }
+  }catch(error){health.replaceChildren(el('p','Command Centre unavailable: '+error.message));}
+}
+async function previewRaeburn(){
+  const objective=$('raeburn-objective').value.trim(),mode=$('raeburn-mode').value;
+  $('raeburn-create').disabled=true;
+  raeburnDraft=null;raeburnSubmissionKey=null;
+  const plan=await api('/api/raeburn/preview',{objective,mode});
+  const root=$('raeburn-plan');
+  root.replaceChildren(el('strong','Plan · '+plan.lane+' · '+plan.mode));
+  root.append(el('p','Steps: '+plan.steps.join(' → '),'small'));
+  root.append(el('p',plan.external_action_requested?
+    'External work requires a separate approved executor. RaeburnAI will research and prepare the handoff only.':
+    'All steps are bounded and read-only, except owner-approved private memory synchronisation.','small'));
+  raeburnDraft={objective,mode};raeburnSubmissionKey=crypto.randomUUID().replace(/-/g,'');
+  $('raeburn-create').disabled=false;
+}
+async function createRaeburn(){
+  if(!raeburnDraft || raeburnDraft.objective!==$('raeburn-objective').value.trim() ||
+       raeburnDraft.mode!==$('raeburn-mode').value){
+    throw new Error('Objective changed. Preview the new plan before confirming.');
+  }
+  if(!confirm('Queue this approved, restricted mission? No external writes or spending are enabled.'))return false;
+  const result=await api('/api/raeburn/create',{objective:raeburnDraft.objective,
+     mode:raeburnDraft.mode,key:raeburnSubmissionKey,confirm:true});
+  notice('RaeburnAI queued '+result.id.slice(0,10)+'; evidence will appear below.');
+  $('raeburn-create').disabled=true;
+  raeburnDraft=null;
+  await loadRaeburn();
+  return true;
+}
 async function loadAutonomy(){
   const root=$('autonomy-items');root.replaceChildren();
   if(state.role!=='owner'&&state.role!=='editor'){root.append(el('p','Background mission details require management permission.'));return;}
@@ -690,9 +789,25 @@ async function init(){
     try{await api('/api/logout',{});document.dispatchEvent(new Event('open-ci-logout'));notice('Signed out of this desktop session.');await refresh();}
     catch(e){notice(e.message,true)}
   });
-  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();});
+  $('refresh').addEventListener('click',async()=>{await refresh();await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();await loadRaeburn();});
   $('apps-refresh').addEventListener('click',loadApps);
   $('autonomy-refresh').addEventListener('click',loadAutonomy);
+  $('raeburn-refresh').addEventListener('click',loadRaeburn);
+  $('raeburn-form').addEventListener('submit',async e=>{
+    e.preventDefault();try{await previewRaeburn()}catch(error){notice(error.message,true)}
+  });
+  $('raeburn-create').addEventListener('click',async()=>{
+    const button=$('raeburn-create');button.disabled=true;
+    try{const created=await createRaeburn();if(!created)button.disabled=false}
+    catch(error){notice(error.message,true);button.disabled=false}
+  });
+  for(const id of ['raeburn-objective','raeburn-mode']){
+    $(id).addEventListener('input',()=>{
+      $('raeburn-create').disabled=true;
+      raeburnDraft=null;
+    });
+  }
+
   $('apps-pause').addEventListener('click',()=>appControl('pause').catch(e=>notice(e.message,true)));
   $('apps-resume').addEventListener('click',()=>appControl('resume').catch(e=>notice(e.message,true)));
   $('apps-emergency').addEventListener('click',()=>appControl('emergency_stop').catch(e=>notice(e.message,true)));
@@ -734,9 +849,10 @@ async function init(){
   });
   configureOnboarding();
   await refresh();
-  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();
+  if(state.ready){await loadDiagnostics();await loadHost();await loadMachines();await loadApps();await loadDeployments();await loadInternet();await loadAutonomy();await loadRaeburn();
     show('machine-enroll',state.role==='owner'&&state.mode==='desktop');}
   setInterval(()=>{if(state.ready&&state.pipelineSelected&&!document.hidden)browsePipelines().catch(e=>notice(e.message,true));},20000);
+  setInterval(()=>{if(state.ready&&['owner','editor'].includes(state.role)&&!document.hidden)loadRaeburn().catch(()=>{});},30000);
 }
 document.addEventListener('DOMContentLoaded',init);
 

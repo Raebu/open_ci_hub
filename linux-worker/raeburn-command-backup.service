@@ -1,0 +1,17 @@
+[Unit]
+Description=RaeburnAI verified SQLite mission backup to separate internal SSD
+ConditionPathExists=/mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub/raeburn_command_backup.py
+
+[Service]
+Type=oneshot
+WorkingDirectory=/mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub
+ExecStart=/usr/bin/python3 /mnt/kingston/home/theraeburngroup/Code_Projects/open-ci-hub/raeburn_command_backup.py
+TimeoutStartSec=65
+MemoryMax=128M
+CPUQuota=25%
+TasksMax=24
+Nice=16
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+UMask=0077

@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -136,7 +137,7 @@ class DashboardHTTPTests(unittest.TestCase):
 
     @patch('web_console.create_repo', return_value={'message':'created','url':'https://github.com/org/repo'})
     def test_tailscale_viewer_and_editor_permissions(self, creator):
-        user = 'mobile@example.com'
+        user = 'mobile-'+uuid.uuid4().hex[:12]+'@example.com'
         self.console.request_pair(user)
         self.console.approve(user, True, 'viewer')
         headers={'Host':'runner.tail.ts.net', 'Tailscale-User-Login':user,
