@@ -30,4 +30,12 @@ Review on the Razer:
 - python3 app_runtime.py edge-list
 - python3 fleet_connectivity.py status
 
-Acceptance still needed: controlled reboot, Wi-Fi and Tailscale SSH reconnect automatically without S22 USB tether, primary AI health, fresh worker heartbeat and bounded job after boot. Do not claim verified reboot until actually tested.
+Reboot acceptance completed and verified in the post-reboot section below. Physical closed-lid endurance and shared display/mouse workflow are separate tests.
+
+## Post-reboot acceptance — passed 29 October 2026
+
+Two controlled Linux reboots were independently confirmed by new boot IDs. After both, the Samsung restored native Raeburn Wi-Fi without USB tether. On the second reboot, the new fail-closed boot guard linux-worker/samsung-wait-private-hub.sh (Samsung path /usr/local/sbin/oci-samsung-wait-private-hub) ran before the worker, verified the private Open CI Hub HTTPS health endpoint as restricted user ociworker, and only then allowed systemd to start the existing open-ci-edge-worker.service. Its systemd override is linux-worker/40-samsung-wait-hub.conf (installed under open-ci-edge-worker.service.d); waits for the existing oci-samsung-wifi.service and tailscaled. No new worker daemon, token or scheduler was created.
+
+The second boot produced a fresh approved samsung-linux-edge heartbeat with approximately 1,620 MB available memory and an initial idle result, without manual worker restart. Native wlan0 had Raeburn Wi-Fi with its own default route via 192.168.1.1; no usb0 tether was present. A normal HTTPS GET succeeded, oci-raeburnai.service reported HTTP health OK, and persistent 1.7GB zram swap was active. Another targeted, real json.inspect job c3b8da7380cc8b487dd3e8b03f3784f completed in one attempt, was independently SHA256-verified, and the short-lived submit credential was revoked.
+
+Reboot acceptance is now PASSED for native Wi-Fi, Tailscale, restricted worker and primary RaeburnAI model. Physical lid-closed endurance, battery/power failover and Razer/Samsung shared mouse-keyboard-window workflow have NOT been physically verified by this test. The existing logind lid-ignore and sleep-target masks are configuration, not proof of closed-lid thermal and display behavior.
