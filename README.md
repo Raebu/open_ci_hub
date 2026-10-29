@@ -331,3 +331,13 @@ commercial actions. No new ChatGPT task, scheduler, CRM or mass-mail campaign
 is created. The Razer still requires independent email OAuth and canonical
 outreach ownership before it can replace ChatGPT sending.
 See [native sales and ChatGPT handoff](docs/RAEBURN-NATIVE-SALES-CHATGPT-HANDOFF-20261028.md).
+
+
+### Three-device connectivity and closed-lid recovery
+
+The existing five-minute `open-ci-edge-pool.timer` now produces an
+independent Tailscale-vs-worker status for the Samsung Galaxy Book Go, S22 Ultra
+and S25. Run `python3 fleet_connectivity.py status` on the Razer to see whether
+a device is disconnected, reachable but its worker has stopped, or ready.
+It does **not** bypass Tailscale SSH reauthentication or Android's Termux:Boot
+requirements. See [always-on fleet recovery and acceptance](docs/FLEET-ALWAYS-ON-20261029.md).

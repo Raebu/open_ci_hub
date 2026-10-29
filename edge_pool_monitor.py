@@ -178,12 +178,23 @@ def main():
         result["reconciliation"]=pool.reconcile(limit=40)
     summary=build_status(result,pool)
     save_status(summary)
+    # Reuse this existing five-minute service; classify network presence
+    # separately from mobile/Samsung application heartbeats.
+    fleet=None
+    try:
+        from fleet_connectivity import report as inspect_fleet, store as save_fleet
+        fleet=save_fleet(inspect_fleet())
+    except (OSError,ValueError,TypeError,RuntimeError):
+        # The existing parser/preflight must continue when Tailscale metadata
+        # cannot be read. Fleet status is best-effort monitoring only.
+        fleet=None
     print(json.dumps({"state":summary["state"],
                       "local_checks":summary["local_checks"],
                       "remote_checks":summary["remote_checks"],
                       "worker_status":summary["worker_status"],
                       "issues":summary["issues"],
-                      "audit_valid":summary["audit_valid"]},sort_keys=True))
+                      "audit_valid":summary["audit_valid"],
+                      "fleet_connectivity":fleet["state"] if fleet else "unavailable"},sort_keys=True))
     return 2 if summary["state"]=="failed" else 0
 
 
