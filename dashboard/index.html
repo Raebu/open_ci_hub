@@ -146,8 +146,8 @@
             </article>
           </div>
           <p class="small">Hosted inference uses cloud computing, but the browser still uses local RAM and network bandwidth. These are user-operated links, not automated or unlimited API credentials. Do not paste private customer data without the appropriate authorisation and data-handling review.</p>
-          <h3>Developer AI APIs · Optional keys</h3>
-          <p class="small">These integrations are prepared but make no external calls until the owner installs a provider key and explicitly approves a free-tier test. API keys stay in a private, local <code>0600</code> store outside the repository. Free limits and model availability change; never assume paid access is free.</p>
+          <h3>Developer AI APIs · Activated connections</h3>
+          <p class="small">Last independently verified: 29 October 2026. Gemini, NVIDIA NIM, OpenRouter and Groq all passed one-shot inference checks. Activation metadata and API keys are kept privately on your Razer; no keys are exposed here. For the current state run <code>python3 cloud_ai_providers.py status</code>. This page shows the last verification, not live quota or account billing status.</p>
           <div class="cards">
             <article class="provider-card">
               <h3>Google AI Studio · Gemini API</h3>
@@ -159,7 +159,7 @@
               <h3>NVIDIA NIM · API Catalog</h3>
               <p>Developer/trial hosted inference with variable model access and available credits. Neither indefinite free usage nor unrestricted commercial production rights are guaranteed.</p>
               <p><a href="https://build.nvidia.com/" target="_blank" rel="noopener noreferrer">Browse NVIDIA NIM</a></p>
-              <p class="small">Provider ID: <code>nvidia</code> · API calls blocked pending a verified free model and credits.</p>
+              <p class="small">Provider ID: <code>nvidia</code> · Nemotron 3 Ultra 550B developer-prototype test passed; commercial production remains restricted.</p>
             </article>
             <article class="provider-card">
               <h3>OpenRouter · Free models</h3>
@@ -174,7 +174,7 @@
               <p class="small">Provider ID: <code>groq</code> · Manual free-account verification required.</p>
             </article>
           </div>
-          <p class="small">On the Razer, run <code>python3 cloud_ai_providers.py status</code> to inspect setup; then <code>python3 cloud_ai_providers.py add-key PROVIDER</code> from a private local terminal. No API keys are accepted through this page or exposed to the browser.</p>
+          <p class="small">For current activation status, run <code>python3 cloud_ai_providers.py status</code> in the Razer terminal. To disable a provider, run <code>python3 cloud_ai_providers.py disable PROVIDER</code>. New provider tests remain manual, explicit and token-limited. The website does not offer unattended cloud inference or promise zero charges on accounts with paid billing enabled.</p>
         </section>
         <section id="whatsapp-compose">
           <div class="section-head"><div>

@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPSHandler, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -31,8 +32,8 @@ PROVIDERS = {
                        "https://aistudio.google.com/apikey", "gemini-3.1-flash-lite",
                        "Free access is model/project dependent; content may be used to improve Google products."),
     "nvidia": Provider("NVIDIA NIM", "https://integrate.api.nvidia.com/v1/chat/completions",
-                       "https://build.nvidia.com/", None,
-                       "Trial/developer prototyping credits only; model and free status must be independently checked."),
+                       "https://build.nvidia.com/", "nvidia/nemotron-3-ultra-550b-a55b",
+                       "NVIDIA free developer prototyping endpoint; not licensed for unattended commercial production."),
     "openrouter": Provider("OpenRouter", "https://openrouter.ai/api/v1/chat/completions",
                            "https://openrouter.ai/settings/keys", "openrouter/free",
                            "Free models are limited; routing may change. No paid fallback is configured."),
@@ -43,6 +44,8 @@ PROVIDERS = {
 
 KEY_DIR = Path.home() / ".config" / "open-ci-hub" / "cloud-ai-keys"
 _KEY_PATTERN = re.compile(r"^[!-~]{12,512}$")
+def _activation_file() -> Path:
+    return KEY_DIR / "activation.json"
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -109,7 +112,72 @@ def add_key(provider: str) -> None:
         key = ""
     print(f"{provider}: key saved privately (0600); not tested or used yet.")
 
+
+def activation_state() -> dict:
+    """Metadata-only owner-approved activated connections; no keys or prompts."""
+    _secure_dir(create=False)
+    path = _activation_file()
+    if path.is_symlink():
+        raise PermissionError("Symlinked activation file refused.")
+    if not path.exists():
+        return {}
+    st = path.stat()
+    if (not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid()
+            or stat.S_IMODE(st.st_mode) != 0o600 or st.st_size > 16384):
+        raise PermissionError("Activation file permissions or size are unsafe.")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data,dict) or any(
+            name not in PROVIDERS or not isinstance(rec,dict)
+            or rec.get("model") != PROVIDERS[name].model
+            or not isinstance(rec.get("tested_at"),str)
+            for name,rec in data.items()):
+        raise RuntimeError("Invalid activation state.")
+    return data
+
+
+def _write_activation(data: dict) -> None:
+    _secure_dir(create=True)
+    old = _activation_file()
+    if old.is_symlink():
+        raise PermissionError("Symlinked activation file refused.")
+    tmp = KEY_DIR / ("activation-" + str(os.getpid()) + ".tmp")
+    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
+                 getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        with os.fdopen(fd,"w",encoding="utf-8") as out:
+            json.dump(data,out,indent=2,sort_keys=True)
+            out.write(chr(10))
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp,old)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def enable_tested(provider: str, result: dict) -> None:
+    if (provider not in PROVIDERS or result.get("provider") != provider
+            or result.get("status") != "completed"
+            or not str(result.get("response") or "").strip()
+            or result.get("retry_performed") is not False):
+        raise RuntimeError("Cannot activate without a successful, nonempty one-shot model response.")
+    data = activation_state()
+    data[provider] = {
+        "model": PROVIDERS[provider].model,
+        "tested_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "mode":"manual_only",
+        "billing":"owner_attests_free_or_trial",
+    }
+    _write_activation(data)
+
+
+def disable(provider: str) -> None:
+    data = activation_state()
+    data.pop(provider,None)
+    _write_activation(data)
+
 def catalog() -> list[dict]:
+    active = activation_state()
     return [{
         "id": ident,
         "name": p.name,
@@ -118,6 +186,8 @@ def catalog() -> list[dict]:
         "credential": "configured" if has_key(ident) else "not_configured",
         "auto_billing": False,
         "automatic_requests": False,
+        "activated": ident in active and has_key(ident),
+        "tested_at": active.get(ident,{}).get("tested_at"),
         "note": p.note,
     } for ident,p in PROVIDERS.items()]
 
@@ -125,16 +195,17 @@ def test_one(provider: str, *, confirm_free: bool) -> dict:
     if not confirm_free:
         raise PermissionError("Before a test, verify free tier in provider console and pass --confirm-free-account.")
     p = PROVIDERS[provider]
-    if p.model is None:
-        raise PermissionError("NVIDIA endpoint not enabled for calls until a specific free/trial model and credit terms are verified.")
     key = _read_key(provider)
-    data = json.dumps({
+    payload = {
         "model": p.model,
         "messages": [{"role":"user", "content":"Reply with exactly READY."}],
-        "max_tokens": 32,
+        "max_tokens": 128 if provider == "groq" else 32,
         "temperature": 0,
         "stream": False,
-    }, separators=(",",":")).encode()
+    }
+    if provider == "groq":
+        payload["reasoning_effort"] = "low"
+    data = json.dumps(payload, separators=(",",":")).encode()
     request = Request(p.endpoint, data=data, headers={
         "Authorization": "Bearer " + key,
         "Content-Type": "application/json",
@@ -159,9 +230,9 @@ def test_one(provider: str, *, confirm_free: bool) -> dict:
     if not isinstance(choices,list) or not choices:
         return {"provider":provider, "status":"bad_reply", "retry_performed":False}
     msg = choices[0].get("message",{})
-    return {"provider":provider, "status":"completed",
-            "model":p.model, "response":str(msg.get("content") or "")[:150],
-            "retry_performed":False}
+    content = str(msg.get("content") or "").strip()
+    return {"provider":provider, "status":"completed" if content else "empty_reply",
+            "model":p.model, "response":content[:150], "retry_performed":False}
 
 def main(argv=None) -> int:
     parser=argparse.ArgumentParser(description=__doc__)
@@ -172,6 +243,11 @@ def main(argv=None) -> int:
     test=sub.add_parser("test", help="One explicit low-token request, never paid fallback.")
     test.add_argument("provider", choices=PROVIDERS)
     test.add_argument("--confirm-free-account", action="store_true")
+    activate=sub.add_parser("activate", help="Test once and record manual free/trial connection activation.")
+    activate.add_argument("provider", choices=PROVIDERS)
+    activate.add_argument("--confirm-free-account", action="store_true")
+    deact=sub.add_parser("disable", help="Disable a provider in the local activation register.")
+    deact.add_argument("provider", choices=PROVIDERS)
     args=parser.parse_args(argv)
     try:
         if args.command=="status":
@@ -180,6 +256,19 @@ def main(argv=None) -> int:
             add_key(args.provider)
         elif args.command=="test":
             print(json.dumps(test_one(args.provider, confirm_free=args.confirm_free_account)))
+        elif args.command=="activate":
+            result=test_one(args.provider, confirm_free=args.confirm_free_account)
+            if result.get("status") == "completed" and str(result.get("response") or "").strip():
+                enable_tested(args.provider,result)
+                result["activated"]=True
+            else:
+                result["activated"]=False
+            print(json.dumps(result))
+            if not result["activated"]:
+                return 2
+        elif args.command=="disable":
+            disable(args.provider)
+            print(json.dumps({"provider":args.provider,"activated":False}))
     except (ValueError, RuntimeError, PermissionError, FileExistsError, OSError) as e:
         print("Provider setup/test blocked: " + str(e), file=sys.stderr)
         return 2

@@ -62,13 +62,12 @@ class AIProviderTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             ai.has_key("gemini")
 
-    def test_nvidia_trial_and_missing_confirmation_never_call_network(self):
+    def test_missing_free_account_confirmation_never_calls_network(self):
         with patch.object(ai, "_read_key", side_effect=AssertionError("should not read key")), \
              patch.object(ai, "build_opener", side_effect=AssertionError("should not call network")):
-            with self.assertRaises(PermissionError):
-                ai.test_one("groq", confirm_free=False)
-            with self.assertRaises(PermissionError):
-                ai.test_one("nvidia", confirm_free=True)
+            for provider in ai.PROVIDERS:
+                with self.assertRaises(PermissionError):
+                    ai.test_one(provider, confirm_free=False)
 
     def test_manual_call_is_single_explicit_capped_request(self):
         response = {"choices":[{"message":{"content":"READY"}}]}
@@ -98,11 +97,34 @@ class AIProviderTests(unittest.TestCase):
         self.assertEqual(payload["max_tokens"],32)
         self.assertEqual(len(payload["messages"]),1)
 
+    def test_activation_requires_verified_nonempty_response_and_can_be_disabled(self):
+        self.key_dir.mkdir(parents=True, mode=0o700)
+        p=self.key_dir / "gemini.key"
+        p.write_text("TEST_ONLY_ABC123_TESTABC456")
+        p.chmod(0o600)
+        with self.assertRaises(RuntimeError):
+            ai.enable_tested("gemini", {"provider":"gemini", "status":"empty_reply",
+                                       "response":"", "retry_performed":False})
+        self.assertFalse(ai.catalog()[0]["activated"])
+        ai.enable_tested("gemini", {"provider":"gemini", "status":"completed",
+                                   "response":"READY","retry_performed":False})
+        self.assertTrue(ai.catalog()[0]["activated"])
+        self.assertEqual(stat.S_IMODE(ai._activation_file().stat().st_mode), 0o600)
+        self.assertNotIn("TEST_ONLY_ABC123", ai._activation_file().read_text())
+        ai.disable("gemini")
+        self.assertFalse(ai.catalog()[0]["activated"])
+
+    def test_activation_does_not_allow_credentialless_provider(self):
+        ai.enable_tested("nvidia", {"provider":"nvidia", "status":"completed",
+                                   "response":"READY","retry_performed":False})
+        item=next(x for x in ai.catalog() if x["id"]=="nvidia")
+        self.assertFalse(item["activated"])
+
     def test_dashboard_has_official_manual_links(self):
         page=(ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")
         for p in ai.PROVIDERS.values():
             self.assertIn(p.key_page, page)
-        self.assertIn("python3 cloud_ai_providers.py add-key",page)
+        self.assertIn("python3 cloud_ai_providers.py status",page)
         self.assertNotIn("type=\"password\"", page[page.index('id="ai-models"'):page.index('id="whatsapp-compose"')])
 
 
