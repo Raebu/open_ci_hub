@@ -17,3 +17,5 @@ Backups were retained before changing active source and the laptop worker. No au
 ## Validation
 
 Targeted suite: 49 tests passed. Full scripts/validate.py exited zero before application. Remote worker restarted successfully and directly reported unplugged at 80 percent. S22 recovery and offline-device verification remain blocked by unavailable management connections.
+
+Live deployment evidence: the laptop's older application_client.py lacked battery_percent; the first restart failed and was immediately rolled back. Deploying the current tested client with the worker restored service. The next heartbeat reported worker_alive=true, worker_eligible=false on battery. A bounded JSON job completed with an independently verified receipt during rollback recovery; it is not evidence of the new battery gate.
