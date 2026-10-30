@@ -91,6 +91,23 @@ def main(argv=None):
         if age_seconds>900:
             output["state"]="stale"
             output["issues"]=(output.get("issues") or [])+[{"kind":"monitor_not_running_recently"}]
+        live=pool.devices_status()
+        output["live_worker_status"]=live
+        output["availability_source"]="live"
+        output["worker_status"]=[{"app":d["app"],"online":d["online"],
+            "eligible":d["eligible_for_json"],
+            "last_seen_age_seconds":d["last_seen_age_seconds"]} for d in live]
+        historical=[i for i in (output.get("issues") or []) if i.get("kind") not in
+                    ("worker_offline_or_unavailable","no_eligible_mobile_workers")]
+        historical += [{"kind":"worker_offline_or_unavailable","device":d["app"],
+                        "last_seen_age_seconds":d["last_seen_age_seconds"]}
+                       for d in live if not d["eligible_for_json"]]
+        if not any(d["eligible_for_json"] for d in live):
+            historical.append({"kind":"no_eligible_mobile_workers"})
+        output["issues"]=historical
+        if output["state"] not in ("failed","stale"):
+            output["state"]="degraded" if historical else (
+                "pending" if (output.get("remote_checks") or {}).get("pending") else "healthy")
         _json_dump(output)
     elif args.action=="audit":
         _json_dump(pool.audit())

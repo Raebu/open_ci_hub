@@ -71,9 +71,34 @@ def available_ram_mb():
         pass
     return None
 
+def linux_power_status(root=Path("/sys/class/power_supply")):
+    """Return charger state and battery percentage; unreadable sensors fail closed."""
+    try:
+        supplies=list(root.iterdir())
+        batteries=[p for p in supplies if (p/"type").read_text().strip()=="Battery"]
+        external=[p for p in supplies if (p/"online").is_file()]
+        if not batteries:
+            return (any((p/"online").read_text().strip()=="1" for p in external)
+                    if external else True), None
+        battery=batteries[0]
+        status=(battery/"status").read_text().strip()
+        raw=(battery/"capacity").read_text().strip()
+        percent=int(raw)
+        if not 0<=percent<=100:
+            return False,None
+        charging=(any((p/"online").read_text().strip()=="1" for p in external)
+                  if external else status=="Charging")
+        # A contradictory charger reading must never allow battery drain.
+        if status=="Discharging":
+            charging=False
+        return charging,percent
+    except (OSError,ValueError):
+        return False,None
+
+
 def windows_ac_connected():
     if sys.platform!="win32":
-        return True
+        return linux_power_status()[0]
     class STATUS(ctypes.Structure):
         _fields_=[("ACLineStatus",ctypes.c_byte),("BatteryFlag",ctypes.c_byte),
                  ("BatteryLifePercent",ctypes.c_byte),("SystemStatusFlag",ctypes.c_byte),
@@ -108,7 +133,7 @@ def ready(*, ram=available_ram_mb, powered=windows_ac_connected, system=None):
     remaining=ram()
     if type(remaining) is not int or remaining<minimum_available_ram_mb(system):
         return False,"foreground_memory_reserved"
-    if system=="Windows" and not powered():
+    if not powered():
         return False,"not_connected_to_power"
     return True,"ready"
 
@@ -159,9 +184,6 @@ def execute(kind,payload,*,spawn=subprocess.run):
         return False,{"error":"worker_execution_failed"}
 
 def once(client,*,admit=ready):
-    ok,reason=admit()
-    if not ok:
-        return {"status":"deferred","reason":reason}
     sysname=platform.system()
     machine=platform.machine().lower()
     arch=("arm64" if machine in ("aarch64","arm64") else
@@ -171,7 +193,14 @@ def once(client,*,admit=ready):
     # separately issued worker token. The worker cannot enrol itself.
     if arch=="unsupported" or type(available) is not int:
         return {"status":"deferred","reason":"unsupported_device_telemetry"}
-    presence=client.availability(sysname,arch,available,windows_ac_connected())
+    charging,percent=(linux_power_status() if sysname=="Linux"
+                      else (windows_ac_connected(),None))
+    args=(sysname,arch,available,charging)
+    presence=(client.availability(*args,battery_percent=percent) if percent is not None
+              else client.availability(*args))
+    ok,reason=admit()
+    if not ok:
+        return {"status":"deferred","reason":reason}
     if not isinstance(presence,dict) or presence.get("enrolled") is not True:
         return {"status":"deferred","reason":"owner_enrolment_required"}
     if presence.get("online") is not True:
