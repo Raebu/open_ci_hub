@@ -20,7 +20,7 @@ from resource_guard import ResourceGate
 import fleet_devices
 from portable_edge_worker import task as independently_check_task
 
-DEFAULT_DEVICES = ("s22-edge", "s25-edge")
+DEFAULT_DEVICES = ("samsung-linux-edge", "s22-edge", "s25-edge")
 ALLOWED = frozenset(("python.syntax", "json.inspect", "hash.benchmark"))
 JOB_ID = re.compile(r"^[a-f0-9]{32}$")
 MAX_MOVES = 2
@@ -170,7 +170,7 @@ class EdgePool:
                 continue
             if (not r["last_seen"] or not 0 <= now-r["last_seen"] <= fleet_devices.MAX_AGE
                     or not isinstance(r["free_ram_mb"], int)
-                    or r["free_ram_mb"] < REQUIRED_RAM_MB):
+                    or r["free_ram_mb"] < fleet_devices.min_free_ram_mb(app)):
                 continue
             if task not in json.loads(r["allowed_tasks"]) or task not in json.loads(r["tasks"]):
                 continue
@@ -178,7 +178,7 @@ class EdgePool:
             ram = profile["ram_mb"]
             if (profile["vram_mb"] != 0 or type(ram) is not int
                     or not 64 <= ram <= 256
-                    or r["free_ram_mb"] < ram + MIN_RAM_HEADROOM_MB):
+                    or r["free_ram_mb"] < ram + fleet_devices.reserved_foreground_mb(app)):
                 continue
             queued = db.execute(
                 "SELECT COUNT(*) FROM jobs WHERE app=? AND status='queued'", (app,)
@@ -200,7 +200,8 @@ class EdgePool:
             ).fetchone()[0]
             # Prefer free devices, then fairness, recent reliability and more RAM.
             score = (active * 10000 + queued * 1000 + scheduled * 10 +
-                     failures * 15 - min(r["free_ram_mb"], 8192) / 512)
+                     failures * 15 - min(r["free_ram_mb"], 8192) / 512 +
+                     (25 if app == "s25-edge" and not r["charging"] else 0))
             candidates.append({"app": app, "free_ram_mb": r["free_ram_mb"],
                                "queued": queued, "active": active,
                                "recent_failures": failures, "score": score})

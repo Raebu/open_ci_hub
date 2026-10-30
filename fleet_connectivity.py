@@ -73,9 +73,12 @@ def report(*,devices=None,peers=None,clock=time.time):
         elif vpn is False:
             state="device_or_vpn_offline"
             next_step="reconnect_device_and_tailscale"
-        elif online:
+        elif online and age is not None and age<=120:
             state="worker_ready"
             next_step="verify_real_test_task"
+        elif worker and worker.get("approved") and age is not None and age<=120:
+            state="worker_paused"
+            next_step="check_power_memory_and_capacity"
         elif not worker or not worker.get("approved"):
             state="worker_not_approved"
             next_step="check_scoped_enrolment_without_credential_reset"
@@ -84,13 +87,15 @@ def report(*,devices=None,peers=None,clock=time.time):
             next_step=hint
         output.append({
             "app":app,"label":label,"vpn_online":vpn,
-            "worker_online":online,"approved":bool(worker and worker.get("approved")),
+            "worker_online":online and age is not None and age<=120,
+            "worker_alive":age is not None and age<=120,
+            "worker_eligible":online and age is not None and age<=120,"approved":bool(worker and worker.get("approved")),
             "last_worker_seen_age_seconds":age,"state":state,
             "next_step":next_step,
         })
     aggregate=("ready" if all(p["state"]=="worker_ready" for p in output)
                else "degraded" if any(p["state"] in (
-                   "worker_ready","vpn_online_worker_offline") for p in output)
+                   "worker_ready","worker_paused","vpn_online_worker_offline") for p in output)
                else "offline_or_unknown")
     return {
         "schema":SCHEMA,
@@ -146,16 +151,9 @@ def cli(argv=None):
     if args.action=="check":
         value=store(report())
     else:
-        path=STATUS_FILE
-        if path.is_symlink() or not path.is_file() or (
-                path.stat().st_mode & 0o077) or path.stat().st_size>12000:
-            raise ValueError("No secure fleet snapshot available.")
-        value=json.loads(path.read_text(encoding="utf8"))
-        if value.get("schema")!=SCHEMA:
-            raise ValueError("Invalid fleet snapshot schema.")
-        at=datetime.fromisoformat(value["checked_at_utc"].replace("Z","+00:00"))
-        if time.time()-at.timestamp()>900:
-            value["state"]="stale"
+        # Interactive reads use current telemetry; the timer snapshot is historical evidence.
+        value=report()
+        value["source"]="live"
     print(json.dumps(value,sort_keys=True,indent=2))
     return 0
 
